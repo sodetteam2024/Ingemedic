@@ -135,6 +135,30 @@ export default function OrdenesClient({
     showToast(`Orden → ${siguiente}`)
   }
 
+  async function generarPDF(tipo, ordenId) {
+    try {
+      const res = await fetch('/api/documentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo, orden_id: ordenId }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        showToast('Error: ' + err.error, 'error')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `acta-${tipo}-${ordenId}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      showToast('Error generando PDF', 'error')
+    }
+  }
+
   // ── WIZARD ────────────────────────────────────────────────────
   function abrirWizard() {
     setWForm({
@@ -207,9 +231,9 @@ export default function OrdenesClient({
   const PASO_LABELS = ['Cliente y equipo', 'Repartidor', 'Documentos']
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-[#1B3A6B]">Órdenes de servicio</div>
           <div className="text-[12px] text-slate-400 mt-0.5">{ordenes.length} órdenes en total</div>
@@ -220,9 +244,9 @@ export default function OrdenesClient({
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4">
         {/* Stats */}
-        <div className="grid grid-cols-5 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 flex-shrink-0">
           {[
             { label: 'Total',                 value: stats.total,       color: '#1B3A6B', f: '' },
             { label: 'Activas',               value: stats.activas,     color: '#B45309', f: 'activas' },
@@ -239,7 +263,7 @@ export default function OrdenesClient({
         </div>
 
         {/* Filtros */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
           <div className="relative flex-1 max-w-[300px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -313,7 +337,7 @@ export default function OrdenesClient({
       {drawer && (
         <>
           <div className="fixed inset-0 bg-[#0F2448]/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[500px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed top-0 right-0 bottom-0 w-full md:w-[500px] bg-white z-30 flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b flex items-start justify-between flex-shrink-0 bg-[#1B3A6B]">
               <div>
                 <div className="text-[15px] font-bold text-white font-mono">{drawer.codigo}</div>
@@ -423,9 +447,13 @@ export default function OrdenesClient({
                 }
               </div>
             </div>
-            <div className="px-5 py-4 border-t border-slate-200 flex-shrink-0">
+            <div className="px-5 py-4 border-t border-slate-200 flex-shrink-0 flex gap-2">
+              <button onClick={() => generarPDF('entrega', drawer.id)}
+                className="flex-1 py-2.5 bg-[#2EB5D4] text-white rounded-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5">
+                Acta entrega
+              </button>
               <button onClick={() => setDrawer(null)}
-                className="w-full py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
+                className="flex-1 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
                 Cerrar
               </button>
             </div>

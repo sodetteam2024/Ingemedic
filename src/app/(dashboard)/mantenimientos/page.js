@@ -11,6 +11,7 @@ export default async function MantenimientosPage() {
     { data: categorias },
     { data: tiposEquipo },
     { data: equipos },
+    { data: checklist },
   ] = await Promise.all([
     supabase.from('mantenimientos').select(`
       *,
@@ -21,16 +22,13 @@ export default async function MantenimientosPage() {
       ),
       estado:estados_mantenimiento(id, nombre),
       tipo:tipos_mantenimiento(id, nombre)
-    `).order('fecha_creacion', { ascending: false }),
+    `).order('fecha_apertura', { ascending: false }),
     supabase.from('estados_mantenimiento').select('*'),
     supabase.from('tipos_mantenimiento').select('*'),
     supabase.from('categorias_equipo').select('*').eq('activo', true).order('nombre'),
-    supabase.from('tipos_equipo').select('*').eq('activo', true).order('marca'),
-    supabase.from('equipos').select(`
-      id, codigo, serial,
-      tipo_equipo:tipos_equipo(id, marca, modelo, categoria_id),
-      estado:estados_equipo(id, nombre)
-    `).order('codigo'),
+    supabase.from('tipos_equipo').select('*, categoria:categorias_equipo(id, nombre), lista:listas_mantenimiento(id, nombre)').eq('activo', true).order('marca'),
+    supabase.from('equipos').select('*, tipo_equipo:tipos_equipo(id, marca, modelo, categoria:categorias_equipo(id, nombre))').eq('activo', true),
+    supabase.from('actividades_lista_mantenimiento').select('*').eq('activo', true).order('orden'),
   ])
 
   return (
@@ -41,6 +39,7 @@ export default async function MantenimientosPage() {
       categorias={categorias || []}
       tiposEquipo={tiposEquipo || []}
       equipos={equipos || []}
+      checklist={checklist || []}
     />
   )
 }

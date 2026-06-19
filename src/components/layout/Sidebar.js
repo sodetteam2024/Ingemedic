@@ -1,4 +1,5 @@
 'use client'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -42,7 +43,7 @@ const ICONS = {
   logout:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
 }
 
-export default function Sidebar({ usuario }) {
+export default function Sidebar({ usuario, empresa }) {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
@@ -53,18 +54,41 @@ export default function Sidebar({ usuario }) {
     router.refresh()
   }
 
-  return (
-    <aside className="w-64 min-w-[256px] flex flex-col h-screen overflow-y-auto flex-shrink-0"
-      style={{background: 'linear-gradient(180deg, #1B3A6B 0%, #0F2448 100%)'}}>
+  const mobileItems = NAV.flatMap(group => group.items)
 
-      {/* Logo */}
-      <div className="px-[18px] py-5 border-b border-white/8 flex items-center gap-2.5">
-        <img src="/logo.png" alt="Ingemedic" className="h-[42px] w-auto"
-          onError={e => e.target.style.display='none'} />
-        <div>
-          <div className="text-[13px] font-bold text-white leading-tight">Ingemedic</div>
-          <div className="text-[10px] text-white/40 tracking-[0.06em] mt-0.5">SISTEMA OPERATIVO</div>
-        </div>
+  const renderNavLink = (item) => {
+    const active = pathname === item.href ||
+      (item.href !== '/dashboard' && pathname.startsWith(item.href))
+
+    return (
+      <Link key={item.href} href={item.href}
+        className={`flex items-center gap-2.5 px-[18px] py-[9px] text-[13.5px] font-medium transition-all border-l-[3px] ${
+          active
+            ? 'text-white bg-[#2EB5D4]/12 border-l-[#2EB5D4]'
+            : 'text-white/55 border-l-transparent hover:text-white hover:bg-white/6'
+        }`}>
+        <span className={`w-[18px] flex-shrink-0 flex items-center justify-center ${active ? 'opacity-100' : 'opacity-70'}`}>
+          {ICONS[item.icon]}
+        </span>
+        {item.label}
+      </Link>
+    )
+  }
+
+  return (
+    <>
+      <aside className="hidden md:flex w-64 min-w-[256px] flex-col h-screen overflow-y-auto flex-shrink-0"
+        style={{background: 'linear-gradient(180deg, #1B3A6B 0%, #0F2448 100%)'}}>
+
+        {/* Logo */}
+      <div className="px-[18px] py-1 border-b border-white/8 flex items-center justify-center">
+        {empresa?.logo_url ? (
+          <Image src={empresa.logo_url} alt={empresa.razon_social ? `${empresa.razon_social} logo` : 'Logo'} width={300} height={120}
+            className="object-contain rounded-2xl" style={{ width: 'auto', height: '120px' }} priority />
+        ) : (
+          <Image src="/logo.png" alt="Ingemedic" width={300} height={120}
+            className="object-contain rounded-2xl" style={{ width: 'auto', height: '120px' }} priority />
+        )}
       </div>
 
       {/* Nav */}
@@ -109,5 +133,30 @@ export default function Sidebar({ usuario }) {
         </button>
       </div>
     </aside>
+
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_-1px_15px_rgba(15,23,42,0.05)]">
+        <div className="flex items-center justify-between gap-1 overflow-x-auto px-2 py-2">
+          {mobileItems.map(item => {
+            const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+            return (
+              <Link key={item.href} href={item.href}
+                className={`min-w-[64px] flex flex-col items-center justify-center gap-1 rounded-[12px] px-2 py-2 text-[11px] font-medium transition-all ${active ? 'bg-[#2EB5D4]/10 text-[#0F4C69]' : 'text-slate-500 hover:bg-slate-100'}`}>
+                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-100 text-slate-600">
+                  {ICONS[item.icon]}
+                </span>
+                <span className="whitespace-nowrap">{item.label}</span>
+              </Link>
+            )
+          })}
+          <button onClick={logout}
+            className="min-w-[64px] flex flex-col items-center justify-center gap-1 rounded-[12px] px-2 py-2 text-[11px] font-medium text-slate-500 hover:bg-slate-100">
+            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-100 text-slate-600">
+              {ICONS.logout}
+            </span>
+            <span className="whitespace-nowrap">Salir</span>
+          </button>
+        </div>
+      </nav>
+    </>
   )
 }

@@ -2,7 +2,7 @@
 import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Search, Plus, X, Wrench, CheckCircle2, Clock, AlertCircle } from 'lucide-react'
+import { Search, Plus, X, CheckCircle2 } from 'lucide-react'
 
 const TIPO_ID = {
   preventivo: '1618f69b-f062-478b-a5c8-fc42d20088d0',
@@ -22,28 +22,27 @@ function calcDias(fechaApertura, fechaCierre) {
 
 export default function MantenimientosClient({
   mantenimientosIniciales, estados, tipos,
-  categorias, tiposEquipo, equipos
+  categorias, tiposEquipo, equipos, checklist: checklistInicial
 }) {
   const router   = useRouter()
   const supabase = createClient()
 
-  const [mants, setMants]         = useState(mantenimientosIniciales)
-  const [vista, setVista]         = useState('activos') // activos | historial
-  const [search, setSearch]       = useState('')
-  const [drawer, setDrawer]       = useState(null)
+  const [mants, setMants]           = useState(mantenimientosIniciales)
+  const [vista, setVista]           = useState('activos')
+  const [search, setSearch]         = useState('')
+  const [drawer, setDrawer]         = useState(null)
   const [modalNuevo, setModalNuevo] = useState(false)
   const [modalCierre, setModalCierre] = useState(null)
-  const [saving, setSaving]       = useState(false)
-  const [toast, setToast]         = useState(null)
+  const [checklistCierre, setChecklistCierre] = useState([]) // actividades del tipo del equipo
+  const [saving, setSaving]         = useState(false)
+  const [toast, setToast]           = useState(null)
 
-  // Form nuevo
   const [form, setForm] = useState({
     tipo_id: TIPO_ID.preventivo,
     cat_id: '', tipo_equipo_id: '', equipo_id: '',
     tecnico: '', observaciones: '',
   })
 
-  // Form cierre
   const [cierreForm, setCierreForm] = useState({
     actividades: '', tecnico: '', resultado: 'disponible',
     checklist: {},
@@ -54,14 +53,8 @@ export default function MantenimientosClient({
     setTimeout(() => setToast(null), 3000)
   }
 
-  const checklist = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('ing_checklist') || '[]')
-    } catch { return [] }
-  }, [])
-
-  const activos   = useMemo(() => mants.filter(m => m.en_curso), [mants])
-  const cerrados  = useMemo(() => mants.filter(m => !m.en_curso), [mants])
+  const activos  = useMemo(() => mants.filter(m => m.en_curso), [mants])
+  const cerrados = useMemo(() => mants.filter(m => !m.en_curso), [mants])
 
   const tiposFiltrados = useMemo(() =>
     form.cat_id ? tiposEquipo.filter(t => t.categoria_id === form.cat_id) : [],
@@ -89,7 +82,7 @@ export default function MantenimientosClient({
     cerrados:    cerrados.length,
   }), [activos, cerrados])
 
-  // ── CREAR MANTENIMIENTO ────────────────────────────────────
+  // ── CREAR ──────────────────────────────────────────────────
   async function guardarMant() {
     if (!form.equipo_id) { showToast('Selecciona una unidad de equipo', 'error'); return }
     setSaving(true)
@@ -98,13 +91,13 @@ export default function MantenimientosClient({
 
     const { data, error } = await supabase.from('mantenimientos').insert({
       codigo,
-      equipo_id:            form.equipo_id,
+      equipo_id:             form.equipo_id,
       tipo_mantenimiento_id: form.tipo_id,
-      estado_id:            ESTADO_ID.abierto,
-      tecnico:              form.tecnico,
+      estado_id:             ESTADO_ID.abierto,
+      tecnico:               form.tecnico,
       observaciones_cliente: form.observaciones,
-      fecha_apertura:       new Date().toISOString().split('T')[0],
-      en_curso:             true,
+      fecha_apertura:        new Date().toISOString().split('T')[0],
+      en_curso:              true,
     }).select(`
       *,
       equipo:equipos(id, codigo, serial,
@@ -130,34 +123,76 @@ export default function MantenimientosClient({
     setForm({ tipo_id: TIPO_ID.preventivo, cat_id: '', tipo_equipo_id: '', equipo_id: '', tecnico: '', observaciones: '' })
   }
 
-  // ── CERRAR MANTENIMIENTO ──────────────────────────────────
-  function abrirCierre(m) {
+  // ── ABRIR CIERRE ──────────────────────────────────────────
+  async function abrirCierre(m) {
+    // Buscar la lista asignada al tipo de equipo
+    const tipoEquipoId = m.equipo?.tipo_equipo?.id
+    let actividades = []
+
+    if (tipoEquipoId) {
+      // 1. Buscar el tipo de equipo para obtener su lista_mantenimiento_id
+      const { data: tipoData } = await supabase
+        .from('tipos_equipo')
+        .select('lista_mantenimiento_id')
+        .eq('id', tipoEquipoId)
+        .single()
+
+      if (tipoData?.lista_mantenimiento_id) {
+        // 2. Cargar actividades de esa lista
+        const { data } = await supabase
+          .from('actividades_lista_mantenimiento')
+          .select('*')
+          .eq('lista_id', tipoData.lista_mantenimiento_id)
+          .eq('activo', true)
+          .order('orden')
+        actividades = data || []
+      }
+    }
+
+    setChecklistCierre(actividades)
     const chkObj = {}
-    checklist.forEach(k => chkObj[k] = false)
+    actividades.forEach(a => chkObj[a.id] = false)
     setCierreForm({ actividades: '', tecnico: m.tecnico || '', resultado: 'disponible', checklist: chkObj })
     setModalCierre(m)
     setDrawer(null)
   }
 
+  // ── CONFIRMAR CIERRE ──────────────────────────────────────
   async function confirmarCierre() {
     if (!modalCierre) return
     setSaving(true)
     const hoy = new Date().toISOString().split('T')[0]
 
     const { error } = await supabase.from('mantenimientos').update({
-      en_curso:         false,
-      estado_id:        ESTADO_ID.cerrado,
+      en_curso:          false,
+      estado_id:         ESTADO_ID.cerrado,
       fecha_cierre_real: hoy,
-      actividades:      cierreForm.actividades,
-      tecnico:          cierreForm.tecnico,
+      actividades:       cierreForm.actividades,
+      tecnico:           cierreForm.tecnico,
     }).eq('id', modalCierre.id)
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
 
+    // Guardar ítems del checklist completados
+    const itemsCompletados = Object.entries(cierreForm.checklist)
+      .filter(([_, v]) => v)
+      .map(([id]) => id)
+
+    if (itemsCompletados.length > 0) {
+      await supabase.from('checklist_mantenimiento_items')?.insert(
+        itemsCompletados.map(checklistId => ({
+          mantenimiento_id: modalCierre.id,
+          checklist_item_id: checklistId,
+          completado: true,
+          fecha: hoy,
+        }))
+      )
+    }
+
     // Actualizar estado del equipo
     const nuevoEstadoEq = cierreForm.resultado === 'disponible'
-      ? 'f33e7c6f-0f81-484e-9f0a-93fd28f9c414'  // Disponible
-      : '1be9843f-bcbf-46f2-bb6c-5a487225b8c3'  // Baja
+      ? 'f33e7c6f-0f81-484e-9f0a-93fd28f9c414'
+      : '1be9843f-bcbf-46f2-bb6c-5a487225b8c3'
 
     await supabase.from('equipos')
       .update({ estado_id: nuevoEstadoEq })
@@ -175,12 +210,12 @@ export default function MantenimientosClient({
   }
 
   const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5'
-  const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#2EB5D4] bg-white'
+  const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#2EB5D4] bg-white placeholder:text-slate-400'
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-[#1B3A6B]">Mantenimientos</div>
           <div className="text-[12px] text-slate-400 mt-0.5">
@@ -193,9 +228,9 @@ export default function MantenimientosClient({
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4">
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
           {[
             { label: 'En taller ahora', value: stats.activos,     color: '#B45309', onClick: () => setVista('activos') },
             { label: 'Correctivos',     value: stats.correctivos,  color: '#C0392B', onClick: () => setVista('activos') },
@@ -220,11 +255,11 @@ export default function MantenimientosClient({
           </div>
           <button onClick={() => setVista('activos')}
             className={`px-3 py-2 text-[12.5px] font-medium rounded-[9px] border transition-all ${vista === 'activos' ? 'bg-[#1B3A6B] text-white border-[#1B3A6B]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#2EB5D4]'}`}>
-            <Wrench size={14} className="inline-block mr-1" /> En taller
+            🔧 En taller
           </button>
           <button onClick={() => setVista('historial')}
             className={`px-3 py-2 text-[12.5px] font-medium rounded-[9px] border transition-all ${vista === 'historial' ? 'bg-[#1B3A6B] text-white border-[#1B3A6B]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#2EB5D4]'}`}>
-            <Clock size={14} className="inline-block mr-1" /> Historial
+            📋 Historial
           </button>
         </div>
 
@@ -234,7 +269,7 @@ export default function MantenimientosClient({
             <table className="w-full border-collapse min-w-[800px]">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b-2 border-slate-200">
-                  {['ID', 'Equipo', 'Serial', 'Tipo', 'Técnico', 'Ingreso',
+                  {['ID','Equipo','Serial','Tipo','Técnico','Ingreso',
                     vista === 'activos' ? 'Días' : 'Cierre',
                     vista === 'activos' ? 'Acción' : 'Resultado'
                   ].map(h => (
@@ -249,15 +284,13 @@ export default function MantenimientosClient({
                   </td></tr>
                 )}
                 {mantsFiltrados.map(m => {
-                  const dias = calcDias(m.fecha_apertura, m.fecha_cierre_real)
+                  const dias   = calcDias(m.fecha_apertura, m.fecha_cierre_real)
                   const esCorr = m.tipo_id === TIPO_ID.correctivo
                   return (
                     <tr key={m.id} onClick={() => setDrawer(m)}
                       className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors"
                       style={{ borderLeft: `3px solid ${esCorr ? '#C0392B' : '#2EB5D4'}` }}>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-[12px] text-slate-500">{m.codigo}</span>
-                      </td>
+                      <td className="px-4 py-3 font-mono text-[12px] text-slate-500">{m.codigo}</td>
                       <td className="px-4 py-3">
                         <div className="text-[13px] font-semibold text-slate-700">
                           {m.equipo?.tipo_equipo?.marca} {m.equipo?.tipo_equipo?.modelo}
@@ -266,10 +299,8 @@ export default function MantenimientosClient({
                       </td>
                       <td className="px-4 py-3 font-mono text-[12px] text-slate-500">{m.equipo?.serial || '—'}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                          esCorr ? 'bg-red-50 text-red-600' : 'bg-[#E8F7FB] text-[#0E86A0]'
-                        }`}>
-                          {esCorr ? <><AlertCircle size={12} className="inline-block mr-1" />Correctivo</> : <><Wrench size={12} className="inline-block mr-1" />Preventivo</>}
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${esCorr ? 'bg-red-50 text-red-600' : 'bg-[#E8F7FB] text-[#0E86A0]'}`}>
+                          {esCorr ? '⚠️ Correctivo' : '🔵 Preventivo'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[12.5px] text-slate-500">{m.tecnico || '—'}</td>
@@ -288,7 +319,7 @@ export default function MantenimientosClient({
                           </button>
                         ) : (
                           <span className={`text-[12px] font-semibold ${m.actividades ? 'text-[#0F7B55]' : 'text-slate-400'}`}>
-                            {m.actividades ? <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} />Completado</span> : '—'}
+                            {m.actividades ? '✅ Completado' : '—'}
                           </span>
                         )}
                       </td>
@@ -305,7 +336,7 @@ export default function MantenimientosClient({
       {drawer && (
         <>
           <div className="fixed inset-0 bg-[#0F2448]/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[480px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed top-0 right-0 bottom-0 w-full md:w-[480px] bg-white z-30 flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b flex items-start justify-between flex-shrink-0 bg-[#1B3A6B]">
               <div>
                 <div className="text-[15px] font-bold text-white font-mono">{drawer.codigo}</div>
@@ -345,7 +376,7 @@ export default function MantenimientosClient({
                   <div>
                     <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Tipo</div>
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${drawer.tipo_id === TIPO_ID.correctivo ? 'bg-red-50 text-red-600' : 'bg-[#E8F7FB] text-[#0E86A0]'}`}>
-                      {drawer.tipo_id === TIPO_ID.correctivo ? <><AlertCircle size={12} className="inline-block mr-1" />Correctivo</> : <><Wrench size={12} className="inline-block mr-1" />Preventivo</>}
+                      {drawer.tipo_id === TIPO_ID.correctivo ? '⚠️ Correctivo' : '🔵 Preventivo'}
                     </span>
                   </div>
                   <div>
@@ -363,7 +394,7 @@ export default function MantenimientosClient({
                   {drawer.observaciones_cliente && (
                     <div className="col-span-2">
                       <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Motivo</div>
-                      <div className="text-[13px] text-slate-600 italic">&ldquo;{drawer.observaciones_cliente}&rdquo;</div>
+                      <div className="text-[13px] text-slate-600 italic">“{drawer.observaciones_cliente}”</div>
                     </div>
                   )}
                   {drawer.actividades && (
@@ -407,8 +438,8 @@ export default function MantenimientosClient({
                 {/* Tipo */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { id: TIPO_ID.preventivo, label: <><Wrench size={14} className="inline-block mr-2" />Preventivo</>, sub: 'Rutina programada' },
-                    { id: TIPO_ID.correctivo, label: <><AlertCircle size={14} className="inline-block mr-2" />Correctivo</>, sub: 'Falla técnica' },
+                    { id: TIPO_ID.preventivo, label: '🔵 Preventivo', sub: 'Rutina programada' },
+                    { id: TIPO_ID.correctivo, label: '⚠️ Correctivo', sub: 'Falla técnica' },
                   ].map(t => (
                     <button key={t.id} onClick={() => setForm(f => ({ ...f, tipo_id: t.id }))}
                       className={`py-3 rounded-[10px] border-[1.5px] text-center transition-all ${form.tipo_id === t.id
@@ -419,7 +450,6 @@ export default function MantenimientosClient({
                     </button>
                   ))}
                 </div>
-                {/* Jerarquía */}
                 <div>
                   <label className={labelCls}>Categoría</label>
                   <select value={form.cat_id} onChange={e => setForm(f => ({ ...f, cat_id: e.target.value, tipo_equipo_id: '', equipo_id: '' }))}
@@ -452,7 +482,7 @@ export default function MantenimientosClient({
                     placeholder="Nombre del técnico" className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Motivo / observaciones del cliente</label>
+                  <label className={labelCls}>Motivo / observaciones</label>
                   <input value={form.observaciones} onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
                     placeholder="Describe la razón del mantenimiento..." className={inputCls} />
                 </div>
@@ -479,39 +509,58 @@ export default function MantenimientosClient({
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl w-full max-w-[500px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#0F7B55]">
-                <h3 className="text-[15px] font-bold text-white">Cerrar mantenimiento</h3>
+                <div>
+                  <h3 className="text-[15px] font-bold text-white">Cerrar mantenimiento</h3>
+                  <div className="text-[12px] text-white/60 mt-0.5">
+                    {modalCierre.equipo?.tipo_equipo?.marca} {modalCierre.equipo?.tipo_equipo?.modelo} · {modalCierre.equipo?.serial}
+                  </div>
+                </div>
                 <button onClick={() => setModalCierre(null)} className="text-white/50 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10">
                   <X size={16} strokeWidth={2.5} />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-                {/* Checklist */}
-                {checklist.length > 0 && (
+                {/* Checklist del tipo de equipo */}
+                {checklistCierre.length > 0 && (
                   <div>
-                    <label className={labelCls}>Checklist de actividades</label>
+                    <label className={labelCls}>
+                      Checklist de actividades
+                      <span className="text-slate-300 font-normal normal-case ml-1">
+                        ({checklistCierre.length} actividad{checklistCierre.length !== 1 ? 'es' : ''} para este tipo)
+                      </span>
+                    </label>
                     <div className="space-y-2">
-                      {checklist.map(item => {
-                        const checked = cierreForm.checklist[item]
+                      {checklistCierre.map(item => {
+                        const checked = cierreForm.checklist[item.id]
                         return (
-                          <div key={item} onClick={() => setCierreForm(f => ({ ...f, checklist: { ...f.checklist, [item]: !f.checklist[item] } }))}
+                          <div key={item.id}
+                            onClick={() => setCierreForm(f => ({ ...f, checklist: { ...f.checklist, [item.id]: !f.checklist[item.id] } }))}
                             className={`flex items-center gap-3 p-3 rounded-[9px] border cursor-pointer transition-all ${checked ? 'border-[#0F7B55] bg-green-50' : 'border-slate-200 hover:border-slate-300'}`}>
                             <div className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center transition-all ${checked ? 'bg-[#0F7B55]' : 'border-[1.5px] border-slate-300'}`}>
                               {checked && <CheckCircle2 size={10} className="text-white" />}
                             </div>
-                            <span className={`text-[13px] ${checked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item}</span>
+                            <span className={`text-[13px] ${checked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.nombre}</span>
                           </div>
                         )
                       })}
                     </div>
                   </div>
                 )}
+
+                {checklistCierre.length === 0 && (
+                  <div className="text-[12.5px] text-slate-400 bg-slate-50 rounded-[9px] p-3 border border-slate-200">
+                    Sin checklist configurado para este tipo de equipo. Ve a Configuración → Tipos de equipo para agregar actividades.
+                  </div>
+                )}
+
                 {/* Actividades libres */}
                 <div>
                   <label className={labelCls}>Actividades adicionales <span className="text-slate-300 font-normal normal-case">(texto libre)</span></label>
                   <textarea value={cierreForm.actividades} onChange={e => setCierreForm(f => ({ ...f, actividades: e.target.value }))}
                     placeholder="Repuestos usados, observaciones, procedimientos adicionales..." rows={3}
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#2EB5D4] resize-none" />
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#2EB5D4] resize-none placeholder:text-slate-400" />
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>Técnico que cierra</label>
@@ -522,8 +571,8 @@ export default function MantenimientosClient({
                     <label className={labelCls}>Resultado</label>
                     <select value={cierreForm.resultado} onChange={e => setCierreForm(f => ({ ...f, resultado: e.target.value }))}
                       className={inputCls}>
-                      <option value="disponible">Equipo disponible</option>
-                      <option value="baja">Dar de baja</option>
+                      <option value="disponible">✅ Equipo disponible</option>
+                      <option value="baja">🗑️ Dar de baja</option>
                     </select>
                   </div>
                 </div>
@@ -535,7 +584,7 @@ export default function MantenimientosClient({
                 </button>
                 <button onClick={confirmarCierre} disabled={saving}
                   className="px-5 py-2.5 bg-[#0F7B55] text-white rounded-[9px] text-[13px] font-semibold hover:opacity-90 disabled:opacity-50">
-                  {saving ? 'Guardando...' : <span className="inline-flex items-center gap-2"><CheckCircle2 size={14} />Confirmar cierre</span>}
+                  {saving ? 'Guardando...' : '✓ Confirmar cierre'}
                 </button>
               </div>
             </div>

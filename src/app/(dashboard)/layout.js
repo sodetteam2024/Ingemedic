@@ -15,10 +15,15 @@ export default async function DashboardLayout({ children }) {
     .eq('email', user.email)
     .single()
 
+  const { data: empresa } = await supabase
+    .from('configuracion_empresa')
+    .select('logo_url, razon_social')
+    .single()
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC]">
-      <Sidebar usuario={usuario} />
-      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
+      <Sidebar usuario={usuario} empresa={empresa} />
+      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden pb-20 md:pb-0">
         {children}
       </main>
     </div>
