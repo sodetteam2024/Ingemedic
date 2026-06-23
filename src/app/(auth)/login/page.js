@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -9,7 +10,16 @@ export default function LoginPage() {
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
   const [showPass, setShowPass]     = useState(false)
+  const [empresa, setEmpresa]       = useState(null)
   const router = useRouter()
+
+  useEffect(() => {
+    createClient()
+      .from('configuracion_empresa')
+      .select('logo_url, razon_social')
+      .single()
+      .then(({ data }) => { if (data) setEmpresa(data) })
+  }, [])
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -59,14 +69,21 @@ export default function LoginPage() {
         <div className="relative z-10 text-center max-w-[340px]">
           <div className="w-[140px] h-[140px] rounded-[20px] mx-auto mb-8 flex items-center justify-center overflow-hidden"
             style={{background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)'}}>
-            <img src="/logo.png" alt="Ingemedic" className="max-w-[120px] max-h-[120px] object-contain"
-              onError={e => e.target.style.display='none'} />
+            <Image
+              src={empresa?.logo_url || '/logo.png'}
+              alt={empresa?.razon_social || 'Logo'}
+              width={120}
+              height={120}
+              className="object-contain"
+              style={{ width: 'auto', height: '120px', maxWidth: '120px' }}
+              priority
+            />
           </div>
           <p className="text-[11px] font-semibold tracking-[0.16em] uppercase text-[#2EB5D4] mb-3">
             Plataforma operativa
           </p>
           <h1 className="text-[22px] font-bold text-white mb-2">
-            Ingemedic de Colombia S.A.S.
+            {empresa?.razon_social || 'Ingemedic de Colombia S.A.S.'}
           </h1>
           <p className="text-[14px] font-light text-white/65 leading-relaxed">
             Gestión de equipos biomédicos especializados en tiempo real
