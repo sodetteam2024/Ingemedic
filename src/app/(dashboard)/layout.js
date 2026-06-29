@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/layout/Sidebar'
+import TourWidget from '@/components/tour/TourWidget'
 
 export default async function DashboardLayout({ children }) {
   const supabase = await createClient()
@@ -25,6 +26,7 @@ export default async function DashboardLayout({ children }) {
       <Sidebar usuario={usuario} empresa={empresa} />
       <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden pb-20 md:pb-0">
         {children}
+        <TourWidget />
       </main>
     </div>
   )

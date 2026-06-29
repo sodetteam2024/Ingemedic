@@ -9,9 +9,12 @@ export default async function ClientesPage() {
     { data: departamentos },
     { data: municipios },
   ] = await Promise.all([
-    supabase.from('clientes').select('*, municipio:municipios(id, nombre, departamento_id), departamento:departamentos(id, nombre)').order('nombre'),
-    supabase.from('departamentos').select('*').order('nombre'),
-    supabase.from('municipios').select('*').order('nombre'),
+    supabase.from('clientes')
+      .select('*, municipio:municipios(id, nombre), departamento:departamentos(id, nombre)')
+      .eq('activo', true)
+      .order('nombre'),
+    supabase.from('departamentos').select('*').eq('activo', true).order('nombre'),
+    supabase.from('municipios').select('*').eq('activo', true).order('nombre'),
   ])
 
   return (

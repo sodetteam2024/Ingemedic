@@ -6,40 +6,46 @@ export default async function MantenimientosPage() {
 
   const [
     { data: mantenimientos },
-    { data: estados },
     { data: tipos },
-    { data: categorias },
-    { data: tiposEquipo },
     { data: equipos },
-    { data: checklist },
+    { data: listas },
   ] = await Promise.all([
     supabase.from('mantenimientos').select(`
       *,
-      equipo:equipos(id, codigo, serial,
-        tipo_equipo:tipos_equipo(id, marca, modelo,
+      equipo:equipos(
+        id, codigo, serial,
+        tipo_equipo:tipos_equipo(id, nombre, atributos,
           categoria:categorias_equipo(id, nombre)
-        )
+        ),
+        estado:estados_equipo(id, nombre)
       ),
       estado:estados_mantenimiento(id, nombre),
-      tipo:tipos_mantenimiento(id, nombre)
-    `).order('fecha_apertura', { ascending: false }),
-    supabase.from('estados_mantenimiento').select('*'),
-    supabase.from('tipos_mantenimiento').select('*'),
-    supabase.from('categorias_equipo').select('*').eq('activo', true).order('nombre'),
-    supabase.from('tipos_equipo').select('*, categoria:categorias_equipo(id, nombre), lista:listas_mantenimiento(id, nombre)').eq('activo', true).order('marca'),
-    supabase.from('equipos').select('*, tipo_equipo:tipos_equipo(id, marca, modelo, categoria:categorias_equipo(id, nombre))').eq('activo', true),
-    supabase.from('actividades_lista_mantenimiento').select('*').eq('activo', true).order('orden'),
+      tipo:tipos_mantenimiento(id, nombre),
+      actividades:actividades_mantenimiento(
+        id, descripcion, completado, observaciones, fecha, archivo_url,
+        adjuntos:adjuntos_actividad_mantenimiento(id, nombre, url, tipo)
+      )
+    `).order('fecha_creacion', { ascending: false }),
+    supabase.from('tipos_mantenimiento').select('*').eq('activo', true).order('nombre'),
+    supabase.from('equipos').select(`
+      id, codigo, serial,
+      tipo_equipo:tipos_equipo(id, nombre, atributos,
+        categoria:categorias_equipo(id, nombre)
+      ),
+      estado:estados_equipo(id, nombre)
+    `).order('codigo'),
+    supabase.from('listas_mantenimiento').select(`
+      id, nombre, descripcion,
+      actividades:actividades_lista_mantenimiento(id, nombre, orden)
+    `).eq('activo', true).order('nombre'),
   ])
 
   return (
     <MantenimientosClient
       mantenimientosIniciales={mantenimientos || []}
-      estados={estados || []}
       tipos={tipos || []}
-      categorias={categorias || []}
-      tiposEquipo={tiposEquipo || []}
       equipos={equipos || []}
-      checklist={checklist || []}
+      listas={listas || []}
     />
   )
 }

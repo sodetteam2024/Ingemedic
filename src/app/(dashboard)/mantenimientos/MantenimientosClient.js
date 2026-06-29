@@ -1,500 +1,818 @@
 'use client'
-import { useState, useMemo } from 'react'
-import { createClient } from '@/lib/supabase'
+import { useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Plus, X, CheckCircle2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase'
+import {
+  Plus, X, Search, Wrench, CheckCircle2,
+  AlertTriangle, Edit3,
+  Download, Paperclip
+} from 'lucide-react'
 
-const TIPO_ID = {
-  preventivo: '1618f69b-f062-478b-a5c8-fc42d20088d0',
-  correctivo:  '311ee6dc-7311-457d-91a7-7ac01208cb24',
-}
-const ESTADO_ID = {
-  abierto:    '9c71ba4d-e82d-4714-b2fb-4cc242cd47be',
-  en_proceso: 'eef1b963-5bf5-4be7-85ab-312d9605234d',
-  cerrado:    '08136bd6-f134-406a-98e9-2132516edd7f',
-}
-
-function calcDias(fechaApertura, fechaCierre) {
-  const ini = new Date(fechaApertura)
-  const fin = fechaCierre ? new Date(fechaCierre) : new Date()
-  return Math.max(0, Math.round((fin - ini) / (1000 * 60 * 60 * 24)))
+const ESTADOS = {
+  Abierto:   '9c71ba4d-e82d-4714-b2fb-4cc242cd47be',
+  EnProceso: 'eef1b963-5bf5-4be7-85ab-312d9605234d',
+  Cerrado:   '08136bd6-f134-406a-98e9-2132516edd7f',
 }
 
-export default function MantenimientosClient({
-  mantenimientosIniciales, estados, tipos,
-  categorias, tiposEquipo, equipos, checklist: checklistInicial
-}) {
+const ESTADO_EQUIPO = {
+  Disponible:      'f33e7c6f-0f81-484e-9f0a-93fd28f9c414',
+  EnMantenimiento: 'edf159bf-6402-4991-a673-ade689ded77e',
+  Baja:            '1be9843f-bcbf-46f2-bb6c-5a487225b8c3',
+}
+
+const ESTADO_STYLES = {
+  'Abierto':    { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
+  'En proceso': { bg: '#EFF6FF', color: '#1D4ED8', dot: '#3B82F6' },
+  'Cerrado':    { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+}
+
+function EstadoBadge({ nombre }) {
+  const s = ESTADO_STYLES[nombre] || ESTADO_STYLES['Abierto']
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
+      style={{ background: s.bg, color: s.color }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }} />
+      {nombre}
+    </span>
+  )
+}
+
+function TipoBadge({ nombre }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold ${
+      nombre === 'Correctivo' ? 'bg-[#FEF2F2] text-[#D81B43]' : 'bg-[#E8F7FB] text-[#0E86A0]'
+    }`}>
+      {nombre === 'Correctivo' ? <AlertTriangle size={9} /> : <Wrench size={9} />}
+      {nombre}
+    </span>
+  )
+}
+
+function nombreEquipo(eq) {
+  return eq?.tipo_equipo?.atributos?.nombre || eq?.tipo_equipo?.nombre || '—'
+}
+
+const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#D81B43] bg-white transition-colors placeholder:text-slate-400'
+const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5'
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
+
+export default function MantenimientosClient({ mantenimientosIniciales, tipos, equipos, listas }) {
   const router   = useRouter()
   const supabase = createClient()
 
-  const [mants, setMants]           = useState(mantenimientosIniciales)
-  const [vista, setVista]           = useState('activos')
-  const [search, setSearch]         = useState('')
-  const [drawer, setDrawer]         = useState(null)
-  const [modalNuevo, setModalNuevo] = useState(false)
-  const [modalCierre, setModalCierre] = useState(null)
-  const [checklistCierre, setChecklistCierre] = useState([]) // actividades del tipo del equipo
-  const [saving, setSaving]         = useState(false)
-  const [toast, setToast]           = useState(null)
-
+  const [mantenimientos, setMantenimientos] = useState(mantenimientosIniciales || [])
+  const [search, setSearch]                 = useState('')
+  const [filtroEstado, setFiltroEstado]     = useState('')
+  const [filtroTipo, setFiltroTipo]         = useState('')
+  const [drawer, setDrawer]                 = useState(null)
+  const [modal, setModal]                   = useState(false)
+  const [modalCierre, setModalCierre]       = useState(null)
+  const [saving, setSaving]                 = useState(false)
+  const [toast, setToast]                   = useState(null)
+  const [uploading, setUploading]           = useState({})
   const [form, setForm] = useState({
-    tipo_id: TIPO_ID.preventivo,
-    cat_id: '', tipo_equipo_id: '', equipo_id: '',
-    tecnico: '', observaciones: '',
+    equipo_id: '', tipo_mantenimiento_id: '', tecnico: '',
+    observaciones_cliente: '', lista_id: '',
   })
-
   const [cierreForm, setCierreForm] = useState({
-    actividades: '', tecnico: '', resultado: 'disponible',
-    checklist: {},
+    actividades: '', tecnico: '', fecha_cierre: '', resultado: 'disponible',
   })
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
-    setTimeout(() => setToast(null), 3000)
+    setTimeout(() => setToast(null), 3200)
   }
 
-  const activos  = useMemo(() => mants.filter(m => m.en_curso), [mants])
-  const cerrados = useMemo(() => mants.filter(m => !m.en_curso), [mants])
-
-  const tiposFiltrados = useMemo(() =>
-    form.cat_id ? tiposEquipo.filter(t => t.categoria_id === form.cat_id) : [],
-    [tiposEquipo, form.cat_id]
-  )
-
-  const equiposFiltrados = useMemo(() =>
-    form.tipo_equipo_id ? equipos.filter(e => e.tipo_equipo?.id === form.tipo_equipo_id) : [],
-    [equipos, form.tipo_equipo_id]
-  )
-
-  const mantsFiltrados = useMemo(() => {
-    const lista = vista === 'activos' ? activos : cerrados
-    return lista.filter(m =>
-      !search || [m.codigo, m.equipo?.serial, m.equipo?.codigo, m.tecnico,
-        m.equipo?.tipo_equipo?.marca, m.equipo?.tipo_equipo?.modelo]
-        .some(v => v?.toLowerCase().includes(search.toLowerCase()))
-    )
-  }, [vista, activos, cerrados, search])
-
   const stats = useMemo(() => ({
-    activos:     activos.length,
-    correctivos: activos.filter(m => m.tipo_id === TIPO_ID.correctivo).length,
-    preventivos: activos.filter(m => m.tipo_id === TIPO_ID.preventivo).length,
-    cerrados:    cerrados.length,
-  }), [activos, cerrados])
+    total:       (mantenimientos || []).length,
+    abiertos:    (mantenimientos || []).filter(m => m.estado?.nombre === 'Abierto').length,
+    enProceso:   (mantenimientos || []).filter(m => m.estado?.nombre === 'En proceso').length,
+    cerrados:    (mantenimientos || []).filter(m => m.estado?.nombre === 'Cerrado').length,
+    correctivos: (mantenimientos || []).filter(m => m.tipo?.nombre === 'Correctivo').length,
+  }), [mantenimientos])
 
-  // ── CREAR ──────────────────────────────────────────────────
-  async function guardarMant() {
-    if (!form.equipo_id) { showToast('Selecciona una unidad de equipo', 'error'); return }
+  const filtrados = useMemo(() => {
+    return (mantenimientos || []).filter(m => {
+      const mq = !search || [m.codigo, nombreEquipo(m.equipo), m.equipo?.serial, m.tecnico]
+        .some(v => v?.toLowerCase().includes(search.toLowerCase()))
+      const me = !filtroEstado || m.estado?.nombre === filtroEstado
+      const mt = !filtroTipo   || m.tipo?.nombre   === filtroTipo
+      return mq && me && mt
+    })
+  }, [mantenimientos, search, filtroEstado, filtroTipo])
+
+  // ── CREAR MANTENIMIENTO ──────────────────────────────────
+  async function crearMantenimiento() {
+    if (!form.equipo_id)             { showToast('Selecciona un equipo', 'error'); return }
+    if (!form.tipo_mantenimiento_id) { showToast('Selecciona el tipo', 'error'); return }
     setSaving(true)
 
-    const codigo = `MAN-${new Date().getFullYear()}-${String(mants.length + 1).padStart(3, '0')}`
+    // Verificar que no haya mantenimiento activo para ese equipo
+    const { data: activo } = await supabase.from('mantenimientos')
+      .select('id').eq('equipo_id', form.equipo_id)
+      .in('estado_id', [ESTADOS.Abierto, ESTADOS.EnProceso])
+      .maybeSingle()
+    if (activo) {
+      showToast('Este equipo ya tiene un mantenimiento activo', 'error')
+      setSaving(false); return
+    }
+
+    const { count } = await supabase.from('mantenimientos').select('*', { count: 'exact', head: true })
+    const codigo = `MAN-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(3, '0')}`
 
     const { data, error } = await supabase.from('mantenimientos').insert({
       codigo,
       equipo_id:             form.equipo_id,
-      tipo_mantenimiento_id: form.tipo_id,
-      estado_id:             ESTADO_ID.abierto,
-      tecnico:               form.tecnico,
-      observaciones_cliente: form.observaciones,
+      tipo_mantenimiento_id: form.tipo_mantenimiento_id,
+      estado_id:             ESTADOS.EnProceso, // directo a En proceso
+      tecnico:               form.tecnico || null,
       fecha_apertura:        new Date().toISOString().split('T')[0],
+      observaciones_cliente: form.observaciones_cliente || null,
       en_curso:              true,
-    }).select(`
+    })
+    .select(`
       *,
       equipo:equipos(id, codigo, serial,
-        tipo_equipo:tipos_equipo(id, marca, modelo,
-          categoria:categorias_equipo(id, nombre)
-        )
+        tipo_equipo:tipos_equipo(id, nombre, atributos, categoria:categorias_equipo(id, nombre)),
+        estado:estados_equipo(id, nombre)
       ),
       estado:estados_mantenimiento(id, nombre),
-      tipo:tipos_mantenimiento(id, nombre)
-    `).single()
+      tipo:tipos_mantenimiento(id, nombre),
+      actividades:actividades_mantenimiento(id, descripcion, completado, observaciones, fecha, archivo_url, adjuntos:adjuntos_actividad_mantenimiento(id, nombre, url, tipo))
+    `)
+    .single()
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
 
-    // Marcar equipo en mantenimiento
-    await supabase.from('equipos')
-      .update({ estado_id: 'edf159bf-6402-4991-a673-ade689ded77e' })
-      .eq('id', form.equipo_id)
+    // Cambiar estado del equipo a "En mantenimiento"
+    await supabase.from('equipos').update({ estado_id: ESTADO_EQUIPO.EnMantenimiento }).eq('id', form.equipo_id)
 
-    setMants(prev => [data, ...prev])
-    showToast('Equipo ingresado a taller')
-    setSaving(false)
-    setModalNuevo(false)
-    setForm({ tipo_id: TIPO_ID.preventivo, cat_id: '', tipo_equipo_id: '', equipo_id: '', tecnico: '', observaciones: '' })
-  }
-
-  // ── ABRIR CIERRE ──────────────────────────────────────────
-  async function abrirCierre(m) {
-    // Buscar la lista asignada al tipo de equipo
-    const tipoEquipoId = m.equipo?.tipo_equipo?.id
-    let actividades = []
-
-    if (tipoEquipoId) {
-      // 1. Buscar el tipo de equipo para obtener su lista_mantenimiento_id
-      const { data: tipoData } = await supabase
-        .from('tipos_equipo')
-        .select('lista_mantenimiento_id')
-        .eq('id', tipoEquipoId)
-        .single()
-
-      if (tipoData?.lista_mantenimiento_id) {
-        // 2. Cargar actividades de esa lista
-        const { data } = await supabase
-          .from('actividades_lista_mantenimiento')
-          .select('*')
-          .eq('lista_id', tipoData.lista_mantenimiento_id)
-          .eq('activo', true)
-          .order('orden')
-        actividades = data || []
+    // Insertar actividades de la lista seleccionada
+    if (form.lista_id) {
+      const lista = listas.find(l => l.id === form.lista_id)
+      const acts  = lista?.actividades?.sort((a, b) => a.orden - b.orden) || []
+      if (acts.length > 0) {
+        const { data: actsCreadas } = await supabase.from('actividades_mantenimiento').insert(
+          acts.map(a => ({
+            mantenimiento_id:  data.id,
+            checklist_item_id: null,
+            descripcion:       a.nombre,
+            completado:        false,
+          }))
+        ).select('id, descripcion, completado, observaciones, fecha, archivo_url')
+        data.actividades = actsCreadas || []
       }
     }
 
-    setChecklistCierre(actividades)
-    const chkObj = {}
-    actividades.forEach(a => chkObj[a.id] = false)
-    setCierreForm({ actividades: '', tecnico: m.tecnico || '', resultado: 'disponible', checklist: chkObj })
-    setModalCierre(m)
-    setDrawer(null)
+    setMantenimientos(prev => [data, ...prev])
+    setSaving(false)
+    setModal(false)
+    setDrawer(data)
+    showToast('Mantenimiento abierto — equipo en mantenimiento')
   }
 
-  // ── CONFIRMAR CIERRE ──────────────────────────────────────
-  async function confirmarCierre() {
-    if (!modalCierre) return
+  // ── TOGGLE ACTIVIDAD ─────────────────────────────────────
+  async function toggleActividad(act) {
+    const nuevoEstado = !act.completado
+    const { error } = await supabase.from('actividades_mantenimiento')
+      .update({ completado: nuevoEstado, fecha: nuevoEstado ? new Date().toISOString() : null })
+      .eq('id', act.id)
+    if (error) { showToast('Error: ' + error.message, 'error'); return }
+    const cambios = { completado: nuevoEstado, fecha: nuevoEstado ? new Date().toISOString() : null }
+    actualizarActividad(act.id, cambios)
+    // También actualizar modalCierre si está abierto
+    if (modalCierre) {
+      setModalCierre(prev => ({
+        ...prev,
+        actividades: (prev.actividades || []).map(a => a.id === act.id ? { ...a, ...cambios } : a)
+      }))
+    }
+  }
+
+  // ── GUARDAR OBSERVACIÓN ACTIVIDAD ────────────────────────
+  async function guardarObservacion(act, obs) {
+    const { error } = await supabase.from('actividades_mantenimiento')
+      .update({ observaciones: obs }).eq('id', act.id)
+    if (error) { showToast('Error: ' + error.message, 'error'); return }
+    actualizarActividad(act.id, { observaciones: obs })
+    if (modalCierre) {
+      setModalCierre(prev => ({
+        ...prev,
+        actividades: (prev.actividades || []).map(a => a.id === act.id ? { ...a, observaciones: obs } : a)
+      }))
+    }
+    showToast('Observación guardada')
+  }
+
+  // ── SUBIR ADJUNTO ────────────────────────────────────────
+  async function subirAdjunto(act, file, mantId = null) {
+    const idMant = mantId || drawer?.id
+    if (!idMant) { showToast('Error: mantenimiento no identificado', 'error'); return }
+    setUploading(prev => ({ ...prev, [act.id]: true }))
+    const ext  = file.name.split('.').pop().toLowerCase()
+    const path = `adjuntos/${idMant}_${act.id}_${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('mantenimientos-adjuntos').upload(path, file)
+    if (upErr) { showToast('Error subiendo archivo: ' + upErr.message, 'error'); setUploading(prev => ({ ...prev, [act.id]: false })); return }
+
+    const { data: { publicUrl } } = supabase.storage.from('mantenimientos-adjuntos').getPublicUrl(path)
+
+    const { data: adj, error } = await supabase.from('adjuntos_actividad_mantenimiento').insert({
+      actividad_id: act.id,
+      nombre:       file.name,
+      url:          publicUrl,
+      tipo:         file.type,
+    }).select('id, nombre, url, tipo').single()
+
+    if (error) { showToast('Error: ' + error.message, 'error'); setUploading(prev => ({ ...prev, [act.id]: false })); return }
+
+    const adjuntos = [...(act.adjuntos || []), adj]
+    actualizarActividad(act.id, { adjuntos })
+    if (modalCierre) {
+      setModalCierre(prev => ({
+        ...prev,
+        actividades: (prev.actividades || []).map(a => a.id === act.id ? { ...a, adjuntos } : a)
+      }))
+    }
+    setUploading(prev => ({ ...prev, [act.id]: false }))
+    showToast('Archivo adjuntado')
+  }
+
+  function actualizarActividad(actId, cambios) {
+    const updFn = m => ({
+      ...m,
+      actividades: (m.actividades || []).map(a => a.id === actId ? { ...a, ...cambios } : a)
+    })
+    setMantenimientos(prev => prev.map(m => m.id === drawer?.id ? updFn(m) : m))
+    if (drawer) setDrawer(prev => updFn(prev))
+  }
+
+  // ── CERRAR MANTENIMIENTO ─────────────────────────────────
+  async function cerrarMantenimiento() {
+    if (!modalCierre.actividades?.length && !cierreForm.actividades?.trim()) {
+      showToast('Registra las actividades realizadas', 'error'); return
+    }
     setSaving(true)
-    const hoy = new Date().toISOString().split('T')[0]
+
+    const estadoEquipoId = cierreForm.resultado === 'disponible' ? ESTADO_EQUIPO.Disponible : ESTADO_EQUIPO.Baja
 
     const { error } = await supabase.from('mantenimientos').update({
+      estado_id:         ESTADOS.Cerrado,
       en_curso:          false,
-      estado_id:         ESTADO_ID.cerrado,
-      fecha_cierre_real: hoy,
       actividades:       cierreForm.actividades,
-      tecnico:           cierreForm.tecnico,
+      tecnico:           cierreForm.tecnico || modalCierre.tecnico || null,
+      fecha_cierre:      cierreForm.fecha_cierre || new Date().toISOString().split('T')[0],
+      fecha_cierre_real: new Date().toISOString().split('T')[0],
     }).eq('id', modalCierre.id)
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
 
-    // Guardar ítems del checklist completados
-    const itemsCompletados = Object.entries(cierreForm.checklist)
-      .filter(([_, v]) => v)
-      .map(([id]) => id)
+    await supabase.from('equipos').update({ estado_id: estadoEquipoId }).eq('id', modalCierre.equipo_id)
 
-    if (itemsCompletados.length > 0) {
-      await supabase.from('checklist_mantenimiento_items')?.insert(
-        itemsCompletados.map(checklistId => ({
-          mantenimiento_id: modalCierre.id,
-          checklist_item_id: checklistId,
-          completado: true,
-          fecha: hoy,
-        }))
-      )
+    const nuevoEstado = { id: ESTADOS.Cerrado, nombre: 'Cerrado' }
+    const updCambios = {
+      estado: nuevoEstado, en_curso: false,
+      actividades_texto: cierreForm.actividades,
+      tecnico: cierreForm.tecnico || modalCierre.tecnico,
+      fecha_cierre: cierreForm.fecha_cierre || new Date().toISOString().split('T')[0],
     }
-
-    // Actualizar estado del equipo
-    const nuevoEstadoEq = cierreForm.resultado === 'disponible'
-      ? 'f33e7c6f-0f81-484e-9f0a-93fd28f9c414'
-      : '1be9843f-bcbf-46f2-bb6c-5a487225b8c3'
-
-    await supabase.from('equipos')
-      .update({ estado_id: nuevoEstadoEq })
-      .eq('id', modalCierre.equipo_id)
-
-    setMants(prev => prev.map(m =>
-      m.id === modalCierre.id
-        ? { ...m, en_curso: false, fecha_cierre_real: hoy, actividades: cierreForm.actividades }
-        : m
-    ))
-    showToast(cierreForm.resultado === 'disponible' ? 'Equipo devuelto a disponible' : 'Equipo dado de baja')
-    setSaving(false)
-    setModalCierre(null)
+    setMantenimientos(prev => prev.map(m => m.id === modalCierre.id ? { ...m, ...updCambios } : m))
+    if (drawer?.id === modalCierre.id) setDrawer(prev => ({ ...prev, ...updCambios }))
+    setSaving(false); setModalCierre(null)
+    showToast('Mantenimiento cerrado ✓')
     router.refresh()
   }
 
-  const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5'
-  const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#2EB5D4] bg-white placeholder:text-slate-400'
+  // ── GENERAR PDF ACTA ─────────────────────────────────────
+  async function generarActaPDF(mant) {
+    // Traer datos frescos de BD incluyendo actividades y adjuntos
+    const { data: mantFresh } = await supabase.from('mantenimientos').select(`
+      *,
+      equipo:equipos(id, codigo, serial,
+        tipo_equipo:tipos_equipo(id, nombre, atributos, categoria:categorias_equipo(id, nombre)),
+        estado:estados_equipo(id, nombre)
+      ),
+      estado:estados_mantenimiento(id, nombre),
+      tipo:tipos_mantenimiento(id, nombre),
+      actividades:actividades_mantenimiento(
+        id, descripcion, completado, observaciones, fecha,
+        adjuntos:adjuntos_actividad_mantenimiento(id, nombre, url, tipo)
+      )
+    `).eq('id', mant.id).single()
+
+    const m = mantFresh || mant
+
+    const { default: jsPDF } = await import('jspdf')
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const W = 210, M = 15, CW = W - M * 2
+    const HEADER_H = 28
+    let logoEndX = M // donde termina el logo, para arrancar la franja roja
+
+    try {
+      const res  = await fetch(LOGO_URL)
+      const blob = await res.blob()
+      const b64  = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+      const dims = await new Promise(r => { const img = new window.Image(); img.onload = () => r({ w: img.naturalWidth, h: img.naturalHeight }); img.src = b64 })
+      const maxH = HEADER_H // logo llena toda la altura del header
+      const ratio = maxH / dims.h
+      const logoW = dims.w * ratio
+      const logoH = maxH
+      doc.addImage(b64, 'PNG', M + 2, M, logoW, logoH)
+      logoEndX = M + logoW + 6
+    } catch {
+      logoEndX = M + 4
+    }
+
+    // Franja roja — arranca justo después del logo
+    doc.setFillColor(216, 27, 67)
+    doc.rect(logoEndX, M, W - M - logoEndX, HEADER_H, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10.5); doc.setFont('helvetica', 'bold')
+    doc.text('REPORTE TECNICO EQUIPOS BIOMEDICOS', logoEndX + 3, M + 9)
+    doc.setFontSize(8.5); doc.setFont('helvetica', 'normal')
+    doc.text(`N\u00b0 ${m.codigo}`, logoEndX + 3, M + 16)
+    doc.text(`Fecha: ${m.fecha_apertura || new Date().toISOString().split('T')[0]}`, W - M - 2, M + 16, { align: 'right' })
+    doc.text(m.tipo?.nombre || '', logoEndX + 3, M + 23)
+
+    let y = M + HEADER_H + 7
+
+    // Sección helper
+    function seccion(titulo, campos, startY) {
+      doc.setFillColor(240, 240, 240)
+      doc.rect(M, startY, CW, 6, 'F')
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+      doc.text(titulo, M + 2, startY + 4)
+      let cy = startY + 9
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
+      campos.forEach(([label, value]) => {
+        doc.setTextColor(100, 100, 100); doc.text(label + ':', M + 2, cy)
+        doc.setTextColor(30, 30, 30); doc.text(String(value || '—'), M + 40, cy)
+        cy += 5.5
+      })
+      return cy + 2
+    }
+
+    // Datos equipo
+    y = seccion('DATOS DEL EQUIPO', [
+      ['Equipo',      nombreEquipo(m.equipo)],
+      ['Serial',      m.equipo?.serial],
+      ['Código',      m.equipo?.codigo],
+      ['Categoría',   m.equipo?.tipo_equipo?.categoria?.nombre],
+    ], y)
+
+    // Datos cliente / orden (si aplica)
+    y = seccion('DATOS DEL SERVICIO', [
+      ['Código',      m.codigo],
+      ['Tipo',        m.tipo?.nombre],
+      ['Técnico',     m.tecnico],
+      ['Apertura',    m.fecha_apertura],
+      ['Cierre',      m.fecha_cierre || 'En proceso'],
+    ], y)
+
+    // Observaciones cliente
+    if (m.observaciones_cliente) {
+      y = seccion('OBSERVACIONES DEL CLIENTE', [], y)
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8)
+      const lines = doc.splitTextToSize(m.observaciones_cliente, CW - 4)
+      doc.text(lines, M + 2, y)
+      y += lines.length * 4.5 + 4
+    }
+
+    // Actividades checklist
+    if (m.actividades?.length > 0) {
+      doc.setFillColor(240, 240, 240)
+      doc.rect(M, y, CW, 6, 'F')
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+      doc.text('ACTIVIDADES DE MANTENIMIENTO', M + 2, y + 4)
+      y += 9
+
+      const completadas = m.actividades.filter(a => a.completado).length
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+      doc.setTextColor(100, 100, 100)
+      doc.text(`Completadas: ${completadas}/${m.actividades.length}`, M + 2, y)
+      y += 6
+
+      for (const act of m.actividades) {
+        if (y > 250) { doc.addPage(); y = M }
+        doc.setDrawColor(150, 150, 150)
+        doc.rect(M + 2, y - 3.5, 4, 4)
+        if (act.completado) {
+          doc.setTextColor(15, 123, 85); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+          doc.text('X', M + 3, y - 0.5)
+        }
+        doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', act.completado ? 'bold' : 'normal')
+        doc.text(act.descripcion || '', M + 9, y)
+        y += 5
+        if (act.observaciones) {
+          doc.setTextColor(80, 80, 80); doc.setFontSize(7.5); doc.setFont('helvetica', 'italic')
+          const obsLines = doc.splitTextToSize(`Obs: ${act.observaciones}`, CW - 12)
+          doc.text(obsLines, M + 9, y)
+          y += obsLines.length * 4 + 1
+        }
+        // Imágenes adjuntas
+        const adjImgs = (act.adjuntos || []).filter(a => a.tipo?.startsWith('image/') || /\.(png|jpg|jpeg|webp)$/i.test(a.nombre))
+        for (const img of adjImgs) {
+          try {
+            if (y > 220) { doc.addPage(); y = M }
+            const res  = await fetch(img.url)
+            const blob = await res.blob()
+            const b64  = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+            const dims = await new Promise(r => { const i = new window.Image(); i.onload = () => r({ w: i.naturalWidth, h: i.naturalHeight }); i.src = b64 })
+            const ext  = img.tipo === 'image/png' ? 'PNG' : 'JPEG'
+            const maxImgW = 80, maxImgH = 55
+            const ratio = Math.min(maxImgW / dims.w, maxImgH / dims.h)
+            const imgW = dims.w * ratio
+            const imgH = dims.h * ratio
+            doc.addImage(b64, ext, M + 9, y, imgW, imgH, undefined, 'FAST')
+            doc.setTextColor(130, 130, 130); doc.setFontSize(7); doc.setFont('helvetica', 'normal')
+            doc.text(img.nombre, M + 9, y + imgH + 3)
+            y += imgH + 7
+          } catch {}
+        }
+        y += 3
+      }
+      y += 2
+    }
+
+    // Observaciones generales / actividades texto
+    const obsGeneral = m.actividades_texto || m.actividades
+    if (typeof obsGeneral === 'string' && obsGeneral) {
+      if (y > 240) { doc.addPage(); y = M }
+      y = seccion('OBSERVACIONES GENERALES', [], y)
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8)
+      const lines = doc.splitTextToSize(obsGeneral, CW - 4)
+      doc.text(lines, M + 2, y)
+      y += lines.length * 4.5 + 4
+    }
+
+    // Estado del equipo
+    if (y > 240) { doc.addPage(); y = M }
+    doc.setFillColor(240, 240, 240)
+    doc.rect(M, y, CW, 6, 'F')
+    doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+    doc.text('ESTADO DEL EQUIPO AL CIERRE', M + 2, y + 4)
+    y += 9
+    const estadoTexto = m.estado?.nombre === 'Cerrado'
+      ? (m.resultado === 'baja' ? 'DADO DE BAJA' : 'OPERATIVO — DISPONIBLE')
+      : 'EN PROCESO DE MANTENIMIENTO'
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold')
+    doc.setTextColor(m.estado?.nombre === 'Cerrado' ? 15 : 180, m.estado?.nombre === 'Cerrado' ? 123 : 100, 85)
+    doc.text(estadoTexto, M + 2, y)
+    y += 10
+
+    // Firmas
+    if (y > 230) { doc.addPage(); y = M }
+    y = Math.max(y, 240)
+    doc.setDrawColor(200, 200, 200)
+    doc.line(M, y, M + CW / 2 - 5, y)
+    doc.line(M + CW / 2 + 5, y, M + CW, y)
+    doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+    doc.text('Representante del Servicio', M + 2, y + 5)
+    doc.text(m.tecnico || '________________', M + 2, y + 10)
+    doc.text('Recibimos en Conformidad', M + CW / 2 + 7, y + 5)
+    doc.text('Firma y Sello', M + CW / 2 + 7, y + 10)
+
+    doc.save(`Acta_Mantenimiento_${m.codigo}.pdf`)
+    showToast('PDF generado')
+  }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
       <div className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
-          <div className="text-[18px] font-bold text-[#1B3A6B]">Mantenimientos</div>
-          <div className="text-[12px] text-slate-400 mt-0.5">
-            {activos.length} equipo{activos.length !== 1 ? 's' : ''} en taller
-          </div>
+          <div className="text-[18px] font-bold text-slate-800">Mantenimientos</div>
+          <div className="text-[12px] text-slate-400 mt-0.5">{(mantenimientos || []).length} registros</div>
         </div>
-        <button onClick={() => setModalNuevo(true)}
-          className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#1B3A6B] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#1E4D8C] transition-colors">
-          <Plus size={14} strokeWidth={2.5} /> Ingresar equipo
+        <button data-tour="btn-nuevo-mantenimiento" onClick={() => { setForm({ equipo_id: '', tipo_mantenimiento_id: '', tecnico: '', observaciones_cliente: '', lista_id: '' }); setModal(true) }}
+          className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F]">
+          <Plus size={14} strokeWidth={2.5} /> Nuevo mantenimiento
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-3 flex-shrink-0">
           {[
-            { label: 'En taller ahora', value: stats.activos,     color: '#B45309', onClick: () => setVista('activos') },
-            { label: 'Correctivos',     value: stats.correctivos,  color: '#C0392B', onClick: () => setVista('activos') },
-            { label: 'Preventivos',     value: stats.preventivos,  color: '#2EB5D4', onClick: () => setVista('activos') },
-            { label: 'Historial total', value: stats.cerrados,     color: '#64748B', onClick: () => setVista('historial') },
+            { label: 'Total',       value: stats.total,       color: '#1E293B', f: '',           t: '' },
+            { label: 'Abiertos',    value: stats.abiertos,    color: '#B45309', f: 'Abierto',    t: '' },
+            { label: 'En proceso',  value: stats.enProceso,   color: '#1D4ED8', f: 'En proceso', t: '' },
+            { label: 'Cerrados',    value: stats.cerrados,    color: '#0F7B55', f: 'Cerrado',    t: '' },
+            { label: 'Correctivos', value: stats.correctivos, color: '#D81B43', f: '',           t: 'Correctivo' },
           ].map(s => (
-            <div key={s.label} onClick={s.onClick}
-              className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm cursor-pointer hover:border-[#2EB5D4] transition-all">
+            <div key={s.label}
+              onClick={() => s.t ? setFiltroTipo(p => p === s.t ? '' : s.t) : setFiltroEstado(p => p === s.f ? '' : s.f)}
+              className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${
+                (filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43]' : 'border-slate-200'
+              }`}>
               <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">{s.label}</div>
+              <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
             </div>
           ))}
         </div>
 
         {/* Filtros */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="relative flex-1 max-w-[300px]">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="relative flex-1 max-w-[320px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar equipo, serial, técnico..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#2EB5D4] bg-white" />
+              placeholder="Buscar por código, equipo o técnico..."
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
           </div>
-          <button onClick={() => setVista('activos')}
-            className={`px-3 py-2 text-[12.5px] font-medium rounded-[9px] border transition-all ${vista === 'activos' ? 'bg-[#1B3A6B] text-white border-[#1B3A6B]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#2EB5D4]'}`}>
-            🔧 En taller
-          </button>
-          <button onClick={() => setVista('historial')}
-            className={`px-3 py-2 text-[12.5px] font-medium rounded-[9px] border transition-all ${vista === 'historial' ? 'bg-[#1B3A6B] text-white border-[#1B3A6B]' : 'bg-white text-slate-500 border-slate-200 hover:border-[#2EB5D4]'}`}>
-            📋 Historial
-          </button>
+          <div className="flex gap-2">
+            {tipos.map(t => (
+              <button key={t.id} onClick={() => setFiltroTipo(p => p === t.nombre ? '' : t.nombre)}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all ${
+                  filtroTipo === t.nombre
+                    ? t.nombre === 'Correctivo' ? 'bg-[#D81B43] text-white' : 'bg-[#25A9E0] text-white'
+                    : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}>{t.nombre}</button>
+            ))}
+          </div>
+          {(filtroEstado || filtroTipo) && (
+            <button onClick={() => { setFiltroEstado(''); setFiltroTipo('') }}
+              className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-red-500">
+              <X size={12} /> Limpiar
+            </button>
+          )}
+          <div className="text-[12px] text-slate-400 ml-auto">{filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}</div>
         </div>
 
         {/* Tabla */}
-        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        <div data-tour="tabla-mantenimientos" className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
           <div className="overflow-auto flex-1">
             <table className="w-full border-collapse min-w-[800px]">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b-2 border-slate-200">
-                  {['ID','Equipo','Serial','Tipo','Técnico','Ingreso',
-                    vista === 'activos' ? 'Días' : 'Cierre',
-                    vista === 'activos' ? 'Acción' : 'Resultado'
-                  ].map(h => (
+                  {['Código', 'Equipo', 'Tipo', 'Técnico', 'Estado', 'Apertura', 'Cierre', 'Acciones'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {mantsFiltrados.length === 0 && (
+                {filtrados.length === 0 && (
                   <tr><td colSpan={8} className="text-center py-16 text-slate-400">
-                    {vista === 'activos' ? 'Sin equipos en taller' : 'Sin mantenimientos cerrados'}
+                    <Wrench className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                    <div className="font-semibold">{search || filtroEstado || filtroTipo ? 'Sin resultados' : 'Sin mantenimientos registrados'}</div>
                   </td></tr>
                 )}
-                {mantsFiltrados.map(m => {
-                  const dias   = calcDias(m.fecha_apertura, m.fecha_cierre_real)
-                  const esCorr = m.tipo_id === TIPO_ID.correctivo
-                  return (
-                    <tr key={m.id} onClick={() => setDrawer(m)}
-                      className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors"
-                      style={{ borderLeft: `3px solid ${esCorr ? '#C0392B' : '#2EB5D4'}` }}>
-                      <td className="px-4 py-3 font-mono text-[12px] text-slate-500">{m.codigo}</td>
-                      <td className="px-4 py-3">
-                        <div className="text-[13px] font-semibold text-slate-700">
-                          {m.equipo?.tipo_equipo?.marca} {m.equipo?.tipo_equipo?.modelo}
-                        </div>
-                        <div className="text-[11px] text-slate-400">{m.equipo?.tipo_equipo?.categoria?.nombre}</div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[12px] text-slate-500">{m.equipo?.serial || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${esCorr ? 'bg-red-50 text-red-600' : 'bg-[#E8F7FB] text-[#0E86A0]'}`}>
-                          {esCorr ? '⚠️ Correctivo' : '🔵 Preventivo'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-[12.5px] text-slate-500">{m.tecnico || '—'}</td>
-                      <td className="px-4 py-3 font-mono text-[12px] text-slate-400">{m.fecha_apertura}</td>
-                      <td className="px-4 py-3">
-                        {vista === 'activos'
-                          ? <span className="font-mono font-bold text-[13px] text-amber-600">{dias} d</span>
-                          : <span className="font-mono text-[12px] text-slate-400">{m.fecha_cierre_real || '—'}</span>
-                        }
-                      </td>
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        {vista === 'activos' ? (
-                          <button onClick={() => abrirCierre(m)}
-                            className="px-3 py-1.5 bg-[#0F7B55] text-white text-[11.5px] font-bold rounded-[7px] hover:opacity-80 transition-opacity">
-                            ✓ Cerrar
+                {filtrados.map(m => (
+                  <tr key={m.id} onClick={() => setDrawer(m)}
+                    className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${
+                      m.tipo?.nombre === 'Correctivo' && m.estado?.nombre !== 'Cerrado' ? 'border-l-4 border-l-[#D81B43]' : ''
+                    }`}>
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{m.codigo}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-[13px] font-semibold text-slate-700 truncate max-w-[160px]">{nombreEquipo(m.equipo)}</div>
+                      <div className="text-[11px] font-mono text-slate-400">{m.equipo?.serial}</div>
+                    </td>
+                    <td className="px-4 py-3"><TipoBadge nombre={m.tipo?.nombre} /></td>
+                    <td className="px-4 py-3 text-[12.5px] text-slate-500">{m.tecnico || '—'}</td>
+                    <td className="px-4 py-3"><EstadoBadge nombre={m.estado?.nombre} /></td>
+                    <td className="px-4 py-3 text-[12px] font-mono text-slate-400">{m.fecha_apertura || '—'}</td>
+                    <td className="px-4 py-3 text-[12px] font-mono text-slate-400">{m.fecha_cierre || '—'}</td>
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-2">
+                        {m.estado?.nombre === 'En proceso' && (
+                          <button onClick={() => { const mc = mantenimientos.find(x => x.id === m.id) || m; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: new Date().toISOString().split('T')[0], resultado: 'disponible' }) }}
+                            className="px-2.5 py-1 bg-[#D81B43] text-white text-[11px] font-bold rounded-[7px] hover:bg-[#B0172F]">
+                            🛠 Cerrar
                           </button>
-                        ) : (
-                          <span className={`text-[12px] font-semibold ${m.actividades ? 'text-[#0F7B55]' : 'text-slate-400'}`}>
-                            {m.actividades ? '✅ Completado' : '—'}
-                          </span>
                         )}
-                      </td>
-                    </tr>
-                  )
-                })}
+                        {m.estado?.nombre === 'Cerrado' && (
+                          <button onClick={() => generarActaPDF(m)}
+                            className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 text-slate-600 text-[11px] font-medium rounded-[7px] hover:border-[#D81B43] hover:text-[#D81B43]">
+                            <Download size={11} /> PDF
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      {/* DRAWER */}
+      {/* ── DRAWER ── */}
       {drawer && (
         <>
-          <div className="fixed inset-0 bg-[#0F2448]/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-full md:w-[480px] bg-white z-30 flex flex-col shadow-2xl">
-            <div className="px-6 py-4 border-b flex items-start justify-between flex-shrink-0 bg-[#1B3A6B]">
+          <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
+          <div className="fixed top-0 right-0 bottom-0 w-full md:w-[520px] bg-white z-30 flex flex-col shadow-2xl">
+            <div className={`px-6 py-4 border-b flex items-start justify-between flex-shrink-0 ${drawer.tipo?.nombre === 'Correctivo' ? 'bg-[#D81B43]' : 'bg-[#1D4ED8]'}`}>
               <div>
-                <div className="text-[15px] font-bold text-white font-mono">{drawer.codigo}</div>
-                <div className="text-[12px] text-white/50 mt-0.5">
-                  {drawer.equipo?.tipo_equipo?.marca} {drawer.equipo?.tipo_equipo?.modelo}
-                </div>
+                <div className="text-[11px] text-white/60">{drawer.tipo?.nombre} · {drawer.codigo}</div>
+                <div className="text-[15px] font-bold text-white">{nombreEquipo(drawer.equipo)}</div>
+                <div className="text-[12px] text-white/70 font-mono">{drawer.equipo?.serial}</div>
               </div>
-              <button onClick={() => setDrawer(null)} className="text-white/50 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
-                <X size={16} strokeWidth={2.5} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-              <div className="p-5">
-                <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Equipo</div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Modelo</div>
-                    <div className="text-[13.5px] font-semibold text-slate-700">{drawer.equipo?.tipo_equipo?.marca} {drawer.equipo?.tipo_equipo?.modelo}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Serial</div>
-                    <div className="font-mono text-[13px] text-[#1B3A6B] font-bold">{drawer.equipo?.serial}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Código</div>
-                    <div className="font-mono text-[13px] text-slate-600">{drawer.equipo?.codigo}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Categoría</div>
-                    <div className="text-[13px] text-slate-600">{drawer.equipo?.tipo_equipo?.categoria?.nombre || '—'}</div>
-                  </div>
-                </div>
-              </div>
-              <div className="p-5">
-                <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Mantenimiento</div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Tipo</div>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${drawer.tipo_id === TIPO_ID.correctivo ? 'bg-red-50 text-red-600' : 'bg-[#E8F7FB] text-[#0E86A0]'}`}>
-                      {drawer.tipo_id === TIPO_ID.correctivo ? '⚠️ Correctivo' : '🔵 Preventivo'}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Días en taller</div>
-                    <div className="text-[18px] font-extrabold text-amber-600 font-mono">{calcDias(drawer.fecha_apertura, drawer.fecha_cierre_real)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Técnico</div>
-                    <div className="text-[13.5px] text-slate-700">{drawer.tecnico || 'Sin asignar'}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Ingreso</div>
-                    <div className="font-mono text-[13px] text-slate-600">{drawer.fecha_apertura}</div>
-                  </div>
-                  {drawer.observaciones_cliente && (
-                    <div className="col-span-2">
-                      <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Motivo</div>
-                      <div className="text-[13px] text-slate-600 italic">“{drawer.observaciones_cliente}”</div>
-                    </div>
-                  )}
-                  {drawer.actividades && (
-                    <div className="col-span-2">
-                      <div className="text-[10.5px] font-semibold uppercase text-slate-400 mb-1">Actividades realizadas</div>
-                      <div className="text-[13px] text-slate-600">{drawer.actividades}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="px-5 py-4 border-t border-slate-200 flex gap-2 flex-shrink-0">
-              {drawer.en_curso && (
-                <button onClick={() => abrirCierre(drawer)}
-                  className="flex-1 py-2.5 bg-[#0F7B55] text-white rounded-[9px] text-[13px] font-semibold hover:opacity-90 transition-opacity">
-                  ✓ Cerrar mantenimiento
+              <div className="flex items-center gap-2">
+                {drawer.estado?.nombre === 'Cerrado' && (
+                  <button onClick={() => generarActaPDF(drawer)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 text-white text-[12px] font-semibold rounded-[7px] hover:bg-white/30">
+                    <Download size={13} /> Acta PDF
+                  </button>
+                )}
+                <button onClick={() => setDrawer(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                  <X size={16} />
                 </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+              {/* Estado + timeline */}
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <EstadoBadge nombre={drawer.estado?.nombre} />
+                  {drawer.estado?.nombre === 'En proceso' && (
+                    <button onClick={() => { const mc = mantenimientos.find(x => x.id === drawer.id) || drawer; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: new Date().toISOString().split('T')[0], resultado: 'disponible' }) }}
+                      className="px-3 py-1.5 bg-[#D81B43] text-white text-[12px] font-semibold rounded-[7px] hover:bg-[#B0172F]">
+                      🛠 Cerrar mantenimiento
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-start mt-3">
+                  {['Abierto', 'En proceso', 'Cerrado'].map((paso, i) => {
+                    const idx = ['Abierto', 'En proceso', 'Cerrado'].indexOf(drawer.estado?.nombre || 'En proceso')
+                    const st  = i < idx ? 'done' : i === idx ? 'active' : 'pending'
+                    return (
+                      <div key={paso} className="flex-1 flex flex-col items-center relative">
+                        {i > 0 && <div className={`absolute top-3 right-1/2 w-full h-0.5 ${st === 'done' || st === 'active' ? 'bg-[#D81B43]' : 'bg-slate-200'}`} />}
+                        <div className={`w-6 h-6 rounded-full z-10 flex items-center justify-center ${
+                          st === 'done' ? 'bg-[#D81B43]' : st === 'active' ? 'bg-white border-2 border-[#D81B43]' : 'bg-white border-2 border-slate-200'
+                        }`}>
+                          {st === 'done' && <CheckCircle2 size={10} className="text-white" />}
+                          {st === 'active' && <div className="w-2 h-2 bg-[#D81B43] rounded-full" />}
+                        </div>
+                        <div className={`text-[9px] font-semibold mt-1 text-center ${st === 'done' || st === 'active' ? 'text-[#D81B43]' : 'text-slate-400'}`}>{paso}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Detalles */}
+              <div className="p-5">
+                <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Detalles</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Tipo',      value: drawer.tipo?.nombre },
+                    { label: 'Técnico',   value: drawer.tecnico || '—' },
+                    { label: 'Apertura',  value: drawer.fecha_apertura || '—' },
+                    { label: 'Cierre',    value: drawer.fecha_cierre || '—' },
+                  ].map(f => (
+                    <div key={f.label}>
+                      <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">{f.label}</div>
+                      <div className="text-[13px] font-medium text-slate-700">{f.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {drawer.observaciones_cliente && (
+                  <div className="mt-3 p-3 bg-slate-50 rounded-[9px] border border-slate-200">
+                    <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">Observaciones cliente</div>
+                    <div className="text-[13px] text-slate-600 italic">{drawer.observaciones_cliente}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Checklist interactivo */}
+              {drawer.actividades?.length > 0 && (
+                <div className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                      Checklist ({drawer.actividades.filter(a => a.completado).length}/{drawer.actividades.length})
+                    </div>
+                    {/* Barra progreso */}
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#0F7B55] rounded-full transition-all"
+                          style={{ width: `${(drawer.actividades.filter(a => a.completado).length / drawer.actividades.length) * 100}%` }} />
+                      </div>
+                      <span className="text-[11px] font-semibold text-slate-500">
+                        {Math.round((drawer.actividades.filter(a => a.completado).length / drawer.actividades.length) * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {drawer.actividades.map(act => (
+                      <ActividadItem
+                        key={act.id}
+                        act={act}
+                        cerrado={drawer.estado?.nombre === 'Cerrado'}
+                        uploading={uploading[act.id]}
+                        onToggle={() => toggleActividad(act)}
+                        onObservacion={(obs) => guardarObservacion(act, obs)}
+                        onAdjunto={(file) => subirAdjunto(act, file)}
+                      />
+                    ))}
+                  </div>
+                </div>
               )}
-              <button onClick={() => setDrawer(null)}
-                className="flex-1 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
-                Cerrar
-              </button>
+
+              {/* Actividades texto (si fue cerrado con texto libre) */}
+              {drawer.actividades_texto && (
+                <div className="p-5">
+                  <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Resumen de actividades</div>
+                  <div className="text-[13px] text-slate-600 whitespace-pre-line leading-relaxed">{drawer.actividades_texto}</div>
+                </div>
+              )}
             </div>
           </div>
         </>
       )}
 
-      {/* MODAL NUEVO */}
-      {modalNuevo && (
+      {/* ── MODAL NUEVO MANTENIMIENTO ── */}
+      {modal && (
         <>
-          <div className="fixed inset-0 bg-[#0F2448]/40 z-40 backdrop-blur-sm" onClick={() => setModalNuevo(false)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[500px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#1B3A6B]">
-                <h3 className="text-[15px] font-bold text-white">Ingresar equipo a mantenimiento</h3>
-                <button onClick={() => setModalNuevo(false)} className="text-white/50 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
-                  <X size={16} strokeWidth={2.5} />
+            <div className="bg-white rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#D81B43]">
+                <div className="text-[15px] font-bold text-white">Nuevo mantenimiento</div>
+                <button onClick={() => setModal(false)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                  <X size={16} />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
                 {/* Tipo */}
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { id: TIPO_ID.preventivo, label: '🔵 Preventivo', sub: 'Rutina programada' },
-                    { id: TIPO_ID.correctivo, label: '⚠️ Correctivo', sub: 'Falla técnica' },
-                  ].map(t => (
-                    <button key={t.id} onClick={() => setForm(f => ({ ...f, tipo_id: t.id }))}
-                      className={`py-3 rounded-[10px] border-[1.5px] text-center transition-all ${form.tipo_id === t.id
-                        ? t.id === TIPO_ID.preventivo ? 'border-[#2EB5D4] bg-[#E8F7FB]' : 'border-red-400 bg-red-50'
-                        : 'border-slate-200'}`}>
-                      <div className="text-[13px] font-bold text-slate-700">{t.label}</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">{t.sub}</div>
-                    </button>
-                  ))}
-                </div>
                 <div>
-                  <label className={labelCls}>Categoría</label>
-                  <select value={form.cat_id} onChange={e => setForm(f => ({ ...f, cat_id: e.target.value, tipo_equipo_id: '', equipo_id: '' }))}
-                    className={inputCls}>
-                    <option value="">Seleccionar categoría...</option>
-                    {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  <label className={labelCls}>Tipo de mantenimiento <span className="text-[#D81B43]">*</span></label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {tipos.map(t => (
+                      <button key={t.id} onClick={() => setForm(f => ({ ...f, tipo_mantenimiento_id: t.id }))}
+                        className={`flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all ${
+                          form.tipo_mantenimiento_id === t.id
+                            ? t.nombre === 'Correctivo' ? 'border-[#D81B43] bg-[#D81B43]/5 text-[#D81B43]' : 'border-[#25A9E0] bg-[#E8F7FB] text-[#0E86A0]'
+                            : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                        }`}>
+                        {t.nombre === 'Correctivo' ? <AlertTriangle size={15} /> : <Wrench size={15} />}
+                        {t.nombre}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Equipo */}
+                <div>
+                  <label className={labelCls}>Equipo <span className="text-[#D81B43]">*</span></label>
+                  <select value={form.equipo_id} onChange={e => setForm(f => ({ ...f, equipo_id: e.target.value }))} className={inputCls}>
+                    <option value="">Seleccionar equipo...</option>
+                    {equipos.map(eq => (
+                      <option key={eq.id} value={eq.id}>
+                        {nombreEquipo(eq)} — {eq.serial} ({eq.estado?.nombre})
+                      </option>
+                    ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Tipo de equipo</label>
-                    <select value={form.tipo_equipo_id} onChange={e => setForm(f => ({ ...f, tipo_equipo_id: e.target.value, equipo_id: '' }))}
-                      disabled={!form.cat_id} className={inputCls}>
-                      <option value="">{form.cat_id ? 'Seleccionar...' : 'Selecciona categoría'}</option>
-                      {tiposFiltrados.map(t => <option key={t.id} value={t.id}>{t.marca} {t.modelo}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Unidad (serial)</label>
-                    <select value={form.equipo_id} onChange={e => setForm(f => ({ ...f, equipo_id: e.target.value }))}
-                      disabled={!form.tipo_equipo_id} className={inputCls}>
-                      <option value="">{form.tipo_equipo_id ? 'Seleccionar...' : 'Selecciona tipo'}</option>
-                      {equiposFiltrados.map(e => <option key={e.id} value={e.id}>{e.serial} ({e.codigo})</option>)}
-                    </select>
-                  </div>
-                </div>
+
+                {/* Técnico */}
                 <div>
-                  <label className={labelCls}>Técnico responsable <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
+                  <label className={labelCls}>Técnico responsable</label>
                   <input value={form.tecnico} onChange={e => setForm(f => ({ ...f, tecnico: e.target.value }))}
                     placeholder="Nombre del técnico" className={inputCls} />
                 </div>
+
+                {/* Lista de actividades */}
+                {listas.length > 0 && (
+                  <div>
+                    <label className={labelCls}>Lista de actividades predefinida</label>
+                    <select value={form.lista_id} onChange={e => setForm(f => ({ ...f, lista_id: e.target.value }))} className={inputCls}>
+                      <option value="">Sin lista — ingresar manualmente al cerrar</option>
+                      {listas.map(l => <option key={l.id} value={l.id}>{l.nombre} ({l.actividades?.length || 0} actividades)</option>)}
+                    </select>
+                    {form.lista_id && (
+                      <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                        {listas.find(l => l.id === form.lista_id)?.actividades
+                          ?.sort((a, b) => a.orden - b.orden)
+                          .map(a => (
+                            <div key={a.id} className="flex items-center gap-2 text-[12px] text-slate-500 py-0.5">
+                              <div className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0" />
+                              {a.nombre}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Observaciones */}
                 <div>
-                  <label className={labelCls}>Motivo / observaciones</label>
-                  <input value={form.observaciones} onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
-                    placeholder="Describe la razón del mantenimiento..." className={inputCls} />
+                  <label className={labelCls}>Observaciones del cliente / motivo</label>
+                  <textarea value={form.observaciones_cliente}
+                    onChange={e => setForm(f => ({ ...f, observaciones_cliente: e.target.value }))}
+                    placeholder="Descripción del problema o motivo..." rows={3}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0">
-                <button onClick={() => setModalNuevo(false)}
-                  className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
-                  Cancelar
-                </button>
-                <button onClick={guardarMant} disabled={saving}
-                  className="px-5 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#1E4D8C] disabled:opacity-50">
-                  {saving ? 'Guardando...' : 'Ingresar a taller'}
+              <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
+                <button onClick={() => setModal(false)} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
+                <button onClick={crearMantenimiento} disabled={saving}
+                  className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
+                  {saving ? 'Creando...' : 'Abrir mantenimiento'}
                 </button>
               </div>
             </div>
@@ -502,89 +820,121 @@ export default function MantenimientosClient({
         </>
       )}
 
-      {/* MODAL CIERRE */}
+      {/* ── MODAL CIERRE ── */}
       {modalCierre && (
         <>
-          <div className="fixed inset-0 bg-[#0F2448]/40 z-40 backdrop-blur-sm" onClick={() => setModalCierre(null)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModalCierre(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[500px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#0F7B55]">
+            <div className="bg-white rounded-2xl w-full max-w-[520px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#D81B43]">
                 <div>
-                  <h3 className="text-[15px] font-bold text-white">Cerrar mantenimiento</h3>
-                  <div className="text-[12px] text-white/60 mt-0.5">
-                    {modalCierre.equipo?.tipo_equipo?.marca} {modalCierre.equipo?.tipo_equipo?.modelo} · {modalCierre.equipo?.serial}
-                  </div>
+                  <div className="text-[11px] text-white/60">Cerrar mantenimiento</div>
+                  <div className="text-[15px] font-bold text-white font-mono">{modalCierre.codigo}</div>
                 </div>
-                <button onClick={() => setModalCierre(null)} className="text-white/50 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10">
-                  <X size={16} strokeWidth={2.5} />
+                <button onClick={() => setModalCierre(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                  <X size={16} />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-                {/* Checklist del tipo de equipo */}
-                {checklistCierre.length > 0 && (
-                  <div>
-                    <label className={labelCls}>
-                      Checklist de actividades
-                      <span className="text-slate-300 font-normal normal-case ml-1">
-                        ({checklistCierre.length} actividad{checklistCierre.length !== 1 ? 'es' : ''} para este tipo)
-                      </span>
-                    </label>
+
+                {/* CHECKLIST INTERACTIVO — si hay actividades */}
+                {modalCierre.actividades?.length > 0 ? (
+                  <div className="space-y-3">
+                    {/* Barra de progreso */}
+                    <div className="bg-slate-50 rounded-[10px] p-3 border border-slate-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[12px] font-semibold text-slate-600">Progreso del checklist</div>
+                        <div className="text-[12px] font-bold text-slate-700">
+                          {modalCierre.actividades.filter(a => a.completado).length}/{modalCierre.actividades.length}
+                        </div>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-2">
+                        <div className="bg-[#0F7B55] h-2 rounded-full transition-all"
+                          style={{ width: `${(modalCierre.actividades.filter(a => a.completado).length / modalCierre.actividades.length) * 100}%` }} />
+                      </div>
+                      {modalCierre.actividades.some(a => !a.completado) && (
+                        <div className="text-[11.5px] text-[#B45309] mt-1.5">
+                          ⚠ {modalCierre.actividades.filter(a => !a.completado).length} actividad(es) sin completar
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Lista de actividades con toggle, observación y adjunto */}
                     <div className="space-y-2">
-                      {checklistCierre.map(item => {
-                        const checked = cierreForm.checklist[item.id]
-                        return (
-                          <div key={item.id}
-                            onClick={() => setCierreForm(f => ({ ...f, checklist: { ...f.checklist, [item.id]: !f.checklist[item.id] } }))}
-                            className={`flex items-center gap-3 p-3 rounded-[9px] border cursor-pointer transition-all ${checked ? 'border-[#0F7B55] bg-green-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                            <div className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center transition-all ${checked ? 'bg-[#0F7B55]' : 'border-[1.5px] border-slate-300'}`}>
-                              {checked && <CheckCircle2 size={10} className="text-white" />}
-                            </div>
-                            <span className={`text-[13px] ${checked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{item.nombre}</span>
-                          </div>
-                        )
-                      })}
+                      {modalCierre.actividades.map(act => (
+                        <ActividadItem
+                          key={act.id}
+                          act={act}
+                          cerrado={false}
+                          uploading={uploading[act.id]}
+                          onToggle={() => toggleActividad(act)}
+                          onObservacion={(obs) => guardarObservacion(act, obs)}
+                          onAdjunto={(file) => subirAdjunto(act, file)}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Resumen opcional */}
+                    <div>
+                      <label className={labelCls}>Observaciones adicionales <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
+                      <textarea value={cierreForm.actividades}
+                        onChange={e => setCierreForm(f => ({ ...f, actividades: e.target.value }))}
+                        placeholder="Notas adicionales del cierre..." rows={2}
+                        className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
                     </div>
                   </div>
-                )}
-
-                {checklistCierre.length === 0 && (
-                  <div className="text-[12.5px] text-slate-400 bg-slate-50 rounded-[9px] p-3 border border-slate-200">
-                    Sin checklist configurado para este tipo de equipo. Ve a Configuración → Tipos de equipo para agregar actividades.
+                ) : (
+                  /* Sin lista — textarea libre obligatorio */
+                  <div>
+                    <label className={labelCls}>Resumen de actividades realizadas <span className="text-[#D81B43]">*</span></label>
+                    <textarea value={cierreForm.actividades}
+                      onChange={e => setCierreForm(f => ({ ...f, actividades: e.target.value }))}
+                      placeholder="Describe las actividades realizadas durante el mantenimiento..." rows={4}
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
                   </div>
                 )}
-
-                {/* Actividades libres */}
-                <div>
-                  <label className={labelCls}>Actividades adicionales <span className="text-slate-300 font-normal normal-case">(texto libre)</span></label>
-                  <textarea value={cierreForm.actividades} onChange={e => setCierreForm(f => ({ ...f, actividades: e.target.value }))}
-                    placeholder="Repuestos usados, observaciones, procedimientos adicionales..." rows={3}
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#2EB5D4] resize-none placeholder:text-slate-400" />
-                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={labelCls}>Técnico que cierra</label>
-                    <input value={cierreForm.tecnico} onChange={e => setCierreForm(f => ({ ...f, tecnico: e.target.value }))}
+                    <label className={labelCls}>Técnico responsable</label>
+                    <input value={cierreForm.tecnico}
+                      onChange={e => setCierreForm(f => ({ ...f, tecnico: e.target.value }))}
                       placeholder="Nombre del técnico" className={inputCls} />
                   </div>
                   <div>
-                    <label className={labelCls}>Resultado</label>
-                    <select value={cierreForm.resultado} onChange={e => setCierreForm(f => ({ ...f, resultado: e.target.value }))}
-                      className={inputCls}>
-                      <option value="disponible">✅ Equipo disponible</option>
-                      <option value="baja">🗑️ Dar de baja</option>
-                    </select>
+                    <label className={labelCls}>Fecha de cierre</label>
+                    <input type="date" value={cierreForm.fecha_cierre}
+                      onChange={e => setCierreForm(f => ({ ...f, fecha_cierre: e.target.value }))} className={inputCls} />
                   </div>
                 </div>
+                <div>
+                  <label className={labelCls}>Resultado del mantenimiento <span className="text-[#D81B43]">*</span></label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { value: 'disponible', label: 'Vuelve a Disponible', icon: <CheckCircle2 size={15} />, color: '#0F7B55' },
+                      { value: 'baja',       label: 'Dar de baja',         icon: <X size={15} />,            color: '#D81B43' },
+                    ].map(r => (
+                      <button key={r.value} onClick={() => setCierreForm(f => ({ ...f, resultado: r.value }))}
+                        className="flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all border-slate-200 text-slate-500 hover:border-slate-300"
+                        style={cierreForm.resultado === r.value ? { borderColor: r.color, background: `${r.color}10`, color: r.color } : {}}>
+                        {r.icon} {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {cierreForm.resultado === 'baja' && (
+                  <div className="flex items-start gap-2 text-[12.5px] text-[#D81B43] bg-[#FEF2F2] px-3 py-3 rounded-[9px] border border-[#D81B43]/20">
+                    <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                    El equipo quedará en estado <strong>Baja</strong> y no podrá asignarse en nuevas órdenes.
+                  </div>
+                )}
               </div>
-              <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0">
-                <button onClick={() => setModalCierre(null)}
-                  className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600">
-                  Cancelar
-                </button>
-                <button onClick={confirmarCierre} disabled={saving}
-                  className="px-5 py-2.5 bg-[#0F7B55] text-white rounded-[9px] text-[13px] font-semibold hover:opacity-90 disabled:opacity-50">
-                  {saving ? 'Guardando...' : '✓ Confirmar cierre'}
+              <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
+                <button onClick={() => setModalCierre(null)} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600">Cancelar</button>
+                <button onClick={cerrarMantenimiento} disabled={saving}
+                  className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
+                  {saving ? 'Guardando...' : '✓ Cerrar mantenimiento'}
                 </button>
               </div>
             </div>
@@ -592,10 +942,96 @@ export default function MantenimientosClient({
         </>
       )}
 
-      {/* TOAST */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── COMPONENTE ACTIVIDAD ─────────────────────────────────────
+function ActividadItem({ act, cerrado, uploading, onToggle, onObservacion, onAdjunto }) {
+  const [showObs, setShowObs]   = useState(false)
+  const [obsText, setObsText]   = useState(act.observaciones || '')
+  const fileRef                 = useRef(null)
+
+  return (
+    <div className={`rounded-[9px] border transition-all ${act.completado ? 'bg-[#ECFDF5] border-[#0F7B55]/20' : 'bg-white border-slate-200'}`}>
+      <div className="flex items-start gap-3 p-3">
+        <button onClick={() => !cerrado && onToggle()}
+          className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center mt-0.5 transition-all ${
+            act.completado ? 'bg-[#0F7B55]' : cerrado ? 'border-2 border-slate-200' : 'border-2 border-slate-300 hover:border-[#0F7B55] cursor-pointer'
+          }`}>
+          {act.completado && <CheckCircle2 size={11} className="text-white" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className={`text-[13px] font-medium ${act.completado ? 'text-[#0F7B55] line-through' : 'text-slate-700'}`}>
+            {act.descripcion}
+          </div>
+          {act.observaciones && (
+            <div className="text-[11.5px] text-slate-500 mt-0.5 italic">{act.observaciones}</div>
+          )}
+          {act.fecha && (
+            <div className="text-[10.5px] text-slate-400 mt-0.5">{new Date(act.fecha).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+          )}
+          {/* Adjuntos */}
+          {act.adjuntos?.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {act.adjuntos.map(adj => {
+                const esImagen = adj.tipo?.startsWith('image/') || /\.(png|jpg|jpeg|gif|webp)$/i.test(adj.nombre)
+                return esImagen ? (
+                  <div key={adj.id}>
+                    <a href={adj.url} target="_blank" rel="noopener noreferrer">
+                      <img src={adj.url} alt={adj.nombre}
+                        className="max-h-[160px] w-auto rounded-[8px] border border-slate-200 object-contain bg-slate-50 hover:opacity-90 transition-opacity cursor-pointer" />
+                    </a>
+                    <div className="text-[10.5px] text-slate-400 mt-0.5 flex items-center gap-1">
+                      <Paperclip size={9} /> {adj.nombre}
+                    </div>
+                  </div>
+                ) : (
+                  <a key={adj.id} href={adj.url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-2 py-1 bg-slate-100 rounded-[6px] text-[11px] text-slate-600 hover:bg-slate-200 transition-colors w-fit">
+                    <Paperclip size={10} /> {adj.nombre}
+                  </a>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        {!cerrado && (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button onClick={() => setShowObs(v => !v)}
+              className="w-6 h-6 flex items-center justify-center rounded-[6px] text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 transition-all">
+              <Edit3 size={12} />
+            </button>
+            <button onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="w-6 h-6 flex items-center justify-center rounded-[6px] text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 transition-all disabled:opacity-40">
+              {uploading ? <span className="text-[9px]">...</span> : <Paperclip size={12} />}
+            </button>
+            <input ref={fileRef} type="file" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) onAdjunto(f); e.target.value = '' }} />
+          </div>
+        )}
+      </div>
+      {showObs && !cerrado && (
+        <div className="px-3 pb-3 space-y-1.5">
+          <textarea value={obsText} onChange={e => setObsText(e.target.value)}
+            placeholder="Observación sobre esta actividad..." rows={2}
+            className="w-full px-2.5 py-2 border border-slate-200 rounded-[7px] text-[12.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
+          <div className="flex gap-1.5">
+            <button onClick={() => { onObservacion(obsText); setShowObs(false) }}
+              className="px-3 py-1.5 bg-[#D81B43] text-white text-[12px] font-semibold rounded-[7px] hover:bg-[#B0172F]">
+              Guardar
+            </button>
+            <button onClick={() => setShowObs(false)}
+              className="px-3 py-1.5 border border-slate-200 text-slate-500 text-[12px] rounded-[7px]">
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -14,18 +14,18 @@ const NAV = [
   {
     label: 'Operaciones',
     items: [
-      { href: '/entregas',       label: 'Entregas',            icon: 'truck' },
-      { href: '/inventario',     label: 'Inventario',          icon: 'pulse' },
-      { href: '/ordenes',        label: 'Órdenes de servicio', icon: 'file' },
-      { href: '/clientes',       label: 'Clientes',            icon: 'users' },
-      { href: '/mantenimientos', label: 'Mantenimientos',      icon: 'tool' },
-      { href: '/servicios',      label: 'Servicios prestados', icon: 'pulse' },
+      { href: '/entregas',       label: 'Entregas',            icon: 'truck',  tour: 'nav-entregas'       },
+      { href: '/inventario',     label: 'Inventario',          icon: 'pulse',  tour: 'nav-inventario'     },
+      { href: '/ordenes',        label: 'Órdenes de servicio', icon: 'file',   tour: 'nav-ordenes'        },
+      { href: '/clientes',       label: 'Clientes',            icon: 'users'                              },
+      { href: '/mantenimientos', label: 'Mantenimientos',      icon: 'tool',   tour: 'nav-mantenimientos' },
+      { href: '/servicios',      label: 'Servicios prestados', icon: 'pulse'                              },
     ]
   },
   {
     label: 'Sistema',
     items: [
-      { href: '/bitacora',      label: 'Bitácora',      icon: 'book' },
+      { href: '/bitacora',      label: 'Bitácora',      icon: 'book'     },
       { href: '/configuracion', label: 'Configuración', icon: 'settings' },
     ]
   },
@@ -41,6 +41,7 @@ const ICONS = {
   book:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
   settings: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>,
   logout:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+  map:      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>,
 }
 
 export default function Sidebar({ usuario, empresa }) {
@@ -54,94 +55,112 @@ export default function Sidebar({ usuario, empresa }) {
     router.refresh()
   }
 
-  const mobileItems = NAV.flatMap(group => group.items)
-
-  const renderNavLink = (item) => {
-    const active = pathname === item.href ||
-      (item.href !== '/dashboard' && pathname.startsWith(item.href))
-
-    return (
-      <Link key={item.href} href={item.href}
-        className={`flex items-center gap-2.5 px-[18px] py-[9px] text-[13.5px] font-medium transition-all border-l-[3px] ${
-          active
-            ? 'text-white bg-[#2EB5D4]/12 border-l-[#2EB5D4]'
-            : 'text-white/55 border-l-transparent hover:text-white hover:bg-white/6'
-        }`}>
-        <span className={`w-[18px] flex-shrink-0 flex items-center justify-center ${active ? 'opacity-100' : 'opacity-70'}`}>
-          {ICONS[item.icon]}
-        </span>
-        {item.label}
-      </Link>
-    )
+  function lanzarTour() {
+    window.dispatchEvent(new Event('reiniciar-tour'))
   }
+
+  const mobileItems = NAV.flatMap(group => group.items)
 
   return (
     <>
-      <aside className="hidden md:flex w-64 min-w-[256px] flex-col h-screen overflow-y-auto flex-shrink-0"
-        style={{background: 'linear-gradient(180deg, #1B3A6B 0%, #0F2448 100%)'}}>
+      {/* ── DESKTOP SIDEBAR ── */}
+      <aside className="hidden md:flex w-56 min-w-[224px] flex-col h-screen overflow-y-auto flex-shrink-0 bg-white border-r border-slate-200">
 
         {/* Logo */}
-      <div className="px-[18px] py-1 border-b border-white/8 flex items-center justify-center">
-        {empresa?.logo_url ? (
-          <Image src={empresa.logo_url} alt={empresa.razon_social ? `${empresa.razon_social} logo` : 'Logo'} width={300} height={120}
-            className="object-contain rounded-2xl" style={{ width: 'auto', height: '120px' }} priority />
-        ) : (
-          <Image src="/logo.png" alt="Ingemedic" width={300} height={120}
-            className="object-contain rounded-2xl" style={{ width: 'auto', height: '120px' }} priority />
-        )}
-      </div>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-center">
+          {empresa?.logo_url ? (
+            <Image src={empresa.logo_url} alt={empresa.razon_social || 'Logo'} width={300} height={100}
+              className="object-contain" style={{ width: 'auto', height: '80px' }} priority />
+          ) : (
+            <Image src="/logo.png" alt="Ingemedic" width={300} height={100}
+              className="object-contain" style={{ width: 'auto', height: '80px' }} priority />
+          )}
+        </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-2">
-        {NAV.map(group => (
-          <div key={group.label} className="pb-1">
-            <div className="text-[9.5px] font-semibold tracking-[0.14em] uppercase text-white/28 px-[18px] py-2.5">
-              {group.label}
+        {/* Nav */}
+        <nav className="flex-1 py-3 overflow-y-auto">
+          {NAV.map(group => (
+            <div key={group.label} className="mb-3">
+              <div className="text-[9.5px] font-bold tracking-[0.14em] uppercase text-slate-400 px-4 py-1.5">
+                {group.label}
+              </div>
+              {group.items.map(item => {
+                const active = pathname === item.href ||
+                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                return (
+                  <Link key={item.href} href={item.href}
+                    data-tour={item.tour}
+                    className={`flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium transition-all border-r-[3px] ${
+                      active
+                        ? 'text-[#E53935] bg-[#E53935]/5 border-r-[#E53935]'
+                        : 'text-slate-500 border-r-transparent hover:bg-slate-50 hover:text-slate-700'
+                    }`}>
+                    <span className={`w-[18px] flex-shrink-0 flex items-center justify-center ${active ? 'text-[#E53935]' : 'text-slate-400'}`}>
+                      {ICONS[item.icon]}
+                    </span>
+                    {item.label}
+                  </Link>
+                )
+              })}
             </div>
-            {group.items.map(item => {
-              const active = pathname === item.href ||
-                (item.href !== '/dashboard' && pathname.startsWith(item.href))
-              return (
-                <Link key={item.href} href={item.href}
-                  className={`flex items-center gap-2.5 px-[18px] py-[9px] text-[13.5px] font-medium transition-all border-l-[3px] ${
-                    active
-                      ? 'text-white bg-[#2EB5D4]/12 border-l-[#2EB5D4]'
-                      : 'text-white/55 border-l-transparent hover:text-white hover:bg-white/6'
-                  }`}>
-                  <span className={`w-[18px] flex-shrink-0 flex items-center justify-center ${active ? 'opacity-100' : 'opacity-70'}`}>
-                    {ICONS[item.icon]}
-                  </span>
-                  {item.label}
-                </Link>
-              )
-            })}
+          ))}
+
+          {/* Sección Configuración nav items con data-tour */}
+          <div className="mb-3 px-3">
+            <div className="text-[9.5px] font-bold tracking-[0.14em] uppercase text-slate-400 px-1 py-1.5">
+              Configuración
+            </div>
+            {[
+              { id: 'nav-empresa',    label: 'Empresa',        icon: '🏢' },
+              { id: 'nav-categorias', label: 'Categorías',     icon: '📂' },
+              { id: 'nav-tipos',      label: 'Tipos',          icon: '⚙️' },
+              { id: 'nav-listas',     label: 'Listas mant.',   icon: '📋' },
+              { id: 'nav-usuarios',   label: 'Usuarios',       icon: '👥' },
+            ].map(c => (
+              <div key={c.id} data-tour={c.id}
+                className="hidden" /* Solo para targeting del tour, no visible */ />
+            ))}
           </div>
-        ))}
-      </nav>
+        </nav>
 
-      {/* Usuario */}
-      <div className="px-[18px] py-3.5 border-t border-white/8 flex items-center gap-2.5 mt-auto">
-        <div className="w-8 h-8 rounded-full bg-[#2EB5D4] flex items-center justify-center text-[12px] font-bold text-white flex-shrink-0">
-          {usuario?.nombre?.charAt(0) || 'U'}
+        {/* Tour del sistema */}
+        <div className="px-3 pb-2">
+          <button onClick={lanzarTour}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-[9px] text-[12px] font-medium text-slate-500 hover:bg-slate-50 hover:text-[#D81B43] transition-all border border-dashed border-slate-200 hover:border-[#D81B43]/30">
+            <span className="w-[18px] flex items-center justify-center text-slate-400">
+              {ICONS.map}
+            </span>
+            Tour del sistema
+          </button>
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[12.5px] font-semibold text-white truncate">{usuario?.nombre || 'Usuario'}</div>
-          <div className="text-[10.5px] text-white/40 capitalize">{usuario?.rol || 'admin'}</div>
-        </div>
-        <button onClick={logout} className="text-white/30 hover:text-white transition-colors flex-shrink-0 p-1">
-          {ICONS.logout}
-        </button>
-      </div>
-    </aside>
 
+        {/* Usuario */}
+        <div className="px-4 py-3 border-t border-slate-100 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-[#E53935] flex items-center justify-center text-[12px] font-bold text-white flex-shrink-0">
+            {usuario?.nombre?.charAt(0) || 'U'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12.5px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
+            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.rol || 'admin'}</div>
+          </div>
+          <button onClick={logout} className="text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0 p-1">
+            {ICONS.logout}
+          </button>
+        </div>
+      </aside>
+
+      {/* ── MOBILE NAV ── */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_-1px_15px_rgba(15,23,42,0.05)]">
         <div className="flex items-center justify-between gap-1 overflow-x-auto px-2 py-2">
           {mobileItems.map(item => {
             const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
             return (
               <Link key={item.href} href={item.href}
-                className={`min-w-[64px] flex flex-col items-center justify-center gap-1 rounded-[12px] px-2 py-2 text-[11px] font-medium transition-all ${active ? 'bg-[#2EB5D4]/10 text-[#0F4C69]' : 'text-slate-500 hover:bg-slate-100'}`}>
-                <span className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-100 text-slate-600">
+                data-tour={item.tour}
+                className={`min-w-[64px] flex flex-col items-center justify-center gap-1 rounded-[12px] px-2 py-2 text-[11px] font-medium transition-all ${
+                  active ? 'bg-[#E53935]/8 text-[#E53935]' : 'text-slate-500 hover:bg-slate-100'
+                }`}>
+                <span className={`flex items-center justify-center w-7 h-7 rounded-full ${active ? 'bg-[#E53935]/12 text-[#E53935]' : 'bg-slate-100 text-slate-500'}`}>
                   {ICONS[item.icon]}
                 </span>
                 <span className="whitespace-nowrap">{item.label}</span>

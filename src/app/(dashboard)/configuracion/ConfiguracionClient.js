@@ -1,96 +1,254 @@
 'use client'
 import Image from 'next/image'
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import {
-  Users, Lock, Tag, Cpu, List, Building2,
+  Users, Lock, Tag, Cpu, Building2,
   FileText, Upload, Plus, X, Edit3, Trash2,
   Check, Save, ClipboardList, Download, CheckCircle2
 } from 'lucide-react'
+import { GaleriaIconos, IconoEquipo } from '@/components/inventario/IconosEquipo'
 
 const NAV = [
-  { id: 'usuarios',   label: 'Usuarios',             icon: Users,         grupo: 'Acceso' },
-  { id: 'roles',      label: 'Roles y permisos',     icon: Lock,          grupo: 'Acceso' },
-  { id: 'categorias', label: 'Categorías',            icon: Tag,           grupo: 'Inventario' },
-  { id: 'tipos',      label: 'Tipos de equipo',       icon: Cpu,           grupo: 'Inventario' },
+  { id: 'usuarios',   label: 'Usuarios',               icon: Users,         grupo: 'Acceso' },
+  { id: 'roles',      label: 'Roles y permisos',       icon: Lock,          grupo: 'Acceso' },
+  { id: 'categorias', label: 'Categorías',              icon: Tag,           grupo: 'Inventario' },
+  { id: 'tipos',      label: 'Tipos de equipo',         icon: Cpu,           grupo: 'Inventario' },
   { id: 'listas',     label: 'Listas de mantenimiento', icon: ClipboardList, grupo: 'Mantenimientos' },
-  { id: 'empresa',    label: 'Datos de la empresa',   icon: Building2,     grupo: 'Sistema' },
-  { id: 'plantillas', label: 'Plantillas documentos', icon: FileText,      grupo: 'Sistema' },
-  { id: 'cargue',     label: 'Cargue masivo',         icon: Upload,        grupo: 'Sistema' },
+  { id: 'empresa',    label: 'Datos de la empresa',     icon: Building2,     grupo: 'Sistema' },
+  { id: 'plantillas', label: 'Plantillas documentos',   icon: FileText,      grupo: 'Sistema' },
+  { id: 'cargue',     label: 'Cargue masivo',           icon: Upload,        grupo: 'Sistema' },
 ]
-
 const GRUPOS = ['Acceso', 'Inventario', 'Mantenimientos', 'Sistema']
-const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#2EB5D4] bg-white transition-colors placeholder:text-slate-400'
+const TIPOS_CAMPO = [
+  { value: 'texto',    label: 'Texto' },
+  { value: 'numero',   label: 'Número' },
+  { value: 'lista',    label: 'Lista de opciones' },
+  { value: 'fecha',    label: 'Fecha' },
+  { value: 'booleano', label: 'Sí / No' },
+]
+const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#D81B43] bg-white transition-colors placeholder:text-slate-400'
 const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5'
+
+function ResultadoCargue({ resultado }) {
+  if (!resultado) return null
+  return (
+    <div className="rounded-[10px] p-4 bg-green-50">
+      <div className="flex items-center gap-2 font-semibold text-[#0F7B55] mb-2 text-[13px]">
+        <CheckCircle2 size={16} />
+        {resultado.exitosos ?? 0} de {resultado.total ?? 0} registros importados correctamente
+      </div>
+      {resultado.errores?.length > 0 && (
+        <div className="text-[12px] text-slate-600 space-y-1 mt-2">
+          <div className="font-semibold text-slate-700">{resultado.errores.length} error{resultado.errores.length !== 1 ? 'es' : ''}:</div>
+          {resultado.errores.map((e, i) => <div key={i}>· {e}</div>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CargueEquipos({ cats }) {
+  const [catId, setCatId]         = useState('')
+  const [archivo, setArchivo]     = useState(null)
+  const [cargando, setCargando]   = useState(false)
+  const [resultado, setResultado] = useState(null)
+  const [dragOver, setDragOver]   = useState(false)
+  const cat         = cats.find(c => c.id === catId)
+  const camposExtra = [...(cat?.atributos_extra?.campos_tipo || []), ...(cat?.atributos_extra?.campos_unidad || [])]
+  const colsInfo    = camposExtra.map(c => c.clave).join(', ') || '—'
+
+  function handleDrop(e) {
+    e.preventDefault(); e.stopPropagation()
+    setDragOver(false)
+    if (!catId) return
+    const file = e.dataTransfer.files?.[0]
+    if (file) { setArchivo(file); setResultado(null) }
+  }
+
+  async function descargarPlantilla() {
+    if (!catId) return
+    const res = await fetch(`/api/cargue/plantilla?tipo=equipos&categoria_id=${catId}`)
+    const blob = await res.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `plantilla_equipos_${cat?.nombre?.replace(/\s+/g, '_') || catId}.csv`
+    a.click()
+  }
+  async function procesarCargue() {
+    if (!archivo) return
+    setCargando(true); setResultado(null)
+    const fd = new FormData()
+    fd.append('tipo', 'equipos'); fd.append('archivo', archivo)
+    if (catId) fd.append('categoria_id', catId)
+    const res = await fetch('/api/cargue', { method: 'POST', body: fd })
+    setResultado(await res.json()); setCargando(false)
+  }
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <div className="text-[14px] font-bold text-slate-700">Equipos</div>
+          <div className="text-[12px] text-slate-400 mt-0.5">Importa unidades — columnas según la categoría</div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={catId} onChange={e => { setCatId(e.target.value); setArchivo(null); setResultado(null) }}
+            className="px-3 py-2 border border-slate-200 rounded-[8px] text-[13px] outline-none focus:border-[#D81B43] bg-white text-slate-600">
+            <option value="">Seleccionar categoría...</option>
+            {cats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+          <button onClick={descargarPlantilla} disabled={!catId}
+            className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] font-medium text-slate-600 hover:border-[#D81B43] hover:text-[#D81B43] transition-all disabled:opacity-40 disabled:pointer-events-none">
+            <Download size={13} /> Descargar plantilla
+          </button>
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
+        {catId && <div className="text-[12px] text-slate-400"><span className="font-semibold text-slate-600">Columnas:</span> {colsInfo}</div>}
+        <div
+          onDragOver={e => { e.preventDefault(); if (catId) setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`border-2 border-dashed rounded-[10px] p-8 text-center transition-all ${
+            !catId   ? 'border-slate-200 opacity-50' :
+            dragOver ? 'border-[#D81B43] bg-[#D81B43]/5' :
+            archivo  ? 'border-[#D81B43] bg-[#D81B43]/5' :
+            'border-slate-200 hover:border-[#D81B43]'
+          }`}>
+          <Upload size={28} className="mx-auto mb-2 text-slate-300" />
+          <div className="text-[13.5px] font-semibold text-slate-500 mb-1">
+            {!catId ? 'Selecciona una categoría primero' : archivo ? archivo.name : 'Arrastra tu CSV aquí o haz clic'}
+          </div>
+          {catId && (
+            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-[8px] text-[12px] font-medium text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43] cursor-pointer transition-all mt-2">
+              <Upload size={12} /> Seleccionar archivo
+              <input type="file" accept=".csv,text/csv" className="hidden"
+                onChange={e => { setArchivo(e.target.files?.[0] || null); setResultado(null); e.target.value = '' }} />
+            </label>
+          )}
+        </div>
+        {archivo && (
+          <div className="flex items-center gap-2">
+            <button onClick={procesarCargue} disabled={cargando}
+              className="px-3 py-2 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-medium hover:bg-[#B0172F] disabled:opacity-50">
+              {cargando ? 'Procesando...' : 'Importar equipos'}
+            </button>
+            <button onClick={() => { setArchivo(null); setResultado(null) }}
+              className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] text-slate-500 hover:border-slate-300">
+              Cancelar
+            </button>
+          </div>
+        )}
+        <ResultadoCargue resultado={resultado} />
+      </div>
+    </div>
+  )
+}
+
+function CargueCard({ titulo, tipo, sub, cols }) {
+  const [archivo, setArchivo]     = useState(null)
+  const [cargando, setCargando]   = useState(false)
+  const [resultado, setResultado] = useState(null)
+  const [dragOver, setDragOver]   = useState(false)
+
+  function handleDrop(e) {
+    e.preventDefault(); e.stopPropagation()
+    setDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) { setArchivo(file); setResultado(null) }
+  }
+
+  async function descargarPlantilla() {
+    const res = await fetch(`/api/cargue/plantilla?tipo=${tipo}`)
+    const blob = await res.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob); a.download = `plantilla_${tipo}.csv`; a.click()
+  }
+  async function procesarCargue() {
+    if (!archivo) return
+    setCargando(true); setResultado(null)
+    const fd = new FormData(); fd.append('tipo', tipo); fd.append('archivo', archivo)
+    const res = await fetch('/api/cargue', { method: 'POST', body: fd })
+    setResultado(await res.json()); setCargando(false)
+  }
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <div className="text-[14px] font-bold text-slate-700">{titulo}</div>
+          <div className="text-[12px] text-slate-400 mt-0.5">{sub}</div>
+        </div>
+        <button onClick={descargarPlantilla}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-[8px] text-[12.5px] font-medium text-slate-600 hover:border-[#D81B43] hover:text-[#D81B43] transition-all">
+          <Download size={13} /> Descargar plantilla
+        </button>
+      </div>
+      <div className="p-5 space-y-4">
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`border-2 border-dashed rounded-[10px] p-8 text-center transition-all ${
+            dragOver ? 'border-[#D81B43] bg-[#D81B43]/5' :
+            archivo  ? 'border-[#D81B43] bg-[#D81B43]/5' :
+            'border-slate-200 hover:border-[#D81B43]'
+          }`}>
+          <Upload size={28} className="mx-auto mb-2 text-slate-300" />
+          <div className="text-[13.5px] font-semibold text-slate-500 mb-1">
+            {archivo ? archivo.name : 'Arrastra tu CSV aquí o haz clic'}
+          </div>
+          <div className="text-[12px] text-slate-400 mb-3">Columnas: {cols}</div>
+          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-[8px] text-[12px] font-medium text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43] cursor-pointer transition-all">
+            <Upload size={12} /> Seleccionar archivo
+            <input type="file" accept=".csv,text/csv" className="hidden"
+              onChange={e => { setArchivo(e.target.files?.[0] || null); setResultado(null); e.target.value = '' }} />
+          </label>
+        </div>
+        {archivo && (
+          <div className="flex items-center gap-2">
+            <button onClick={procesarCargue} disabled={cargando}
+              className="px-3 py-2 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-medium hover:bg-[#B0172F] disabled:opacity-50">
+              {cargando ? 'Procesando...' : `Importar ${titulo.toLowerCase()}`}
+            </button>
+            <button onClick={() => { setArchivo(null); setResultado(null) }}
+              className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] text-slate-500">Cancelar</button>
+          </div>
+        )}
+        <ResultadoCargue resultado={resultado} />
+      </div>
+    </div>
+  )
+}
 
 export default function ConfiguracionClient({
   usuariosIniciales = [], roles = [], categorias: catsIniciales = [],
-  tipos: tiposIniciales = [], plantillas = [], listas: listasIniciales = [], actividades: actividadesIniciales = [],
-  empresaInicial = {}
+  tipos: tiposIniciales = [], plantillas = [], listas: listasIniciales = [],
+  actividades: actividadesIniciales = [], empresaInicial = {}
 }) {
-  const [seccion, setSeccion]       = useState('usuarios')
-  const [usuarios, setUsuarios]     = useState(usuariosIniciales ?? [])
-  const [cats, setCats]             = useState(catsIniciales ?? [])
-  const [tipos, setTipos]           = useState(tiposIniciales ?? [])
-  const [listas, setListas]         = useState(listasIniciales ?? [])
+  const [seccion, setSeccion]         = useState('usuarios')
+  const [usuarios, setUsuarios]       = useState(usuariosIniciales ?? [])
+  const [cats, setCats]               = useState(catsIniciales ?? [])
+  const [tipos, setTipos]             = useState(tiposIniciales ?? [])
+  const [listas, setListas]           = useState(listasIniciales ?? [])
   const [actividades, setActividades] = useState(actividadesIniciales ?? [])
-  const [modal, setModal]           = useState(null)
-  const [saving, setSaving]         = useState(false)
-  const [toast, setToast]           = useState(null)
-  const [form, setForm]             = useState({})
+  const [modal, setModal]             = useState(null)
+  const [saving, setSaving]           = useState(false)
+  const [toast, setToast]             = useState(null)
+  const [form, setForm]               = useState({})
   const [listaExpandida, setListaExpandida] = useState(null)
+  const [tipoExpandido, setTipoExpandido]   = useState(null)
   const [nuevaActividad, setNuevaActividad] = useState('')
-
-  const [empresa, setEmpresa] = useState(empresaInicial)
+  const [empresa, setEmpresa]         = useState(empresaInicial)
   const [subiendoLogo, setSubiendoLogo] = useState(false)
+  const [camposModal, setCamposModal] = useState({ campos_tipo: [], campos_unidad: [] })
+  const [nuevoCampo, setNuevoCampo]   = useState({ nombre: '', tipo: 'texto', obligatorio: false, opciones: '', nivel: '' })
+  const [iconoSeleccionado, setIconoSeleccionado] = useState('')   // para categorías
+  const [imagenTipo, setImagenTipo]               = useState(null)  // File object para tipos
+  const [imagenTipoUrl, setImagenTipoUrl]         = useState('')    // URL actual del tipo
+  const [subiendoImagen, setSubiendoImagen]       = useState(false)
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
     setTimeout(() => setToast(null), 3000)
-  }
-
-  function previsualizarPlantilla(plantilla) {
-    const variablesEjemplo = {
-      empresa_logo: empresa.logo_url || '',
-      empresa_dir: empresa.dir || '',
-      empresa_tel: empresa.tel || '',
-      empresa_email: empresa.email || '',
-      empresa_web: empresa.web || '',
-      orden_codigo: 'OS-2024-001',
-      ciudad: 'Valledupar',
-      orden_fecha: '15/01/2024',
-      cliente_nombre: 'IPS San Juan de Dios',
-      equipo_nombre: 'Concentrador de Oxígeno',
-      equipo_marca: 'Respironics',
-      equipo_modelo: 'EverFlo',
-      equipo_serial: 'SN-001234',
-      equipo_codigo: 'EQ-001',
-      equipo_invima: '2019M-0001234',
-      recibido_por: 'Juan Pérez',
-      recibido_cargo: 'Jefe de enfermería',
-      recibido_cc: '1065432198',
-      repartidor_nombre: 'Carlos Gómez',
-      repartidor_cc: '1065987654',
-      devolucion_fecha: '15/02/2024',
-      mant_codigo: 'MAN-2024-001',
-      mant_fecha: '15/01/2024',
-      mant_tipo: 'Preventivo',
-      mant_estado: 'Disponible',
-      mant_tecnico: 'Carlos Gómez',
-      mant_tecnico_cc: '1065987654',
-    }
-
-    let html = plantilla.contenido || ''
-    for (const [key, value] of Object.entries(variablesEjemplo)) {
-      html = html.replaceAll(`{{${key}}}`, value)
-    }
-
-    const ventana = window.open('', '_blank')
-    if (!ventana) {
-      showToast('No se pudo abrir la ventana de previsualización', 'error')
-      return
-    }
-    ventana.document.write(html)
-    ventana.document.close()
   }
 
   async function getSupabase() {
@@ -98,103 +256,27 @@ export default function ConfiguracionClient({
     return createClient()
   }
 
-  function CargueCard({ titulo, tipo, sub, cols }) {
-    const [archivo, setArchivo] = useState(null)
-    const [cargando, setCargando] = useState(false)
-    const [resultado, setResultado] = useState(null)
-
-    async function descargarPlantilla() {
-      const res = await fetch(`/api/cargue/plantilla?tipo=${tipo}`)
-      const blob = await res.blob()
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `plantilla_${tipo}.csv`
-      a.click()
-    }
-
-    async function procesarCargue() {
-      if (!archivo) return
-      setCargando(true)
-      setResultado(null)
-      const formData = new FormData()
-      formData.append('tipo', tipo)
-      formData.append('archivo', archivo)
-      const res = await fetch('/api/cargue', { method: 'POST', body: formData })
-      const data = await res.json()
-      setResultado(data)
-      setCargando(false)
-    }
-
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-5 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <div className="text-[14px] font-bold text-slate-700">{titulo}</div>
-            <div className="text-[12px] text-slate-400 mt-0.5">{sub}</div>
-          </div>
-          <button onClick={descargarPlantilla}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-[8px] text-[12.5px] font-medium text-slate-600 hover:border-[#2EB5D4] hover:text-[#2EB5D4] transition-all">
-            <Download size={13} /> Descargar plantilla
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          <label className="block">
-            <div className="border-2 border-dashed border-slate-200 rounded-[10px] p-8 text-center hover:border-[#2EB5D4] hover:bg-[#E8F7FB]/30 transition-all cursor-pointer">
-              <Upload size={28} className="mx-auto mb-2 text-slate-300" />
-              <div className="text-[13.5px] font-semibold text-slate-500">
-                {archivo ? archivo.name : 'Arrastra tu CSV aquí o haz clic'}
-              </div>
-              <div className="text-[12px] text-slate-400 mt-1">Columnas: {cols}</div>
-              <input type="file" accept=".csv,text/csv" className="hidden"
-                onChange={e => {
-                  setArchivo(e.target.files?.[0] || null)
-                  setResultado(null)
-                  e.target.value = ''
-                }} />
-            </div>
-          </label>
-
-          {archivo && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={procesarCargue}
-                disabled={cargando}
-                className="px-3 py-2 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-medium hover:bg-[#1E4D8C] transition-colors disabled:opacity-50">
-                {cargando ? 'Procesando...' : `Importar ${titulo.toLowerCase()}`}
-              </button>
-              <button onClick={() => { setArchivo(null); setResultado(null) }}
-                className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] text-slate-500 hover:border-slate-300 transition-all">
-                Cancelar
-              </button>
-            </div>
-          )}
-
-          {resultado && (
-            <div className={`rounded-[10px] p-4 ${resultado.exitosos >= 0 ? 'bg-green-50 text-[#0F7B55]' : 'bg-slate-50 text-slate-500'}`}>
-              <div className="flex items-center gap-2 font-semibold mb-2 text-[#0F7B55]">
-                <CheckCircle2 size={16} />
-                {resultado.exitosos ?? 0} de {resultado.total ?? 0} registros importados correctamente
-              </div>
-              {resultado.errores?.length > 0 && (
-                <div className="space-y-2 text-slate-500">
-                  <div className="text-[13px] font-semibold text-slate-700">
-                    {resultado.errores.length} error{resultado.errores.length !== 1 ? 'es' : ''}:
-                  </div>
-                  <div className="space-y-1 text-[13px]">
-                    {resultado.errores.map((e, i) => (
-                      <div key={i}>· {e}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
   function abrirModal(tipo, data = {}) {
-    setForm({ ...data, password: '' })
+    if (tipo === 'categoria') {
+      const cat = cats.find(c => c.id === data.id)
+      setCamposModal({
+        campos_tipo:   cat?.atributos_extra?.campos_tipo   || [],
+        campos_unidad: cat?.atributos_extra?.campos_unidad || [],
+      })
+      setNuevoCampo({ nombre: '', tipo: 'texto', obligatorio: false, opciones: '', nivel: '' })
+      // Ícono de la categoría
+      const iconoActual = data.imagen_url?.startsWith('icono:')
+        ? data.imagen_url.replace('icono:', '') : ''
+      setIconoSeleccionado(iconoActual)
+    }
+    if (tipo === 'tipo') {
+      // Imagen real del tipo
+      const urlActual = data.imagen_url && !data.imagen_url.startsWith('icono:')
+        ? data.imagen_url : ''
+      setImagenTipo(null)
+      setImagenTipoUrl(urlActual)
+    }
+    setForm({ ...data, password: '', atributos: data.atributos || {} })
     setModal(tipo)
   }
 
@@ -243,16 +325,18 @@ export default function ConfiguracionClient({
     if (!form.nombre?.trim()) { showToast('El nombre es requerido', 'error'); return }
     setSaving(true)
     const supabase = await getSupabase()
+    const payload = {
+      nombre: form.nombre, descripcion: form.descripcion,
+      imagen_url: iconoSeleccionado ? `icono:${iconoSeleccionado}` : null,
+      atributos_extra: { campos_tipo: camposModal.campos_tipo, campos_unidad: camposModal.campos_unidad },
+    }
     if (form.id) {
-      const { error } = await supabase.from('categorias_equipo')
-        .update({ nombre: form.nombre, descripcion: form.descripcion }).eq('id', form.id)
+      const { error } = await supabase.from('categorias_equipo').update(payload).eq('id', form.id)
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
-      setCats(prev => prev.map(c => c.id === form.id ? { ...c, ...form } : c))
+      setCats(prev => prev.map(c => c.id === form.id ? { ...c, ...payload } : c))
       showToast('Categoría actualizada')
     } else {
-      const { data, error } = await supabase.from('categorias_equipo')
-        .insert({ nombre: form.nombre, descripcion: form.descripcion, activo: true })
-        .select().single()
+      const { data, error } = await supabase.from('categorias_equipo').insert({ ...payload, activo: true }).select().single()
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setCats(prev => [...prev, data])
       showToast('Categoría creada')
@@ -269,18 +353,62 @@ export default function ConfiguracionClient({
     showToast('Categoría eliminada')
   }
 
-  // ── TIPOS EQUIPO ──────────────────────────────────────────
+  function agregarCampoModal() {
+    if (!nuevoCampo.nombre.trim()) return
+    const key = `campos_${nuevoCampo.nivel}`
+    const campo = {
+      nombre: nuevoCampo.nombre.trim(),
+      clave:  nuevoCampo.nombre.trim().toLowerCase().replace(/\s+/g, '_').normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+      tipo:   nuevoCampo.tipo, obligatorio: nuevoCampo.obligatorio,
+      opciones: nuevoCampo.tipo === 'lista' ? nuevoCampo.opciones.split(',').map(o => o.trim()).filter(Boolean) : [],
+    }
+    setCamposModal(prev => ({ ...prev, [key]: [...prev[key], campo] }))
+    setNuevoCampo(p => ({ ...p, nombre: '', opciones: '' }))
+  }
+
+  function eliminarCampoModal(nivel, idx) {
+    const key = `campos_${nivel}`
+    setCamposModal(prev => ({ ...prev, [key]: prev[key].filter((_, i) => i !== idx) }))
+  }
+
+  // ── TIPOS ─────────────────────────────────────────────────
   async function guardarTipo() {
     if (!form.categoria_id) { showToast('La categoría es requerida', 'error'); return }
-    if (!form.marca?.trim() || !form.modelo?.trim()) {
-      showToast('Marca y modelo son requeridos', 'error'); return
+    const cat = cats.find(c => c.id === form.categoria_id)
+    const camposTipo = cat?.atributos_extra?.campos_tipo || []
+    for (const campo of camposTipo) {
+      if (campo.obligatorio && !form.atributos?.[campo.clave]?.toString().trim()) {
+        showToast(`El campo "${campo.nombre}" es obligatorio`, 'error'); return
+      }
     }
+    const nombreTipo = form.atributos?.nombre?.trim()
+    if (!nombreTipo) { showToast('El nombre del tipo es obligatorio', 'error'); return }
     setSaving(true)
     const supabase = await getSupabase()
+
+    // Subir imagen si hay una nueva
+    let finalImagenUrl = imagenTipoUrl || null
+    if (imagenTipo) {
+      setSubiendoImagen(true)
+      const ext  = imagenTipo.name.split('.').pop()
+      const path = `tipos/${form.id || Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('equipos-imagenes').upload(path, imagenTipo, { upsert: true })
+      if (uploadError) {
+        showToast('Error subiendo imagen: ' + uploadError.message, 'error')
+        setSaving(false); setSubiendoImagen(false); return
+      }
+      const { data: { publicUrl } } = supabase.storage.from('equipos-imagenes').getPublicUrl(path)
+      finalImagenUrl = publicUrl
+      setSubiendoImagen(false)
+    }
+
     const payload = {
-      categoria_id: form.categoria_id, marca: form.marca, modelo: form.modelo,
-      descripcion: form.descripcion, invima: form.invima,
+      categoria_id:           form.categoria_id,
+      nombre:                 nombreTipo,
+      imagen_url:             finalImagenUrl,
       lista_mantenimiento_id: form.lista_mantenimiento_id || null,
+      atributos:              Object.keys(form.atributos || {}).length > 0 ? form.atributos : null,
     }
     if (form.id) {
       const { error } = await supabase.from('tipos_equipo').update(payload).eq('id', form.id)
@@ -294,7 +422,7 @@ export default function ConfiguracionClient({
     } else {
       const { data, error } = await supabase.from('tipos_equipo')
         .insert({ ...payload, activo: true })
-        .select('*, categoria:categorias_equipo(id, nombre), lista:listas_mantenimiento(id, nombre)').single()
+        .select('*, categoria:categorias_equipo(id, nombre, atributos_extra), lista:listas_mantenimiento(id, nombre)').single()
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setTipos(prev => [...prev, data])
       showToast('Tipo creado')
@@ -311,31 +439,27 @@ export default function ConfiguracionClient({
     showToast('Tipo eliminado')
   }
 
-  // ── LISTAS MANTENIMIENTO ──────────────────────────────────
+  // ── LISTAS ────────────────────────────────────────────────
   async function guardarLista() {
     if (!form.nombre?.trim()) { showToast('El nombre es requerido', 'error'); return }
     setSaving(true)
     const supabase = await getSupabase()
     if (form.id) {
-      const { error } = await supabase.from('listas_mantenimiento')
-        .update({ nombre: form.nombre, descripcion: form.descripcion }).eq('id', form.id)
+      const { error } = await supabase.from('listas_mantenimiento').update({ nombre: form.nombre, descripcion: form.descripcion }).eq('id', form.id)
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setListas(prev => prev.map(l => l.id === form.id ? { ...l, ...form } : l))
       showToast('Lista actualizada')
     } else {
-      const { data, error } = await supabase.from('listas_mantenimiento')
-        .insert({ nombre: form.nombre, descripcion: form.descripcion, activo: true })
-        .select().single()
+      const { data, error } = await supabase.from('listas_mantenimiento').insert({ nombre: form.nombre, descripcion: form.descripcion, activo: true }).select().single()
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
-      setListas(prev => [...prev, data])
-      setListaExpandida(data.id)
+      setListas(prev => [...prev, data]); setListaExpandida(data.id)
       showToast('Lista creada')
     }
     setSaving(false); setModal(null)
   }
 
   async function eliminarLista(id) {
-    if (!confirm('¿Eliminar esta lista? Las actividades asociadas también se eliminarán.')) return
+    if (!confirm('¿Eliminar esta lista?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('listas_mantenimiento').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -344,17 +468,14 @@ export default function ConfiguracionClient({
     showToast('Lista eliminada')
   }
 
-  // ── ACTIVIDADES DE LISTA ──────────────────────────────────
   async function agregarActividad(listaId) {
     if (!nuevaActividad.trim()) return
     const supabase = await getSupabase()
     const orden = actividades.filter(a => a.lista_id === listaId).length + 1
     const { data, error } = await supabase.from('actividades_lista_mantenimiento')
-      .insert({ lista_id: listaId, nombre: nuevaActividad.trim(), orden, activo: true })
-      .select().single()
+      .insert({ lista_id: listaId, nombre: nuevaActividad.trim(), orden, activo: true }).select().single()
     if (error) { showToast('Error: ' + error.message, 'error'); return }
-    setActividades(prev => [...prev, data])
-    setNuevaActividad('')
+    setActividades(prev => [...prev, data]); setNuevaActividad('')
     showToast('Actividad agregada')
   }
 
@@ -371,64 +492,81 @@ export default function ConfiguracionClient({
     setSubiendoLogo(true)
     const supabase = await getSupabase()
     const ext = file.name.split('.').pop()
-    const path = `logo-ingemedic.${ext}`
-
-    const { error: uploadError } = await supabase.storage
-      .from('logos')
-      .upload(path, file, { upsert: true })
-
+    const { error: uploadError } = await supabase.storage.from('logos').upload(`logo-ingemedic.${ext}`, file, { upsert: true })
     if (uploadError) { showToast('Error subiendo logo: ' + uploadError.message, 'error'); setSubiendoLogo(false); return }
-
-    const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(path)
-
-    setEmpresa(p => ({ ...p, logo_url: publicUrl }))
-    setSubiendoLogo(false)
+    const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(`logo-ingemedic.${ext}`)
+    setEmpresa(p => ({ ...p, logo_url: publicUrl })); setSubiendoLogo(false)
     showToast('Logo actualizado')
   }
 
   async function guardarEmpresa() {
     const supabase = await getSupabase()
-    const { error } = await supabase.from('configuracion_empresa')
-      .update({
-        razon_social: empresa.razon_social,
-        nit: empresa.nit,
-        tel: empresa.tel,
-        email: empresa.email,
-        dir: empresa.dir,
-        rep: empresa.rep,
-        web: empresa.web,
-        logo_url: empresa.logo_url,
-        fecha_actualizacion: new Date().toISOString(),
-      })
-      .eq('id', empresa.id)
+    const { error } = await supabase.from('configuracion_empresa').update({
+      razon_social: empresa.razon_social, nit: empresa.nit, tel: empresa.tel,
+      email: empresa.email, dir: empresa.dir, rep: empresa.rep, web: empresa.web,
+      logo_url: empresa.logo_url, fecha_actualizacion: new Date().toISOString(),
+    }).eq('id', empresa.id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
     showToast('Datos guardados')
   }
 
-  const actividadesDeLista = (listaId) => actividades.filter(a => a.lista_id === listaId)
+  function previsualizarPlantilla(plantilla) {
+    const vars = {
+      empresa_logo: empresa.logo_url || '', empresa_dir: empresa.dir || '',
+      empresa_tel: empresa.tel || '', empresa_email: empresa.email || '', empresa_web: empresa.web || '',
+      orden_codigo: 'OS-2024-001', ciudad: 'Valledupar', orden_fecha: '15/01/2024',
+      cliente_nombre: 'IPS San Juan de Dios', equipo_nombre: 'Concentrador de Oxígeno',
+      equipo_serial: 'SN-001234', equipo_codigo: 'EQ-001',
+    }
+    let html = plantilla.contenido || ''
+    for (const [k, v] of Object.entries(vars)) html = html.replaceAll(`{{${k}}}`, v)
+    const w = window.open('', '_blank')
+    if (!w) { showToast('No se pudo abrir la previsualización', 'error'); return }
+    w.document.write(html); w.document.close()
+  }
 
+  const actividadesDeLista = id => actividades.filter(a => a.lista_id === id)
+
+  function renderCampoForm(campo) {
+    const val = form.atributos?.[campo.clave] || ''
+    const set = v => setForm(f => ({ ...f, atributos: { ...f.atributos, [campo.clave]: v } }))
+    if (campo.tipo === 'lista') return (
+      <select value={val} onChange={e => set(e.target.value)} className={inputCls}>
+        <option value="">Seleccionar...</option>
+        {(campo.opciones || []).map(op => <option key={op} value={op}>{op}</option>)}
+      </select>
+    )
+    if (campo.tipo === 'booleano') return (
+      <select value={val} onChange={e => set(e.target.value)} className={inputCls}>
+        <option value="">Seleccionar...</option>
+        <option value="si">Sí</option>
+        <option value="no">No</option>
+      </select>
+    )
+    return <input type={campo.tipo === 'numero' ? 'number' : campo.tipo === 'fecha' ? 'date' : 'text'}
+      value={val} onChange={e => set(e.target.value)} placeholder={campo.nombre} className={inputCls} />
+  }
+
+  // ── RENDER ────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      {/* Header */}
       <div className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
-          <div className="text-[18px] font-bold text-[#1B3A6B]">Configuración</div>
+          <div className="text-[18px] font-bold text-slate-800">Configuración</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Panel de control del sistema</div>
         </div>
       </div>
 
-      {/* Mobile section tabs */}
+      {/* Mobile tabs */}
       <div className="flex md:hidden overflow-x-auto border-b border-slate-200 bg-white flex-shrink-0">
         <div className="flex">
           {NAV.map(n => {
-            const Icon = n.icon
-            const active = seccion === n.id
+            const Icon = n.icon; const active = seccion === n.id
             return (
               <button key={n.id} onClick={() => setSeccion(n.id)}
-                className={`flex items-center gap-1.5 px-4 py-3 text-[12px] font-medium whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
-                  active ? 'border-[#1B3A6B] text-[#1B3A6B]' : 'border-transparent text-slate-500'
-                }`}>
-                <Icon size={14} />
-                {n.label}
+                className={`flex items-center gap-1.5 px-4 py-3 text-[12px] font-medium whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${active ? 'border-[#D81B43] text-[#D81B43]' : 'border-transparent text-slate-500'}`}>
+                <Icon size={14} />{n.label}
               </button>
             )
           })}
@@ -436,38 +574,46 @@ export default function ConfiguracionClient({
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+        {/* Sidebar nav */}
         <aside className="hidden md:flex w-56 min-w-[224px] bg-white border-r border-slate-200 flex-col py-4 overflow-y-auto flex-shrink-0">
           {GRUPOS.map(grupo => (
             <div key={grupo} className="mb-2">
               <div className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-slate-400 px-4 py-1.5">{grupo}</div>
               {NAV.filter(n => n.grupo === grupo).map(n => {
-                const Icon = n.icon
-                const active = seccion === n.id
+                const Icon = n.icon; const active = seccion === n.id
                 return (
-                  <button key={n.id} onClick={() => setSeccion(n.id)}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium transition-all ${active ? 'bg-[#1B3A6B]/5 text-[#1B3A6B] font-semibold border-r-2 border-[#1B3A6B]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
-                    <Icon size={15} className={active ? 'text-[#1B3A6B]' : 'text-slate-400'} />
+                  <button key={n.id} data-tour={`nav-${n.id}`} onClick={() => setSeccion(n.id)}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium transition-all ${active ? 'bg-[#D81B43]/5 text-[#D81B43] font-semibold border-r-2 border-[#D81B43]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
+                    <Icon size={15} className={active ? 'text-[#D81B43]' : 'text-slate-400'} />
                     {n.label}
                   </button>
                 )
               })}
             </div>
           ))}
+          <div className="mt-auto px-4 pb-4 pt-3 border-t border-slate-100">
+            <button
+              onClick={() => window.dispatchEvent(new Event('reiniciar-tour'))}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-[8px] text-[12px] font-medium text-slate-500 hover:bg-slate-50 hover:text-[#D81B43] transition-all">
+              🗺 Tour del sistema
+            </button>
+          </div>
         </aside>
 
+        {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-[860px]">
 
-            {/* ── USUARIOS ── */}
+            {/* USUARIOS */}
             {seccion === 'usuarios' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
-                    <h2 className="text-[20px] font-bold text-[#1B3A6B]">Usuarios</h2>
+                    <h2 className="text-[20px] font-bold text-slate-800">Usuarios</h2>
                     <p className="text-[13px] text-slate-400 mt-0.5">Gestiona quién tiene acceso al sistema</p>
                   </div>
                   <button onClick={() => abrirModal('usuario', { rol_id: roles[0]?.id })}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-[#1B3A6B] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#1E4D8C] transition-colors">
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
                     <Plus size={14} /> Nuevo usuario
                   </button>
                 </div>
@@ -485,9 +631,7 @@ export default function ConfiguracionClient({
                         <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full bg-[#1B3A6B] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
-                                {u.nombre?.charAt(0)}
-                              </div>
+                              <div className="w-7 h-7 rounded-full bg-[#D81B43] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">{u.nombre?.charAt(0)}</div>
                               <span className="text-[13px] font-semibold text-slate-700">{u.nombre}</span>
                             </div>
                           </td>
@@ -505,12 +649,8 @@ export default function ConfiguracionClient({
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
-                              <button onClick={() => abrirModal('usuario', { ...u, rol_id: u.rol_id })}
-                                className="p-1.5 text-slate-400 hover:text-[#1B3A6B] hover:bg-slate-100 rounded-[6px] transition-all">
-                                <Edit3 size={13} />
-                              </button>
-                              <button onClick={() => toggleUsuario(u)}
-                                className={`p-1.5 rounded-[6px] transition-all ${u.activo ? 'text-slate-400 hover:text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`}>
+                              <button onClick={() => abrirModal('usuario', { ...u, rol_id: u.rol_id })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
+                              <button onClick={() => toggleUsuario(u)} className={`p-1.5 rounded-[6px] transition-all ${u.activo ? 'text-slate-400 hover:text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`}>
                                 {u.activo ? <X size={13} /> : <Check size={13} />}
                               </button>
                             </div>
@@ -523,144 +663,177 @@ export default function ConfiguracionClient({
               </div>
             )}
 
-            {/* ── ROLES ── */}
+            {/* ROLES */}
             {seccion === 'roles' && (
               <div>
-                <h2 className="text-[20px] font-bold text-[#1B3A6B] mb-1">Roles y permisos</h2>
+                <h2 className="text-[20px] font-bold text-slate-800 mb-1">Roles y permisos</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Define qué puede hacer cada rol en cada módulo</p>
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-16 text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                    <Lock size={24} className="text-slate-400" />
-                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4"><Lock size={24} className="text-slate-400" /></div>
                   <div className="text-[15px] font-bold text-slate-600 mb-2">Módulo en construcción</div>
-                  <div className="text-[13px] text-slate-400 max-w-[320px] mx-auto leading-relaxed">
-                    La gestión de permisos por rol estará disponible en la <span className="font-semibold text-slate-500">Fase 2</span>.
-                  </div>
-                  <div className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-[12px] font-semibold text-slate-500">
-                    🏗️ Próximamente
-                  </div>
+                  <div className="text-[13px] text-slate-400 max-w-[320px] mx-auto">La gestión de permisos por rol estará disponible en la <span className="font-semibold text-slate-500">Fase 2</span>.</div>
+                  <div className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-[12px] font-semibold text-slate-500">🏗️ Próximamente</div>
                 </div>
               </div>
             )}
 
-            {/* ── CATEGORÍAS ── */}
+            {/* CATEGORÍAS */}
             {seccion === 'categorias' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
-                    <h2 className="text-[20px] font-bold text-[#1B3A6B]">Categorías de equipo</h2>
-                    <p className="text-[13px] text-slate-400 mt-0.5">Agrupan los tipos de equipo en el inventario</p>
+                    <h2 className="text-[20px] font-bold text-slate-800">Categorías de equipo</h2>
+                    <p className="text-[13px] text-slate-400 mt-0.5">Define columnas del tipo y de la unidad por categoría</p>
                   </div>
                   <button onClick={() => abrirModal('categoria', {})}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-[#1B3A6B] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#1E4D8C] transition-colors">
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
                     <Plus size={14} /> Nueva categoría
                   </button>
                 </div>
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  {cats.map((c, i) => (
-                    <div key={c.id} className={`flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors ${i < cats.length - 1 ? 'border-b border-slate-100' : ''}`}>
-                      <div className="flex-1">
-                        <div className="text-[13.5px] font-semibold text-slate-700">{c.nombre}</div>
-                        {c.descripcion && <div className="text-[12px] text-slate-400 mt-0.5">{c.descripcion}</div>}
-                        <div className="text-[11.5px] text-slate-400 mt-1">
-                          {tipos.filter(t => t.categoria_id === c.id).length} tipo{tipos.filter(t => t.categoria_id === c.id).length !== 1 ? 's' : ''} de equipo
+                  {cats.map((c, i) => {
+                    const nT = c.atributos_extra?.campos_tipo?.length || 0
+                    const nU = c.atributos_extra?.campos_unidad?.length || 0
+                    const iconoClave = c.imagen_url?.startsWith('icono:') ? c.imagen_url.replace('icono:', '') : null
+                    return (
+                      <div key={c.id} className={`flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors ${i < cats.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                        {/* Ícono categoría */}
+                        <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
+                          {iconoClave
+                            ? <IconoEquipo clave={iconoClave} size={22} color="#D81B43" />
+                            : <Tag size={16} className="text-slate-300" />
+                          }
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-[13.5px] font-semibold text-slate-700">{c.nombre}</div>
+                          {c.descripcion && <div className="text-[12px] text-slate-400 mt-0.5">{c.descripcion}</div>}
+                          <div className="text-[11.5px] text-slate-400 mt-1">
+                            {tipos.filter(t => t.categoria_id === c.id).length} tipos
+                            {nT > 0 && <span className="ml-2 text-[#25A9E0]">· {nT} col. tipo</span>}
+                            {nU > 0 && <span className="ml-2 text-[#25A9E0]">· {nU} col. unidad</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => abrirModal('categoria', { ...c })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
+                          <button onClick={() => eliminarCat(c.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => abrirModal('categoria', { ...c })}
-                          className="p-1.5 text-slate-400 hover:text-[#1B3A6B] hover:bg-slate-100 rounded-[6px] transition-all">
-                          <Edit3 size={13} />
-                        </button>
-                        <button onClick={() => eliminarCat(c.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all">
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                   {cats.length === 0 && <div className="text-center py-12 text-slate-400">Sin categorías configuradas</div>}
                 </div>
               </div>
             )}
 
-            {/* ── TIPOS EQUIPO ── */}
+            {/* TIPOS */}
             {seccion === 'tipos' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
-                    <h2 className="text-[20px] font-bold text-[#1B3A6B]">Tipos de equipo</h2>
-                    <p className="text-[13px] text-slate-400 mt-0.5">Asigna una lista de mantenimiento a cada tipo</p>
+                    <h2 className="text-[20px] font-bold text-slate-800">Tipos de equipo</h2>
+                    <p className="text-[13px] text-slate-400 mt-0.5">Cada tipo agrupa unidades del mismo modelo</p>
                   </div>
-                  <button onClick={() => abrirModal('tipo', { categoria_id: cats[0]?.id })}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-[#1B3A6B] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#1E4D8C] transition-colors">
+                  <button onClick={() => abrirModal('tipo', {})}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
                     <Plus size={14} /> Nuevo tipo
                   </button>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
-                  <table className="w-full border-collapse min-w-[650px]">
-                    <thead>
-                      <tr className="border-b-2 border-slate-200">
-                        {['Categoría','Marca','Modelo','INVIMA','Lista de mantenimiento',''].map(h => (
-                          <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tipos.map(t => (
-                        <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-3">
-                            <span className="text-[12px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{t.categoria?.nombre || '—'}</span>
-                          </td>
-                          <td className="px-4 py-3 text-[13px] font-semibold text-slate-700">{t.marca}</td>
-                          <td className="px-4 py-3 text-[13px] text-slate-600">{t.modelo}</td>
-                          <td className="px-4 py-3 font-mono text-[12px] text-slate-400">{t.invima || '—'}</td>
-                          <td className="px-4 py-3">
-                            {t.lista
-                              ? <span className="text-[12.5px] font-semibold text-[#0F7B55]">✓ {t.lista.nombre}</span>
-                              : <span className="text-[12px] text-slate-400">Sin lista asignada</span>
+                <div className="space-y-2">
+                  {tipos.length === 0 && <div className="bg-white rounded-xl border border-slate-200 shadow-sm text-center py-12 text-slate-400">Sin tipos configurados</div>}
+                  {tipos.map(t => {
+                    const cat = cats.find(c => c.id === (t.categoria_id ?? t.categoria?.id))
+                    const camposTipo = cat?.atributos_extra?.campos_tipo || []
+                    const expanded = tipoExpandido === t.id
+                    const nombre = t.atributos?.nombre || t.nombre || '—'
+                    const tieneIcono   = t.imagen_url?.startsWith('icono:')
+                    const tieneImagen  = t.imagen_url && !tieneIcono
+                    const iconoClave   = tieneIcono ? t.imagen_url.replace('icono:', '') : null
+                    // Fallback: ícono de la categoría
+                    const iconoCatClave = !t.imagen_url && cat?.imagen_url?.startsWith('icono:')
+                      ? cat.imagen_url.replace('icono:', '') : null
+                    return (
+                      <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className={`flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors ${expanded ? 'bg-slate-50' : ''}`}
+                          onClick={() => setTipoExpandido(prev => prev === t.id ? null : t.id)}>
+                          {/* Imagen, ícono o placeholder */}
+                          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                            {tieneImagen
+                              ? <img src={t.imagen_url} alt={nombre} className="w-full h-full object-contain p-1" />
+                              : iconoClave
+                              ? <IconoEquipo clave={iconoClave} size={24} color="#D81B43" />
+                              : iconoCatClave
+                              ? <IconoEquipo clave={iconoCatClave} size={22} color="#94A3B8" />
+                              : <Cpu size={18} className="text-slate-300" />
                             }
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5">
-                              <button onClick={() => abrirModal('tipo', {
-                                ...t,
-                                categoria_id: t.categoria_id ?? t.categoria?.id,
-                                lista_mantenimiento_id: t.lista_mantenimiento_id ?? t.lista?.id,
-                              })}
-                                className="p-1.5 text-slate-400 hover:text-[#1B3A6B] hover:bg-slate-100 rounded-[6px] transition-all">
-                                <Edit3 size={13} />
-                              </button>
-                              <button onClick={() => eliminarTipo(t.id)}
-                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all">
-                                <Trash2 size={13} />
-                              </button>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[12px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium flex-shrink-0">
+                                {t.categoria?.nombre || cat?.nombre || '—'}
+                              </span>
+                              <span className="text-[14px] font-bold text-slate-700">{nombre}</span>
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {tipos.length === 0 && (
-                        <tr><td colSpan={6} className="text-center py-12 text-slate-400">Sin tipos configurados</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {t.lista
+                                ? <span className="text-[11.5px] font-semibold text-[#0F7B55]">✓ {t.lista.nombre}</span>
+                                : <span className="text-[11.5px] text-slate-400">Sin lista de mantenimiento</span>}
+                              {camposTipo.length > 0 && <span className="text-[11.5px] text-[#25A9E0]">· {camposTipo.length} columnas</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => abrirModal('tipo', { ...t, categoria_id: t.categoria_id ?? t.categoria?.id, lista_mantenimiento_id: t.lista_mantenimiento_id ?? t.lista?.id })}
+                              className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
+                            <button onClick={() => eliminarTipo(t.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
+                          </div>
+                          <div className="text-slate-400 ml-1">
+                            {expanded
+                              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg>
+                              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>}
+                          </div>
+                        </div>
+                        {expanded && (
+                          <div className="border-t border-slate-200 bg-[#F8FAFC] px-6 py-4">
+                            {camposTipo.length > 0 ? (
+                              <>
+                                <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Columnas del tipo</div>
+                                <div className="flex flex-wrap gap-6">
+                                  {camposTipo.map(campo => (
+                                    <div key={campo.clave}>
+                                      <div className="text-[10px] font-semibold uppercase text-slate-400">{campo.nombre}</div>
+                                      <div className="text-[13.5px] font-medium text-slate-700 mt-0.5">{t.atributos?.[campo.clave] || '—'}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-[12.5px] text-slate-400">
+                                Esta categoría no tiene columnas del tipo.
+                                <button onClick={() => setSeccion('categorias')} className="ml-2 text-[#D81B43] font-medium hover:underline">Ir a Categorías →</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
 
-            {/* ── LISTAS MANTENIMIENTO ── */}
+            {/* LISTAS */}
             {seccion === 'listas' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
-                    <h2 className="text-[20px] font-bold text-[#1B3A6B]">Listas de mantenimiento</h2>
-                    <p className="text-[13px] text-slate-400 mt-0.5">Crea listas con actividades y asígnalas a los tipos de equipo</p>
+                    <h2 className="text-[20px] font-bold text-slate-800">Listas de mantenimiento</h2>
+                    <p className="text-[13px] text-slate-400 mt-0.5">Crea listas con actividades y asígnalas a tipos de equipo</p>
                   </div>
                   <button onClick={() => abrirModal('lista', {})}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-[#1B3A6B] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#1E4D8C] transition-colors">
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
                     <Plus size={14} /> Nueva lista
                   </button>
                 </div>
-
                 <div className="space-y-3">
                   {listas.length === 0 && (
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm text-center py-12 text-slate-400">
@@ -673,67 +846,43 @@ export default function ConfiguracionClient({
                     const expanded = listaExpandida === l.id
                     return (
                       <div key={l.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        {/* Header lista */}
                         <div className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
                           onClick={() => setListaExpandida(expanded ? null : l.id)}>
                           <div className="flex-1">
                             <div className="text-[14px] font-bold text-slate-700">{l.nombre}</div>
                             {l.descripcion && <div className="text-[12px] text-slate-400 mt-0.5">{l.descripcion}</div>}
                             <div className="text-[11.5px] text-slate-400 mt-1">
-                              {acts.length} actividad{acts.length !== 1 ? 'es' : ''}
-                              {' · '}
-                              {tipos.filter(t => t.lista_mantenimiento_id === l.id).length} tipo{tipos.filter(t => t.lista_mantenimiento_id === l.id).length !== 1 ? 's' : ''} asignado{tipos.filter(t => t.lista_mantenimiento_id === l.id).length !== 1 ? 's' : ''}
+                              {acts.length} actividad{acts.length !== 1 ? 'es' : ''} · {tipos.filter(t => t.lista_mantenimiento_id === l.id).length} tipo{tipos.filter(t => t.lista_mantenimiento_id === l.id).length !== 1 ? 's' : ''} asignado{tipos.filter(t => t.lista_mantenimiento_id === l.id).length !== 1 ? 's' : ''}
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => abrirModal('lista', { ...l })}
-                              className="p-1.5 text-slate-400 hover:text-[#1B3A6B] hover:bg-slate-100 rounded-[6px] transition-all">
-                              <Edit3 size={13} />
-                            </button>
-                            <button onClick={() => eliminarLista(l.id)}
-                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all">
-                              <Trash2 size={13} />
-                            </button>
+                            <button onClick={() => abrirModal('lista', { ...l })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px]"><Edit3 size={13} /></button>
+                            <button onClick={() => eliminarLista(l.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px]"><Trash2 size={13} /></button>
                           </div>
                           <div className="text-slate-400 ml-1">
                             {expanded
                               ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg>
-                              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                            }
+                              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>}
                           </div>
                         </div>
-
-                        {/* Actividades expandidas */}
                         {expanded && (
                           <div className="border-t border-slate-100 px-5 py-4">
                             <div className="space-y-2 mb-3">
                               {acts.map((a, i) => (
                                 <div key={a.id} className="flex items-center gap-2.5 p-2.5 bg-slate-50 rounded-[8px] border border-slate-200">
-                                  <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500 flex-shrink-0">
-                                    {i + 1}
-                                  </div>
+                                  <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500 flex-shrink-0">{i + 1}</div>
                                   <span className="flex-1 text-[13px] text-slate-700">{a.nombre}</span>
-                                  <button onClick={() => eliminarActividad(a.id)}
-                                    className="p-1 text-slate-400 hover:text-red-500 transition-colors">
-                                    <X size={12} />
-                                  </button>
+                                  <button onClick={() => eliminarActividad(a.id)} className="p-1 text-slate-400 hover:text-red-500"><X size={12} /></button>
                                 </div>
                               ))}
-                              {acts.length === 0 && (
-                                <div className="text-[12.5px] text-slate-400 text-center py-2">Sin actividades — agrégalas abajo</div>
-                              )}
+                              {acts.length === 0 && <div className="text-[12.5px] text-slate-400 text-center py-2">Sin actividades</div>}
                             </div>
-                            {/* Agregar actividad */}
                             <div className="flex gap-2">
-                              <input
-                                value={nuevaActividad}
-                                onChange={e => setNuevaActividad(e.target.value)}
+                              <input value={nuevaActividad} onChange={e => setNuevaActividad(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && agregarActividad(l.id)}
-                                placeholder="ej. Limpieza de filtros"
-                                className={inputCls}
-                              />
+                                placeholder="ej. Limpieza de filtros" className={inputCls} />
                               <button onClick={() => agregarActividad(l.id)}
-                                className="px-3 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#1E4D8C] transition-colors flex-shrink-0 flex items-center gap-1">
+                                className="px-3 py-2.5 bg-[#D81B43] text-white rounded-[9px] hover:bg-[#B0172F] transition-colors flex-shrink-0">
                                 <Plus size={14} />
                               </button>
                             </div>
@@ -746,57 +895,41 @@ export default function ConfiguracionClient({
               </div>
             )}
 
-            {/* ── EMPRESA ── */}
+            {/* EMPRESA */}
             {seccion === 'empresa' && (
               <div>
-                <h2 className="text-[20px] font-bold text-[#1B3A6B] mb-1">Datos de la empresa</h2>
+                <h2 className="text-[20px] font-bold text-slate-800 mb-1">Datos de la empresa</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Información que aparece en los documentos generados</p>
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-                  {/* Logo */}
                   <div className="flex items-center gap-5 mb-6 pb-6 border-b border-slate-100">
                     <div className="w-20 h-20 rounded-xl border-2 border-slate-200 flex items-center justify-center bg-slate-50 overflow-hidden flex-shrink-0">
-                      {empresa.logo_url
-                        ? <Image src={empresa.logo_url} alt="Logo de la empresa" width={80} height={80} className="object-contain p-1" />
-                        : <Building2 size={28} className="text-slate-300" />
-                      }
+                      {empresa.logo_url ? <Image src={empresa.logo_url} alt="Logo" width={80} height={80} className="object-contain p-1" /> : <Building2 size={28} className="text-slate-300" />}
                     </div>
                     <div>
                       <div className="text-[13.5px] font-semibold text-slate-700 mb-1">Logo de la empresa</div>
-                      <div className="text-[12px] text-slate-400 mb-3">Aparece en los documentos y en el sidebar del sistema</div>
-                      <label className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] font-medium text-slate-600 hover:border-[#2EB5D4] hover:text-[#2EB5D4] transition-all cursor-pointer w-fit">
+                      <label className={`flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] font-medium transition-all cursor-pointer w-fit ${subiendoLogo ? 'opacity-50 pointer-events-none text-slate-400' : 'text-slate-600 hover:border-[#D81B43] hover:text-[#D81B43]'}`}>
                         <Upload size={13} /> {subiendoLogo ? 'Subiendo...' : 'Cambiar logo'}
-                        <input type="file" accept="image/*" className="hidden" onChange={e => {
-                          const file = e.target.files[0]
-                          if (file) subirLogo(file)
-                          e.target.value = ''
-                        }} />
+                        <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files[0]; if (f) subirLogo(f); e.target.value = '' }} />
                       </label>
-                      {empresa.logo_url && (
-                        <button onClick={() => setEmpresa(p => ({ ...p, logo_url: null }))}
-                          className="mt-2 text-[12px] text-red-400 hover:text-red-600 transition-colors block">
-                          Quitar logo
-                        </button>
-                      )}
+                      {empresa.logo_url && <button onClick={() => setEmpresa(p => ({ ...p, logo_url: null }))} className="mt-2 text-[12px] text-red-400 hover:text-red-600 block">Quitar logo</button>}
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {[
                       { key: 'razon_social', label: 'Razón social', full: true },
-                      { key: 'nit',   label: 'NIT' }, { key: 'tel', label: 'Teléfono' },
+                      { key: 'nit', label: 'NIT' }, { key: 'tel', label: 'Teléfono' },
                       { key: 'email', label: 'Email' },
-                      { key: 'dir',   label: 'Dirección', full: true },
-                      { key: 'rep',   label: 'Representante legal' }, { key: 'web', label: 'Página web' },
+                      { key: 'dir', label: 'Dirección', full: true },
+                      { key: 'rep', label: 'Representante legal' }, { key: 'web', label: 'Página web' },
                     ].map(f => (
                       <div key={f.key} className={f.full ? 'col-span-2' : ''}>
                         <label className={labelCls}>{f.label}</label>
-                        <input value={empresa[f.key] || ''} onChange={e => setEmpresa(p => ({ ...p, [f.key]: e.target.value }))}
-                          className={inputCls} />
+                        <input value={empresa[f.key] || ''} onChange={e => setEmpresa(p => ({ ...p, [f.key]: e.target.value }))} className={inputCls} />
                       </div>
                     ))}
                   </div>
                   <div className="flex justify-end mt-5">
-                    <button onClick={guardarEmpresa}
-                      className="flex items-center gap-1.5 px-5 py-2.5 bg-[#1B3A6B] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#1E4D8C] transition-colors">
+                    <button onClick={guardarEmpresa} className="flex items-center gap-1.5 px-5 py-2.5 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
                       <Save size={14} /> Guardar cambios
                     </button>
                   </div>
@@ -804,24 +937,21 @@ export default function ConfiguracionClient({
               </div>
             )}
 
-            {/* ── PLANTILLAS ── */}
+            {/* PLANTILLAS */}
             {seccion === 'plantillas' && (
               <div>
-                <h2 className="text-[20px] font-bold text-[#1B3A6B] mb-1">Plantillas de documentos</h2>
+                <h2 className="text-[20px] font-bold text-slate-800 mb-1">Plantillas de documentos</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Documentos legales usados en las órdenes de servicio</p>
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   {plantillas.map((p, i) => (
                     <div key={p.id} className={`flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors ${i < plantillas.length - 1 ? 'border-b border-slate-100' : ''}`}>
-                      <div className="w-8 h-8 rounded-[8px] bg-[#EEF2FF] flex items-center justify-center flex-shrink-0">
-                        <FileText size={15} className="text-[#1B3A6B]" />
-                      </div>
+                      <div className="w-8 h-8 rounded-[8px] bg-[#D81B43]/10 flex items-center justify-center flex-shrink-0"><FileText size={15} className="text-[#D81B43]" /></div>
                       <div className="flex-1">
                         <div className="text-[13.5px] font-semibold text-slate-700">{p.nombre}</div>
                         {p.descripcion && <div className="text-[12px] text-slate-400 mt-0.5">{p.descripcion}</div>}
                         <div className="text-[11px] text-slate-300 font-mono mt-0.5">v{p.version || '1'}</div>
                       </div>
-                      <button onClick={() => previsualizarPlantilla(p)}
-                        className="px-3 py-1.5 border border-slate-200 rounded-[7px] text-[12px] font-medium text-slate-600 hover:border-[#2EB5D4] hover:text-[#2EB5D4] transition-all">
+                      <button onClick={() => previsualizarPlantilla(p)} className="px-3 py-1.5 border border-slate-200 rounded-[7px] text-[12px] font-medium text-slate-600 hover:border-[#D81B43] hover:text-[#D81B43] transition-all">
                         Previsualizar
                       </button>
                     </div>
@@ -831,27 +961,14 @@ export default function ConfiguracionClient({
               </div>
             )}
 
-            {/* ── CARGUE MASIVO ── */}
+            {/* CARGUE */}
             {seccion === 'cargue' && (
               <div>
-                <h2 className="text-[20px] font-bold text-[#1B3A6B] mb-1">Cargue masivo</h2>
+                <h2 className="text-[20px] font-bold text-slate-800 mb-1">Cargue masivo</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Importa equipos y clientes desde archivos CSV</p>
-                {[
-                  {
-                    titulo: 'Equipos',
-                    tipo: 'equipos',
-                    sub: 'Importa unidades de inventario',
-                    cols: 'categoria, marca, modelo, serial, codigo, lote, fecha_compra, invima',
-                  },
-                  {
-                    titulo: 'Clientes',
-                    tipo: 'clientes',
-                    sub: 'Importa clientes desde CSV',
-                    cols: 'tipo_persona, nombre, nit_cc, digito_verificacion, departamento, municipio, direccion, telefono, email',
-                  },
-                ].map(s => (
-                  <CargueCard key={s.tipo} {...s} />
-                ))}
+                <CargueEquipos cats={cats} />
+                <CargueCard titulo="Clientes" tipo="clientes" sub="Importa clientes desde CSV"
+                  cols="tipo_persona, nombre, nit_cc, departamento, municipio, direccion, telefono, email" />
               </div>
             )}
 
@@ -859,43 +976,44 @@ export default function ConfiguracionClient({
         </div>
       </div>
 
-      {/* MODALES */}
+      {/* ── MODALES — sin scroll interno, tamaño adaptativo ── */}
       {modal && (
         <>
-          <div className="fixed inset-0 bg-[#0F2448]/40 z-40 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[480px] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className={`bg-white rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden
+              ${modal === 'categoria' ? 'max-w-[640px]' : modal === 'tipo' ? 'max-w-[600px]' : 'max-w-[480px]'}
+              max-h-[calc(100vh-2rem)]`}
+              onClick={e => e.stopPropagation()}>
+
+              {/* Modal header */}
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
-                <h3 className="text-[15px] font-bold text-[#1B3A6B]">
+                <h3 className="text-[16px] font-bold text-slate-800">
                   {modal === 'usuario'   ? (form.id ? 'Editar usuario'       : 'Nuevo usuario')        :
                    modal === 'categoria' ? (form.id ? 'Editar categoría'     : 'Nueva categoría')      :
                    modal === 'tipo'      ? (form.id ? 'Editar tipo de equipo': 'Nuevo tipo de equipo') :
-                   modal === 'lista'     ? (form.id ? 'Editar lista'         : 'Nueva lista de mantenimiento') : ''}
+                   modal === 'lista'     ? (form.id ? 'Editar lista'         : 'Nueva lista')          : ''}
                 </h3>
-                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100">
-                  <X size={16} />
-                </button>
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
               </div>
 
-              <div className="px-6 py-5 space-y-4 overflow-y-auto max-h-[75vh]">
+              {/* Modal body — scroll solo si no cabe en pantalla */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
                 {/* USUARIO */}
                 {modal === 'usuario' && <>
                   <div>
                     <label className={labelCls}>Nombre completo</label>
-                    <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
-                      className={inputCls} placeholder="Nombre del usuario" />
+                    <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} placeholder="Nombre del usuario" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Correo</label>
-                      <input value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                        className={inputCls} type="email" placeholder="correo@ejemplo.com" />
+                      <input value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputCls} type="email" />
                     </div>
                     <div>
                       <label className={labelCls}>Usuario</label>
-                      <input value={form.username || ''} onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                        className={inputCls} placeholder="nombre_usuario" />
+                      <input value={form.username || ''} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} className={inputCls} />
                     </div>
                   </div>
                   <div>
@@ -904,108 +1022,210 @@ export default function ConfiguracionClient({
                       {roles.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
                     </select>
                   </div>
-                  {!form.id ? (
-                    <div>
-                      <label className={labelCls}>Contraseña</label>
-                      <input value={form.password || ''} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                        type="password" className={inputCls} placeholder="Mínimo 6 caracteres" />
-                    </div>
-                  ) : (
-                    <div>
-                      <label className={labelCls}>Nueva contraseña <span className="text-slate-300 font-normal normal-case ml-1">(opcional)</span></label>
-                      <input value={form.password || ''} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                        type="password" className={inputCls} placeholder="Dejar vacío para no cambiar" />
-                    </div>
-                  )}
+                  <div>
+                    <label className={labelCls}>{form.id ? 'Nueva contraseña' : 'Contraseña'} {form.id && <span className="text-slate-300 font-normal normal-case">(opcional)</span>}</label>
+                    <input value={form.password || ''} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} type="password" className={inputCls} placeholder={form.id ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'} />
+                  </div>
                 </>}
 
                 {/* CATEGORÍA */}
                 {modal === 'categoria' && <>
-                  <div>
-                    <label className={labelCls}>Nombre</label>
-                    <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
-                      className={inputCls} placeholder="ej. Oxigenoterapia" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Nombre</label>
+                      <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} placeholder="ej. Oxigenoterapia" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Descripción <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
+                      <input value={form.descripcion || ''} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} className={inputCls} />
+                    </div>
                   </div>
+
+                  {/* Galería de iconos para la categoría */}
                   <div>
-                    <label className={labelCls}>Descripción <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
-                    <input value={form.descripcion || ''} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
-                      className={inputCls} placeholder="Descripción de la categoría" />
+                    <label className={labelCls}>Ícono de la categoría <span className="text-slate-300 font-normal normal-case">(clic para seleccionar · clic de nuevo para deseleccionar)</span></label>
+                    <GaleriaIconos
+                      seleccionado={iconoSeleccionado}
+                      onSeleccionar={clave => setIconoSeleccionado(prev => prev === clave ? '' : clave)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-6 border-t border-slate-100 pt-4">
+                    {[
+                      { nivel: 'tipo',   label: 'Columnas del tipo',    sub: 'Mismas para todos los modelos' },
+                      { nivel: 'unidad', label: 'Columnas de la unidad', sub: 'Varían por unidad individual' },
+                    ].map(sec => {
+                      const campos = camposModal[`campos_${sec.nivel}`]
+                      return (
+                        <div key={sec.nivel}>
+                          <div className="text-[12px] font-bold text-slate-700 mb-0.5">{sec.label}</div>
+                          <div className="text-[11px] text-slate-400 mb-2">{sec.sub}</div>
+                          {campos.length > 0 && (
+                            <div className="space-y-1.5 mb-2">
+                              {campos.map((c, i) => (
+                                <div key={i} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-[8px] border border-slate-200">
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-[12px] font-semibold text-slate-700">{c.nombre}</span>
+                                    <span className="text-[11px] text-slate-400 ml-1.5">{TIPOS_CAMPO.find(t => t.value === c.tipo)?.label}{c.obligatorio ? ' · req.' : ''}</span>
+                                  </div>
+                                  <button onClick={() => eliminarCampoModal(sec.nivel, i)} className="p-1 text-slate-400 hover:text-red-500 flex-shrink-0"><X size={11} /></button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {nuevoCampo.nivel === sec.nivel ? (
+                            <div className="space-y-2 p-3 bg-slate-50 rounded-[9px] border border-slate-200">
+                              <input value={nuevoCampo.nombre} onChange={e => setNuevoCampo(p => ({ ...p, nombre: e.target.value }))}
+                                onKeyDown={e => e.key === 'Enter' && agregarCampoModal()}
+                                placeholder="Nombre del campo"
+                                className="w-full px-3 py-2 border border-slate-200 rounded-[8px] text-[13px] outline-none focus:border-[#D81B43] bg-white placeholder:text-slate-400" />
+                              <div className="flex gap-2 flex-wrap">
+                                <select value={nuevoCampo.tipo} onChange={e => setNuevoCampo(p => ({ ...p, tipo: e.target.value }))}
+                                  className="flex-1 min-w-[120px] px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] outline-none focus:border-[#D81B43] bg-white">
+                                  {TIPOS_CAMPO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                </select>
+                                <label className="flex items-center gap-1.5 text-[12px] text-slate-600 cursor-pointer whitespace-nowrap">
+                                  <input type="checkbox" checked={nuevoCampo.obligatorio} onChange={e => setNuevoCampo(p => ({ ...p, obligatorio: e.target.checked }))} className="accent-[#D81B43]" />
+                                  Requerido
+                                </label>
+                              </div>
+                              {nuevoCampo.tipo === 'lista' && (
+                                <input value={nuevoCampo.opciones} onChange={e => setNuevoCampo(p => ({ ...p, opciones: e.target.value }))}
+                                  placeholder="opción1, opción2, opción3"
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] outline-none focus:border-[#D81B43] bg-white placeholder:text-slate-400" />
+                              )}
+                              <div className="flex gap-2">
+                                <button onClick={agregarCampoModal}
+                                  className="flex-1 py-2 bg-[#D81B43] text-white text-[12.5px] font-semibold rounded-[8px] hover:bg-[#B0172F] flex items-center justify-center gap-1">
+                                  <Plus size={13} /> Agregar
+                                </button>
+                                <button onClick={() => setNuevoCampo(p => ({ ...p, nivel: '' }))}
+                                  className="px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] text-slate-500">Cancelar</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button onClick={() => setNuevoCampo({ nombre: '', tipo: 'texto', obligatorio: false, opciones: '', nivel: sec.nivel })}
+                              className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#D81B43] hover:underline">
+                              <Plus size={13} /> Agregar campo
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </>}
 
-                {/* TIPO EQUIPO */}
+                {/* TIPO */}
                 {modal === 'tipo' && <>
-                  <div>
-                    <label className={labelCls}>Categoría</label>
-                    <select value={form.categoria_id || ''} onChange={e => setForm(f => ({ ...f, categoria_id: e.target.value }))} className={inputCls}>
-                      <option value="">Seleccionar...</option>
-                      {cats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                    </select>
-                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={labelCls}>Marca</label>
-                      <input value={form.marca || ''} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))}
-                        className={inputCls} placeholder="ej. Respironics" />
+                      <label className={labelCls}>Categoría</label>
+                      <select value={form.categoria_id || ''}
+                        onChange={e => setForm(f => ({ ...f, categoria_id: e.target.value, atributos: {} }))}
+                        className={inputCls}>
+                        <option value="">Seleccionar...</option>
+                        {cats.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      </select>
                     </div>
                     <div>
-                      <label className={labelCls}>Modelo</label>
-                      <input value={form.modelo || ''} onChange={e => setForm(f => ({ ...f, modelo: e.target.value }))}
-                        className={inputCls} placeholder="ej. EverFlo" />
+                      <label className={labelCls}>Lista de mantenimiento <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
+                      <select value={form.lista_mantenimiento_id || ''} onChange={e => setForm(f => ({ ...f, lista_mantenimiento_id: e.target.value }))} className={inputCls}>
+                        <option value="">Sin lista</option>
+                        {listas.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                      </select>
                     </div>
                   </div>
+
+                  {/* Nombre del tipo — siempre visible */}
                   <div>
-                    <label className={labelCls}>INVIMA <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
-                    <input value={form.invima || ''} onChange={e => setForm(f => ({ ...f, invima: e.target.value }))}
-                      className={inputCls} placeholder="Número de registro INVIMA" />
+                    <label className={labelCls}>Nombre del tipo <span className="text-[#D81B43]">*</span></label>
+                    <input
+                      value={form.atributos?.nombre || ''}
+                      onChange={e => setForm(f => ({ ...f, atributos: { ...f.atributos, nombre: e.target.value } }))}
+                      placeholder="ej. Concentrador de Oxígeno EverFlo"
+                      className={inputCls} />
                   </div>
+
+                  {/* Imagen del tipo */}
                   <div>
-                    <label className={labelCls}>Lista de mantenimiento <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
-                    <select value={form.lista_mantenimiento_id || ''} onChange={e => setForm(f => ({ ...f, lista_mantenimiento_id: e.target.value }))} className={inputCls}>
-                      <option value="">Sin lista asignada</option>
-                      {listas.map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.nombre} ({actividadesDeLista(l.id).length} actividades)
-                        </option>
-                      ))}
-                    </select>
-                    {listas.length === 0 && (
-                      <p className="text-[12px] text-slate-400 mt-1.5">
-                        Primero crea listas en la sección &quot;Listas de mantenimiento&quot;
-                      </p>
-                    )}
+                    <label className={labelCls}>Imagen del equipo <span className="text-slate-300 font-normal normal-case">(opcional — foto real del modelo)</span></label>
+                    <div className="flex items-center gap-4">
+                      {/* Preview */}
+                      <div className="w-20 h-20 rounded-xl border-2 border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {imagenTipo
+                          ? <img src={URL.createObjectURL(imagenTipo)} alt="preview" className="w-full h-full object-contain p-1" />
+                          : imagenTipoUrl
+                          ? <img src={imagenTipoUrl} alt="actual" className="w-full h-full object-contain p-1" />
+                          : <Cpu size={28} className="text-slate-200" />
+                        }
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] font-medium text-slate-600 hover:border-[#D81B43] hover:text-[#D81B43] transition-all cursor-pointer w-fit">
+                          <Upload size={13} /> {imagenTipo ? imagenTipo.name.slice(0, 20) + '...' : 'Subir imagen'}
+                          <input type="file" accept="image/*" className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) setImagenTipo(f); e.target.value = '' }} />
+                        </label>
+                        {(imagenTipo || imagenTipoUrl) && (
+                          <button onClick={() => { setImagenTipo(null); setImagenTipoUrl('') }}
+                            className="text-[12px] text-red-400 hover:text-red-600 transition-colors text-left">
+                            Quitar imagen
+                          </button>
+                        )}
+                        <div className="text-[11px] text-slate-400">JPG, PNG o WEBP · máx. 2MB</div>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Campos dinámicos */}
+                  {(() => {
+                    const cat = cats.find(c => c.id === form.categoria_id)
+                    const campos = cat?.atributos_extra?.campos_tipo || []
+                    if (!form.categoria_id) return <div className="text-[12.5px] text-slate-400 py-2">Selecciona una categoría para ver sus campos</div>
+                    if (campos.length === 0) return (
+                      <div className="text-[12.5px] text-slate-400 py-2">
+                        Esta categoría no tiene columnas del tipo.
+                        <button onClick={() => { setModal(null); setSeccion('categorias') }} className="ml-2 text-[#D81B43] font-medium hover:underline">Configurar →</button>
+                      </div>
+                    )
+                    return (
+                      <div className="border-t border-slate-100 pt-3 space-y-3">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.07em] text-[#25A9E0]">Columnas del tipo — {cat.nombre}</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {campos.map(campo => (
+                            <div key={campo.clave}>
+                              <label className={labelCls}>{campo.nombre}{campo.obligatorio && <span className="text-[#D81B43] ml-1">*</span>}</label>
+                              {renderCampoForm(campo)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </>}
 
                 {/* LISTA */}
                 {modal === 'lista' && <>
                   <div>
                     <label className={labelCls}>Nombre de la lista</label>
-                    <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
-                      className={inputCls} placeholder="ej. Revisión básica concentrador" />
+                    <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} placeholder="ej. Revisión básica concentrador" />
                   </div>
                   <div>
                     <label className={labelCls}>Descripción <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
-                    <input value={form.descripcion || ''} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
-                      className={inputCls} placeholder="Descripción de la lista" />
+                    <input value={form.descripcion || ''} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} className={inputCls} />
                   </div>
                 </>}
-
               </div>
 
-              <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0">
-                <button onClick={() => setModal(null)}
-                  className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
-                  Cancelar
-                </button>
+              {/* Modal footer */}
+              <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
+                <button onClick={() => setModal(null)} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
                 <button onClick={
                   modal === 'usuario'   ? guardarUsuario :
                   modal === 'categoria' ? guardarCat     :
                   modal === 'tipo'      ? guardarTipo    :
                   guardarLista
-                } disabled={saving}
-                  className="px-5 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#1E4D8C] disabled:opacity-50">
-                  {saving ? 'Guardando...' : 'Guardar'}
+                } disabled={saving || subiendoImagen}
+                  className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
+                  {subiendoImagen ? 'Subiendo imagen...' : saving ? 'Guardando...' : 'Guardar'}
                 </button>
               </div>
             </div>
