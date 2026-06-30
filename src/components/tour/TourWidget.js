@@ -70,7 +70,6 @@ function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }
   const progress = ((paso + 1) / totalPasos) * 100
 
   useEffect(() => {
-    setVisible(false)
     const timer = setTimeout(() => {
       if (pasoData.posicion === 'center' || !pasoData.elemento || pasoData.elemento === 'body') {
         setRect(null)
@@ -93,7 +92,7 @@ function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }
         setCardStyle(getCardStyle(null, 'center'))
         setVisible(true)
       }
-    }, 300)
+    }, 50)
     return () => clearTimeout(timer)
   }, [pasoData.id, pasoData.elemento, pasoData.posicion])
 
@@ -186,15 +185,15 @@ function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }
 export default function TourWidget() {
   const router   = useRouter()
   const pathname = usePathname()
-  const [activo, setActivo]       = useState(false)
-  const [pasoIdx, setPasoIdx]     = useState(0)
+  const [activo, setActivo]       = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem(TOUR_KEY) !== 'true'
+  })
+  const [pasoIdx, setPasoIdx]     = useState(() => {
+    if (typeof window === 'undefined') return 0
+    return parseInt(localStorage.getItem(TOUR_PASO_KEY) || '0', 10)
+  })
   const [navegando, setNavegando] = useState(false)
-
-  useEffect(() => {
-    const completado    = localStorage.getItem(TOUR_KEY) === 'true'
-    const pasoGuardado  = parseInt(localStorage.getItem(TOUR_PASO_KEY) || '0', 10)
-    if (!completado) { setPasoIdx(pasoGuardado); setActivo(true) }
-  }, [])
 
   useEffect(() => {
     function onReiniciar() {
@@ -209,14 +208,18 @@ export default function TourWidget() {
   const pasoActual = PASOS_TOUR[pasoIdx]
 
   useEffect(() => {
-    if (!activo || !pasoActual || navegando) return
+    if (!activo || !pasoActual) return
+    if (navegando) return
     if (pasoActual.ruta && pathname !== pasoActual.ruta) {
-      setNavegando(true)
-      router.push(pasoActual.ruta)
-      const t = setTimeout(() => setNavegando(false), 900)
+      const t = setTimeout(() => {
+        setNavegando(true)
+        router.push(pasoActual.ruta)
+        setTimeout(() => setNavegando(false), 900)
+      }, 0)
       return () => clearTimeout(t)
     }
-  }, [activo, pasoActual?.id, pathname])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activo, pasoIdx, pathname])
 
   function siguiente() {
     if (pasoIdx >= PASOS_TOUR.length - 1) { terminar(); return }

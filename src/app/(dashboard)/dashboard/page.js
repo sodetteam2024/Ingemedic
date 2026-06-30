@@ -4,8 +4,9 @@ import DashboardClient from './DashboardClient'
 export default async function DashboardPage() {
   const supabase = await createClient()
 
-  const hoy = new Date().toISOString().split('T')[0]
-  const en7dias = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+  const ahora   = new Date()
+  const hoy     = ahora.toISOString().split('T')[0]
+  const en7dias = new Date(ahora.getTime() + 7 * 86400000).toISOString().split('T')[0]
 
   const [
     { data: equiposEstados },
@@ -16,10 +17,8 @@ export default async function DashboardPage() {
     { data: ordenesRetrasadas },
     { data: actividadReciente },
   ] = await Promise.all([
-    // Equipos por estado
     supabase.from('equipos').select('estado:estados_equipo(id, nombre)'),
 
-    // Órdenes activas con detalle
     supabase.from('ordenes_servicio').select(`
       id, codigo, fecha_entrega, fecha_vigencia,
       cliente:clientes(id, nombre),
@@ -30,7 +29,6 @@ export default async function DashboardPage() {
     .order('fecha_entrega', { ascending: true })
     .limit(10),
 
-    // Mantenimientos activos
     supabase.from('mantenimientos').select(`
       id, codigo, fecha_apertura,
       equipo:equipos(id, serial, codigo, tipo_equipo:tipos_equipo(id, nombre, atributos)),
@@ -41,7 +39,6 @@ export default async function DashboardPage() {
     .order('fecha_creacion', { ascending: false })
     .limit(8),
 
-    // Entregas de hoy
     supabase.from('entregas').select(`
       id, codigo, tipo, fecha_inicio, fecha_completada,
       cliente:clientes(id, nombre),
@@ -51,7 +48,6 @@ export default async function DashboardPage() {
     .gte('fecha_creacion', hoy)
     .order('fecha_creacion', { ascending: false }),
 
-    // Vigencias próximas a vencer (7 días)
     supabase.from('ordenes_servicio').select(`
       id, codigo, fecha_vigencia,
       cliente:clientes(id, nombre),
@@ -63,18 +59,16 @@ export default async function DashboardPage() {
     .order('fecha_vigencia', { ascending: true })
     .limit(5),
 
-    // Órdenes retrasadas
     supabase.from('ordenes_servicio').select(`
       id, codigo, fecha_entrega,
       cliente:clientes(id, nombre),
       repartidor:usuarios!ordenes_servicio_repartidor_id_fkey(id, nombre)
     `)
     .eq('estado_id', '9430f8fe-008f-494e-ada5-3c667799b26c')
-    .lt('fecha_entrega', new Date().toISOString())
+    .lt('fecha_entrega', ahora.toISOString())
     .order('fecha_entrega', { ascending: true })
     .limit(5),
 
-    // Actividad reciente — últimas órdenes + mantenimientos + entregas
     supabase.from('ordenes_servicio').select(`
       id, codigo, fecha_creacion,
       cliente:clientes(id, nombre),
@@ -84,7 +78,6 @@ export default async function DashboardPage() {
     .limit(5),
   ])
 
-  // Conteos de equipos por estado
   const estadosEquipo = {}
   ;(equiposEstados || []).forEach(e => {
     const n = e.estado?.nombre || 'Sin estado'

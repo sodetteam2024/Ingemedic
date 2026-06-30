@@ -1,4 +1,5 @@
 'use client'
+import Image from 'next/image'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -160,7 +161,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       a.href = URL.createObjectURL(blob)
       a.download = `inventario_${nivel}_${new Date().toISOString().slice(0,10)}.xlsx`
       a.click()
-    } catch {
+    } catch (e) {
       showToast('Error exportando', 'error')
     } finally {
       setExportando(false)
@@ -310,7 +311,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
             </button>
           )}
           {vista === 'unidades' && (
-            <button data-tour="btn-nueva-unidad" onClick={abrirModalNueva}
+            <button onClick={abrirModalNueva}
               className="flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
               <Plus size={14} strokeWidth={2.5} /> Nueva unidad
             </button>
@@ -337,7 +338,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
         {/* VISTA CATEGORÍAS */}
         {vista === 'categorias' && (
-          <div data-tour="inventario-categorias" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {categorias.length === 0 && (
               <div className="col-span-full text-center py-16 text-slate-400">
                 <Package className="w-16 h-16 mx-auto mb-3 opacity-20" />
@@ -393,7 +394,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               <div className="text-center py-12 text-slate-400">
                 <Inbox className="w-16 h-16 mx-auto mb-3 opacity-20" />
                 <div className="font-semibold mb-1">Sin tipos en esta categoría</div>
-                <div className="text-[13px]">Usa el botón "Nuevo tipo" para agregar uno</div>
+                <div className="text-[13px]">Usa el botón &quot;Nuevo tipo&quot; para agregar uno</div>
               </div>
             )}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -466,7 +467,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 <div className="text-center py-12 text-slate-400">
                   <Inbox className="w-12 h-12 mx-auto mb-3 opacity-20" />
                   <div className="font-semibold mb-1">Sin unidades registradas</div>
-                  <div className="text-[13px]">Usa "Nueva unidad" para registrar el primer equipo</div>
+                  <div className="text-[13px]">Usa &quot;Nueva unidad&quot; para registrar el primer equipo</div>
                 </div>
               ) : (
                 <table className="w-full border-collapse">
