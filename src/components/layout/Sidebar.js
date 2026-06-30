@@ -105,22 +105,10 @@ export default function Sidebar({ usuario, empresa }) {
             </div>
           ))}
 
-          {/* Sección Configuración nav items con data-tour */}
-          <div className="mb-3 px-3">
-            <div className="text-[9.5px] font-bold tracking-[0.14em] uppercase text-slate-400 px-1 py-1.5">
-              Configuración
-            </div>
-            {[
-              { id: 'nav-empresa',    label: 'Empresa',        icon: '🏢' },
-              { id: 'nav-categorias', label: 'Categorías',     icon: '📂' },
-              { id: 'nav-tipos',      label: 'Tipos',          icon: '⚙️' },
-              { id: 'nav-listas',     label: 'Listas mant.',   icon: '📋' },
-              { id: 'nav-usuarios',   label: 'Usuarios',       icon: '👥' },
-            ].map(c => (
-              <div key={c.id} data-tour={c.id}
-                className="hidden" /* Solo para targeting del tour, no visible */ />
-            ))}
-          </div>
+          {/* Divs ocultos para targeting del tour */}
+          {['nav-empresa','nav-categorias','nav-tipos','nav-listas','nav-usuarios'].map(id => (
+            <div key={id} data-tour={id} className="hidden" />
+          ))}
         </nav>
 
         {/* Tour del sistema */}

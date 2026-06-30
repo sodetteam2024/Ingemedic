@@ -4,6 +4,10 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
+const TOUR_KEY      = 'ingemedic_tour_completado'
+const TOUR_PASO_KEY = 'ingemedic_tour_paso'
+const TOUR_USER_KEY = 'ingemedic_tour_usuario'
+
 export default function LoginPage() {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword]     = useState('')
@@ -29,12 +33,14 @@ export default function LoginPage() {
     const supabase = createClient()
     const isEmail  = identifier.includes('@')
     let email      = identifier
+    let userId     = null
 
     if (!isEmail) {
+      // Búsqueda case-insensitive con ilike
       const { data, error: fetchError } = await supabase
         .from('usuarios')
-        .select('email')
-        .eq('username', identifier)
+        .select('email, id')
+        .ilike('username', identifier.trim())
         .single()
 
       if (fetchError || !data) {
@@ -42,7 +48,8 @@ export default function LoginPage() {
         setLoading(false)
         return
       }
-      email = data.email
+      email  = data.email
+      userId = data.id
     }
 
     const { error: authError } = await supabase.auth.signInWithPassword({
@@ -51,9 +58,18 @@ export default function LoginPage() {
     })
 
     if (authError) {
-      setError('Correo/usuario o contraseña incorrectos. ' + authError.message)
+      setError('Correo/usuario o contraseña incorrectos.')
       setLoading(false)
       return
+    }
+
+    // Si el usuario es diferente al último, resetear el tour
+    const lastUser = localStorage.getItem(TOUR_USER_KEY)
+    const currentUser = userId || email
+    if (lastUser !== currentUser) {
+      localStorage.removeItem(TOUR_KEY)
+      localStorage.removeItem(TOUR_PASO_KEY)
+      localStorage.setItem(TOUR_USER_KEY, currentUser)
     }
 
     router.push('/dashboard')
@@ -167,7 +183,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-[11.5px] text-slate-300 mt-8">
-            © 2024 Ingemedic de Colombia S.A.S. — Desarrollado por SODET
+            © 2026 Ingemedic de Colombia S.A.S. — Desarrollado por SODET
           </p>
         </div>
       </div>
