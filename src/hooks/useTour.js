@@ -12,7 +12,7 @@ export const PASOS_TOUR = [
   {
     id: 'bienvenida',
     ruta: '/configuracion',
-    elemento: 'body',
+    elemento: null,
     titulo: '👋 Bienvenido a Ingemedic',
     descripcion: 'Este tour te guiará por todas las funcionalidades del sistema. Puedes pausarlo en cualquier momento y retomarlo desde Configuración → Tour del sistema.',
     posicion: 'center',
@@ -24,6 +24,7 @@ export const PASOS_TOUR = [
     titulo: '🏢 Paso 1: Datos de la empresa',
     descripcion: 'Completa los datos de Ingemedic de Colombia. Esta información aparecerá en todos los documentos y actas generadas.',
     posicion: 'right',
+    seccion: 'empresa',
   },
   {
     id: 'categorias',
@@ -32,6 +33,7 @@ export const PASOS_TOUR = [
     titulo: '📂 Paso 2: Categorías de equipo',
     descripcion: 'Las categorías agrupan los equipos por tipo (ej. Oxigenoterapia, Ventilación). Cada categoría define qué información se registra para sus equipos.',
     posicion: 'right',
+    seccion: 'categorias',
   },
   {
     id: 'tipos',
@@ -40,6 +42,7 @@ export const PASOS_TOUR = [
     titulo: '⚙️ Paso 3: Tipos de equipo',
     descripcion: 'Dentro de cada categoría crea los modelos de equipo (ej. Concentrador EverFlo). Cada tipo puede tener una imagen y datos específicos del modelo.',
     posicion: 'right',
+    seccion: 'tipos',
   },
   {
     id: 'listas',
@@ -48,6 +51,7 @@ export const PASOS_TOUR = [
     titulo: '📋 Paso 4: Listas de mantenimiento',
     descripcion: 'Crea listas de actividades para los mantenimientos preventivos. Al abrir un mantenimiento podrás seleccionar una lista y el sistema generará el checklist automáticamente.',
     posicion: 'right',
+    seccion: 'listas',
   },
   {
     id: 'usuarios',
@@ -56,6 +60,7 @@ export const PASOS_TOUR = [
     titulo: '👥 Paso 5: Usuarios del sistema',
     descripcion: 'Registra a tu equipo de trabajo: administradores, repartidores y técnicos. Cada repartidor aparecerá disponible para asignar en las órdenes de servicio.',
     posicion: 'right',
+    seccion: 'usuarios',
   },
 
   // ── BLOQUE 2: INVENTARIO ─────────────────────────────────
@@ -134,7 +139,7 @@ export const PASOS_TOUR = [
     ruta: '/mantenimientos',
     elemento: '[data-tour="tabla-mantenimientos"]',
     titulo: '☑️ Checklist de actividades',
-    descripcion: 'Si asignaste una lista de mantenimiento al crear el equipo, al abrir el mantenimiento se genera automáticamente el checklist. Marca cada actividad, agrega observaciones y adjunta fotos.',
+    descripcion: 'Si asignaste una lista al crear el mantenimiento, se genera automáticamente el checklist. Marca cada actividad, agrega observaciones y adjunta fotos.',
     posicion: 'top',
   },
   {
@@ -142,7 +147,7 @@ export const PASOS_TOUR = [
     ruta: '/mantenimientos',
     elemento: '[data-tour="tabla-mantenimientos"]',
     titulo: '📄 Acta de mantenimiento',
-    descripcion: 'Al cerrar el mantenimiento indica si el equipo vuelve a estar disponible o se da de baja. El sistema genera automáticamente el acta en PDF con el logo, checklist e imágenes adjuntas.',
+    descripcion: 'Al cerrar el mantenimiento indica si el equipo vuelve a estar disponible o se da de baja. El sistema genera automáticamente el acta en PDF con logo, checklist e imágenes.',
     posicion: 'top',
   },
 
@@ -150,7 +155,7 @@ export const PASOS_TOUR = [
   {
     id: 'fin',
     ruta: null,
-    elemento: 'body',
+    elemento: null,
     titulo: '🎉 ¡Tour completado!',
     descripcion: 'Ya conoces todas las funcionalidades del sistema. Puedes relanzar este tour en cualquier momento desde Configuración → Tour del sistema. ¡Éxitos con Ingemedic!',
     posicion: 'center',

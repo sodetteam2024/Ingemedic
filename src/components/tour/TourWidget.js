@@ -9,72 +9,56 @@ const TOUR_KEY      = 'ingemedic_tour_completado'
 const TOUR_PASO_KEY = 'ingemedic_tour_paso'
 
 const BLOQUES = [
-  { nombre: 'Configuración', pasos: ['bienvenida','empresa','categorias','tipos','listas','usuarios'],                       color: '#7C3AED' },
-  { nombre: 'Inventario',    pasos: ['inventario-intro','nueva-unidad'],                                                     color: '#25A9E0' },
-  { nombre: 'Órdenes',       pasos: ['ordenes-intro','ordenes-flujo'],                                                       color: '#D81B43' },
-  { nombre: 'Entregas',      pasos: ['entregas-intro','entregas-iniciar','entregas-completar'],                              color: '#B45309' },
-  { nombre: 'Mantenimientos',pasos: ['mantenimientos-intro','mantenimientos-checklist','mantenimientos-acta'],               color: '#0F7B55' },
-  { nombre: 'Fin',           pasos: ['fin'],                                                                                 color: '#1E293B' },
+  { nombre: 'Configuración', pasos: ['bienvenida','empresa','categorias','tipos','listas','usuarios'],          color: '#1B3A6B' },
+  { nombre: 'Inventario',    pasos: ['inventario-intro','nueva-unidad'],                                        color: '#25A9E0' },
+  { nombre: 'Órdenes',       pasos: ['ordenes-intro','ordenes-flujo'],                                          color: '#D81B43' },
+  { nombre: 'Entregas',      pasos: ['entregas-intro','entregas-iniciar','entregas-completar'],                  color: '#B45309' },
+  { nombre: 'Mantenimientos',pasos: ['mantenimientos-intro','mantenimientos-checklist','mantenimientos-acta'],   color: '#0F7B55' },
+  { nombre: 'Fin',           pasos: ['fin'],                                                                     color: '#D81B43' },
 ]
 
 function getBloqueColor(id) { return BLOQUES.find(b => b.pasos.includes(id))?.color || '#D81B43' }
 function getBloqueNombre(id) { return BLOQUES.find(b => b.pasos.includes(id))?.nombre || '' }
 
-function getCardStyle(rect, posicion) {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const cardW = Math.min(380, vw - 32) // máx 380px, mínimo 16px de margen a cada lado
+function getCardStyle(rect) {
+  const vw    = window.innerWidth
+  const vh    = window.innerHeight
+  const cardW = Math.min(380, vw - 32)
 
-  if (posicion === 'center' || !rect) {
-    return {
-      position: 'fixed',
-      top: '50%', left: '50%',
-      transform: 'translate(-50%, -50%)',
-      width: cardW,
-      maxHeight: vh - 32,
-    }
+  if (!rect) {
+    return { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: cardW, maxHeight: vh - 32 }
   }
 
-  // Calcular posición óptima
   const spaceBottom = vh - (rect.top + rect.height)
   const spaceTop    = rect.top
-  const spaceRight  = vw - rect.left
-  const spaceLeft   = rect.left
+  let top = spaceBottom >= 220 || spaceBottom > spaceTop
+    ? Math.min(rect.top + rect.height + 12, vh - 220)
+    : Math.max(rect.top - 220, 8)
 
-  let top, left
-
-  if (spaceBottom >= 220 || spaceBottom > spaceTop) {
-    top = Math.min(rect.top + rect.height + 12, vh - 220)
-  } else {
-    top = Math.max(rect.top - 220, 8)
-  }
-
-  // Centrar horizontalmente respecto al elemento, pero dentro de la pantalla
-  left = rect.left + rect.width / 2 - cardW / 2
+  let left = rect.left + rect.width / 2 - cardW / 2
   left = Math.max(16, Math.min(left, vw - cardW - 16))
 
-  return {
-    position: 'fixed',
-    top, left,
-    width: cardW,
-    maxHeight: vh - top - 16,
-  }
+  return { position: 'fixed', top, left, width: cardW, maxHeight: vh - top - 16 }
 }
 
 function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }) {
-  const [rect, setRect]       = useState(null)
-  const [visible, setVisible] = useState(false)
-  const [cardStyle, setCardStyle] = useState({})
-  const color  = getBloqueColor(pasoData.id)
-  const bloque = getBloqueNombre(pasoData.id)
+  const [rect, setRect]           = useState(null)
+  const [cardStyle, setCardStyle] = useState({ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 380 })
+  const [visible, setVisible]     = useState(false)
+  const color   = getBloqueColor(pasoData.id)
+  const bloque  = getBloqueNombre(pasoData.id)
   const progress = ((paso + 1) / totalPasos) * 100
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const delay = pasoData.posicion === 'center' || !pasoData.elemento || pasoData.elemento === 'body' ? 100 : 600
+
+    const t = setTimeout(() => {
+      setVisible(false)
+      setRect(null)
+
       if (pasoData.posicion === 'center' || !pasoData.elemento || pasoData.elemento === 'body') {
-        setRect(null)
-        setCardStyle(getCardStyle(null, 'center'))
-        setVisible(true)
+        setCardStyle(getCardStyle(null))
+        setTimeout(() => setVisible(true), 50)
         return
       }
       const el = document.querySelector(pasoData.elemento)
@@ -84,45 +68,43 @@ function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }
           const r = el.getBoundingClientRect()
           const elRect = { top: r.top, left: r.left, width: r.width, height: r.height }
           setRect(elRect)
-          setCardStyle(getCardStyle(elRect, pasoData.posicion))
-          setVisible(true)
-        }, 400)
+          setCardStyle(getCardStyle(elRect))
+          setTimeout(() => setVisible(true), 50)
+        }, 350)
       } else {
-        setRect(null)
-        setCardStyle(getCardStyle(null, 'center'))
-        setVisible(true)
+        setCardStyle(getCardStyle(null))
+        setTimeout(() => setVisible(true), 50)
       }
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [pasoData.id, pasoData.elemento, pasoData.posicion])
+    }, delay)
+
+    return () => clearTimeout(t)
+  }, [pasoData.id])
 
   return (
-    <div className={`transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0'}`}>
-      {/* Overlay */}
-      <div className="fixed inset-0 z-[9000] pointer-events-none"
-        style={{ background: 'rgba(0,0,0,0.6)' }} />
+    <div style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.25s ease' }}>
+      {/* Overlay bloquea interacción */}
+      <div className="fixed inset-0 z-[9000]"
+        style={{ background: 'rgba(0,0,0,0.6)' }}
+        onClick={e => e.stopPropagation()} />
 
       {/* Highlight del elemento */}
-      {rect && (
+      {rect && visible && (
         <div className="fixed z-[9001] pointer-events-none rounded-[8px]"
           style={{
-            top:    rect.top - 6,
-            left:   rect.left - 6,
-            width:  rect.width + 12,
-            height: rect.height + 12,
+            top:       rect.top - 6,
+            left:      rect.left - 6,
+            width:     rect.width + 12,
+            height:    rect.height + 12,
             boxShadow: `0 0 0 9999px rgba(0,0,0,0.6), 0 0 0 3px ${color}, 0 0 20px ${color}40`,
             background: 'transparent',
-            transition: 'all 0.3s ease',
           }} />
       )}
 
-      {/* Tarjeta tour */}
-      <div className="z-[9002] pointer-events-auto overflow-y-auto"
-        style={{ ...cardStyle, position: 'fixed' }}>
+      {/* Tarjeta */}
+      <div className="z-[9002] pointer-events-auto overflow-y-auto" style={{ ...cardStyle, position: 'fixed' }}>
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-100">
           {/* Header */}
-          <div className="px-4 py-3 flex items-center justify-between flex-shrink-0"
-            style={{ background: color }}>
+          <div className="px-4 py-3 flex items-center justify-between" style={{ background: color }}>
             <div className="flex items-center gap-2 min-w-0">
               <Map size={13} className="text-white/70 flex-shrink-0" />
               <span className="text-[11px] font-semibold text-white/80 truncate">{bloque}</span>
@@ -134,9 +116,8 @@ function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }
           </div>
 
           {/* Progreso */}
-          <div className="h-1 bg-slate-100 flex-shrink-0">
-            <div className="h-full transition-all duration-500"
-              style={{ width: `${progress}%`, background: color }} />
+          <div className="h-1 bg-slate-100">
+            <div className="h-full transition-all duration-500" style={{ width: `${progress}%`, background: color }} />
           </div>
 
           {/* Contenido */}
@@ -157,9 +138,8 @@ function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }
           </div>
 
           {/* Acciones */}
-          <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-shrink-0">
-            <button onClick={onSkip}
-              className="text-[11.5px] text-slate-400 hover:text-slate-600 flex items-center gap-1">
+          <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2">
+            <button onClick={onSkip} className="text-[11.5px] text-slate-400 hover:text-slate-600 flex items-center gap-1">
               <SkipForward size={11} /> Saltar
             </button>
             <div className="flex gap-2">
@@ -185,21 +165,26 @@ function HighlightOverlay({ onNext, onPrev, onSkip, paso, totalPasos, pasoData }
 export default function TourWidget() {
   const router   = useRouter()
   const pathname = usePathname()
-  const [activo, setActivo]       = useState(() => {
+
+  const [activo, setActivo]   = useState(() => {
     if (typeof window === 'undefined') return false
     return localStorage.getItem(TOUR_KEY) !== 'true'
   })
-  const [pasoIdx, setPasoIdx]     = useState(() => {
+  const [pasoIdx, setPasoIdx] = useState(() => {
     if (typeof window === 'undefined') return 0
     return parseInt(localStorage.getItem(TOUR_PASO_KEY) || '0', 10)
   })
-  const [navegando, setNavegando] = useState(false)
+  const [listo, setListo]     = useState(false) // true cuando la ruta ya coincide
 
   useEffect(() => {
     function onReiniciar() {
       localStorage.removeItem(TOUR_KEY)
       localStorage.setItem(TOUR_PASO_KEY, '0')
-      setPasoIdx(0); setActivo(true)
+      setTimeout(() => {
+        setPasoIdx(0)
+        setActivo(true)
+        setListo(false)
+      }, 0)
     }
     window.addEventListener('reiniciar-tour', onReiniciar)
     return () => window.removeEventListener('reiniciar-tour', onReiniciar)
@@ -207,29 +192,44 @@ export default function TourWidget() {
 
   const pasoActual = PASOS_TOUR[pasoIdx]
 
+  // Navegar si la ruta no coincide
   useEffect(() => {
     if (!activo || !pasoActual) return
-    if (navegando) return
-    if (pasoActual.ruta && pathname !== pasoActual.ruta) {
+
+    const rutaEsperada = pasoActual.ruta
+    if (!rutaEsperada || pathname === rutaEsperada) {
       const t = setTimeout(() => {
-        setNavegando(true)
-        router.push(pasoActual.ruta)
-        setTimeout(() => setNavegando(false), 900)
-      }, 0)
+        // Si el paso requiere una sección específica en Configuración, cambiarla
+        if (pasoActual.seccion) {
+          window.dispatchEvent(new CustomEvent('tour-seccion', { detail: pasoActual.seccion }))
+        }
+        setListo(true)
+      }, 100)
       return () => clearTimeout(t)
     }
+
+    // Ruta no coincide — ocultar y navegar
+    const t = setTimeout(() => {
+      setListo(false)
+      router.push(rutaEsperada)
+    }, 50)
+    return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activo, pasoIdx, pathname])
 
   function siguiente() {
     if (pasoIdx >= PASOS_TOUR.length - 1) { terminar(); return }
+    setListo(false)
     const n = pasoIdx + 1
-    setPasoIdx(n); localStorage.setItem(TOUR_PASO_KEY, String(n))
+    setPasoIdx(n)
+    localStorage.setItem(TOUR_PASO_KEY, String(n))
   }
   function anterior() {
     if (pasoIdx <= 0) return
+    setListo(false)
     const n = pasoIdx - 1
-    setPasoIdx(n); localStorage.setItem(TOUR_PASO_KEY, String(n))
+    setPasoIdx(n)
+    localStorage.setItem(TOUR_PASO_KEY, String(n))
   }
   function terminar() {
     localStorage.setItem(TOUR_KEY, 'true')
@@ -237,7 +237,8 @@ export default function TourWidget() {
     setActivo(false)
   }
 
-  if (!activo || !pasoActual) return null
+  // Solo renderizar cuando estamos en la ruta correcta
+  if (!activo || !pasoActual || !listo) return null
 
   return (
     <HighlightOverlay

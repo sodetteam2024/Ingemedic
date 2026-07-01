@@ -1,6 +1,6 @@
 'use client'
 import Image from 'next/image'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Users, Lock, Tag, Cpu, Building2,
   FileText, Upload, Plus, X, Edit3, Trash2,
@@ -225,6 +225,13 @@ export default function ConfiguracionClient({
   actividades: actividadesIniciales = [], empresaInicial = {}
 }) {
   const [seccion, setSeccion]         = useState('usuarios')
+
+  // Escuchar evento del tour para cambiar sección automáticamente
+  useEffect(() => {
+    function onTourSeccion(e) { setSeccion(e.detail) }
+    window.addEventListener('tour-seccion', onTourSeccion)
+    return () => window.removeEventListener('tour-seccion', onTourSeccion)
+  }, [])
   const [usuarios, setUsuarios]       = useState(usuariosIniciales ?? [])
   const [cats, setCats]               = useState(catsIniciales ?? [])
   const [tipos, setTipos]             = useState(tiposIniciales ?? [])
@@ -581,8 +588,15 @@ export default function ConfiguracionClient({
               <div className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-slate-400 px-4 py-1.5">{grupo}</div>
               {NAV.filter(n => n.grupo === grupo).map(n => {
                 const Icon = n.icon; const active = seccion === n.id
+                const tourId = n.id === 'empresa' ? 'nav-empresa'
+                  : n.id === 'categorias' ? 'nav-categorias'
+                  : n.id === 'tipos' ? 'nav-tipos'
+                  : n.id === 'listas' ? 'nav-listas'
+                  : n.id === 'usuarios' ? 'nav-usuarios'
+                  : undefined
                 return (
-                  <button key={n.id} data-tour={`nav-${n.id}`} onClick={() => setSeccion(n.id)}
+                  <button key={n.id} onClick={() => setSeccion(n.id)}
+                    data-tour={tourId}
                     className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium transition-all ${active ? 'bg-[#D81B43]/5 text-[#D81B43] font-semibold border-r-2 border-[#D81B43]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
                     <Icon size={15} className={active ? 'text-[#D81B43]' : 'text-slate-400'} />
                     {n.label}
@@ -591,13 +605,6 @@ export default function ConfiguracionClient({
               })}
             </div>
           ))}
-          <div className="mt-auto px-4 pb-4 pt-3 border-t border-slate-100">
-            <button
-              onClick={() => window.dispatchEvent(new Event('reiniciar-tour'))}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-[8px] text-[12px] font-medium text-slate-500 hover:bg-slate-50 hover:text-[#D81B43] transition-all">
-              🗺 Tour del sistema
-            </button>
-          </div>
         </aside>
 
         {/* Content */}
@@ -1024,7 +1031,18 @@ export default function ConfiguracionClient({
                   </div>
                   <div>
                     <label className={labelCls}>{form.id ? 'Nueva contraseña' : 'Contraseña'} {form.id && <span className="text-slate-300 font-normal normal-case">(opcional)</span>}</label>
-                    <input value={form.password || ''} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} type="password" className={inputCls} placeholder={form.id ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'} />
+                    <div className="relative">
+                      <input value={form.password || ''} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                        type={form._showPass ? 'text' : 'password'}
+                        className={inputCls} placeholder={form.id ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'} />
+                      <button type="button" onClick={() => setForm(f => ({ ...f, _showPass: !f._showPass }))}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                        {form._showPass
+                          ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        }
+                      </button>
+                    </div>
                   </div>
                 </>}
 
