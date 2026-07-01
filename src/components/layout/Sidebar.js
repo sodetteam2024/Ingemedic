@@ -129,7 +129,7 @@ export default function Sidebar({ usuario, empresa }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[12.5px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
-            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.rol || 'admin'}</div>
+            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.roles.nombre || 'admin'}</div>
           </div>
           <button onClick={logout} className="text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0 p-1">
             {ICONS.logout}

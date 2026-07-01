@@ -12,9 +12,16 @@ export default async function DashboardLayout({ children }) {
   // Traer datos del usuario de la tabla usuarios
   const { data: usuario } = await supabase
     .from('usuarios')
-    .select('nombre, rol, email, username')
-    .eq('email', user.email)
-    .single()
+  .select(`
+    nombre,
+    email,
+    username,
+    roles (
+      nombre
+    )
+  `)
+  .eq('email', user.email)
+  .single()
 
   const { data: empresa } = await supabase
     .from('configuracion_empresa')
