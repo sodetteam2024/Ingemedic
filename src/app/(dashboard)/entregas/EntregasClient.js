@@ -311,6 +311,20 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
 
+    // Guardar cada firma en su documento (orden_plantillas)
+    const docs = modalRegistro.orden?.plantillas || []
+    for (const doc of docs) {
+      const firma = regForm.firmas[doc.id]
+      if (firma) {
+        await supabase.from('orden_plantillas').update({
+          firmado:         true,
+          firmado_por:     regForm.recibido_por.trim(),
+          firma_iniciales: firma,
+          fecha_firma:     ahora,
+        }).eq('id', doc.id)
+      }
+    }
+
     await supabase.from('ordenes_servicio')
       .update({ estado_id: ESTADO_OS_ENTREGADA, recibido_por: regForm.recibido_por.trim() })
       .eq('id', modalRegistro.orden?.id)
@@ -325,6 +339,157 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     setModalRegistro(null)
     showToast('Entrega completada ✓')
     router.refresh()
+  }
+
+  // ── GENERAR PDF ACTA DE ENTREGA (con firmas) ─────────────
+  async function generarActaEntregaPDF(entrega) {
+    // Traer datos frescos incluyendo firmas actualizadas
+    const { data: entFresh } = await supabase.from('entregas').select(`
+      *,
+      orden:ordenes_servicio(
+        id, codigo, fecha_vigencia, observaciones,
+        cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
+        equipos:orden_equipos(id, equipo:equipos(id, codigo, serial, tipo_equipo:tipos_equipo(id, nombre, atributos))),
+        plantillas:orden_plantillas(id, firmado, firmado_por, firma_iniciales, fecha_firma, plantilla:plantillas_orden(id, nombre))
+      ),
+      cliente:clientes(id, nombre),
+      repartidor:usuarios!entregas_repartidor_id_fkey(id, nombre)
+    `).eq('id', entrega.id).single()
+
+    const e = entFresh || entrega
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
+
+    const { default: jsPDF } = await import('jspdf')
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const W = 210, M = 15, CW = W - M * 2
+    const HEADER_H = 28
+    let logoEndX = M
+
+    try {
+      const res  = await fetch(LOGO_URL)
+      const blob = await res.blob()
+      const b64  = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+      const dims = await new Promise(r => { const img = new window.Image(); img.onload = () => r({ w: img.naturalWidth, h: img.naturalHeight }); img.src = b64 })
+      const ratio = HEADER_H / dims.h
+      doc.addImage(b64, 'PNG', M + 2, M, dims.w * ratio, HEADER_H)
+      logoEndX = M + dims.w * ratio + 6
+    } catch { logoEndX = M + 4 }
+
+    doc.setFillColor(216, 27, 67)
+    doc.rect(logoEndX, M, W - M - logoEndX, HEADER_H, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10.5); doc.setFont('helvetica', 'bold')
+    doc.text('ACTA DE ENTREGA DE EQUIPOS', logoEndX + 3, M + 9)
+    doc.setFontSize(8.5); doc.setFont('helvetica', 'normal')
+    doc.text(`N\u00b0 ${e.codigo} · OS: ${e.orden?.codigo || '—'}`, logoEndX + 3, M + 16)
+    doc.text(`Fecha: ${e.fecha_completada ? new Date(e.fecha_completada).toLocaleDateString('es-CO') : '—'}`, W - M - 2, M + 16, { align: 'right' })
+    doc.text(e.tipo === 'retiro' ? 'Retiro' : 'Entrega', logoEndX + 3, M + 23)
+
+    let y = M + HEADER_H + 7
+
+    function seccion(titulo, campos, startY) {
+      doc.setFillColor(240, 240, 240)
+      doc.rect(M, startY, CW, 6, 'F')
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+      doc.text(titulo, M + 2, startY + 4)
+      let cy = startY + 9
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
+      campos.forEach(([label, value]) => {
+        doc.setTextColor(100, 100, 100); doc.text(label + ':', M + 2, cy)
+        doc.setTextColor(30, 30, 30); doc.text(String(value || '—'), M + 40, cy)
+        cy += 5.5
+      })
+      return cy + 2
+    }
+
+    y = seccion('DATOS DEL CLIENTE', [
+      ['Cliente',   e.orden?.cliente?.nombre || e.cliente?.nombre],
+      ['NIT/CC',    e.orden?.cliente?.nit_cc],
+      ['Dirección', e.orden?.cliente?.direccion],
+      ['Teléfono',  e.orden?.cliente?.telefono],
+    ], y)
+
+    y = seccion('DATOS DE LA ENTREGA', [
+      ['Código',       e.codigo],
+      ['Repartidor',   e.repartidor?.nombre],
+      ['Recibido por', e.recibido_por],
+      ['Inicio',       e.fecha_inicio ? new Date(e.fecha_inicio).toLocaleString('es-CO') : '—'],
+      ['Completada',   e.fecha_completada ? new Date(e.fecha_completada).toLocaleString('es-CO') : '—'],
+      ['Duración',     e.duracion_minutos ? `${e.duracion_minutos} min` : '—'],
+    ], y)
+
+    // Equipos entregados
+    const equipos = e.orden?.equipos || []
+    if (equipos.length > 0) {
+      doc.setFillColor(240, 240, 240)
+      doc.rect(M, y, CW, 6, 'F')
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+      doc.text(`EQUIPOS ${e.tipo === 'retiro' ? 'RETIRADOS' : 'ENTREGADOS'} (${equipos.length})`, M + 2, y + 4)
+      y += 10
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
+      equipos.forEach(oe => {
+        if (y > 250) { doc.addPage(); y = M }
+        const nombre = oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || '—'
+        doc.setTextColor(30, 30, 30)
+        doc.text(`• ${nombre}`, M + 2, y)
+        doc.setTextColor(120, 120, 120)
+        doc.text(`Serial: ${oe.equipo?.serial || '—'} · Código: ${oe.equipo?.codigo || '—'}`, M + 8, y + 4.5)
+        y += 10
+      })
+      y += 2
+    }
+
+    if (e.observaciones) {
+      y = seccion('OBSERVACIONES', [], y)
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8)
+      const lines = doc.splitTextToSize(e.observaciones, CW - 4)
+      doc.text(lines, M + 2, y)
+      y += lines.length * 4.5 + 4
+    }
+
+    // Documentos firmados
+    const docsFirmados = (e.orden?.plantillas || []).filter(p => p.firmado && p.firma_iniciales)
+    if (docsFirmados.length > 0 || e.firma_iniciales) {
+      if (y > 200) { doc.addPage(); y = M }
+      doc.setFillColor(240, 240, 240)
+      doc.rect(M, y, CW, 6, 'F')
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+      doc.text('FIRMAS', M + 2, y + 4)
+      y += 10
+
+      for (const dp of docsFirmados) {
+        if (y > 230) { doc.addPage(); y = M }
+        doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+        doc.text(dp.plantilla?.nombre || 'Documento', M + 2, y)
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(100, 100, 100)
+        doc.text(`Firmado por: ${dp.firmado_por || '—'} · ${dp.fecha_firma ? new Date(dp.fecha_firma).toLocaleString('es-CO') : ''}`, M + 2, y + 4.5)
+        try {
+          doc.addImage(dp.firma_iniciales, 'PNG', M + 2, y + 7, 55, 20)
+        } catch {}
+        doc.setDrawColor(200, 200, 200)
+        doc.line(M + 2, y + 28, M + 60, y + 28)
+        y += 34
+      }
+
+      // Firma general de recepción (si no está en docs)
+      if (e.firma_iniciales && docsFirmados.length === 0) {
+        if (y > 230) { doc.addPage(); y = M }
+        doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+        doc.text('Firma de recepción', M + 2, y)
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(100, 100, 100)
+        doc.text(`Recibido por: ${e.recibido_por || '—'}`, M + 2, y + 4.5)
+        try {
+          doc.addImage(e.firma_iniciales, 'PNG', M + 2, y + 7, 55, 20)
+        } catch {}
+        doc.setDrawColor(200, 200, 200)
+        doc.line(M + 2, y + 28, M + 60, y + 28)
+        y += 34
+      }
+    }
+
+    doc.save(`Acta_Entrega_${e.codigo}.pdf`)
+    showToast('PDF generado')
   }
 
   const plantillasOrden = modalRegistro?.orden?.plantillas || []
@@ -427,7 +592,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         )}
 
         {/* Lista agrupada */}
-        <div data-tour="entregas-lista" className="flex-1 overflow-y-auto space-y-5">
+        <div className="flex-1 overflow-y-auto space-y-5">
           {porRepartidor.length === 0 && (
             <div className="text-center py-16 text-slate-400">
               <Truck className="w-12 h-12 mx-auto mb-3 opacity-20" />
@@ -650,9 +815,17 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                 <div className="text-[15px] font-bold text-white font-mono">{drawer.codigo}</div>
                 <div className="text-[12px] text-white/60 mt-0.5">{drawer.cliente?.nombre}</div>
               </div>
-              <button onClick={() => setDrawer(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-2">
+                {drawer.estado?.nombre === 'Completada' && (
+                  <button onClick={() => generarActaEntregaPDF(drawer)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 text-white text-[12px] font-semibold rounded-[7px] hover:bg-white/30">
+                    <FileText size={13} /> Acta PDF
+                  </button>
+                )}
+                <button onClick={() => setDrawer(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100">

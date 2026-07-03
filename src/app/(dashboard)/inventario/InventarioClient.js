@@ -57,12 +57,22 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     setTimeout(() => setToast(null), 3000)
   }
 
-  const stats = useMemo(() => ({
-    total:       equipos.length,
-    disponibles: equipos.filter(e => e.estado?.nombre === 'Disponible').length,
-    prestamo:    equipos.filter(e => e.estado?.nombre === 'En préstamo').length,
-    mant:        equipos.filter(e => e.estado?.nombre === 'En mantenimiento').length,
-  }), [equipos])
+  const stats = useMemo(() => {
+    // Filtrar equipos según el nivel de la vista actual
+    let base = equipos
+    if (vista === 'tipos' && catActual) {
+      const idsTipos = tipos.filter(t => t.categoria_id === catActual.id).map(t => t.id)
+      base = equipos.filter(e => idsTipos.includes(e.tipo_equipo_id))
+    } else if (vista === 'unidades' && tipoActual) {
+      base = equipos.filter(e => e.tipo_equipo_id === tipoActual.id)
+    }
+    return {
+      total:       base.length,
+      disponibles: base.filter(e => e.estado?.nombre === 'Disponible').length,
+      prestamo:    base.filter(e => e.estado?.nombre === 'En préstamo').length,
+      mant:        base.filter(e => e.estado?.nombre === 'En mantenimiento').length,
+    }
+  }, [equipos, vista, catActual, tipoActual, tipos])
 
   const tiposDeCat = useMemo(() =>
     catActual ? tipos.filter(t => t.categoria_id === catActual.id) : [],

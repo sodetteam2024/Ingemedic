@@ -158,11 +158,22 @@ export default function OrdenesClient({
     const { error } = await supabase.from('ordenes_servicio')
       .update({ estado_id: transicion.id }).eq('id', orden.id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
+
+    // Al finalizar la orden, los equipos vuelven a "Disponible"
+    if (transicion.nombre === 'Finalizada') {
+      const idsEquipos = (orden.equipos || []).map(oe => oe.equipo_id || oe.equipo?.id).filter(Boolean)
+      if (idsEquipos.length > 0) {
+        await supabase.from('equipos')
+          .update({ estado_id: 'f33e7c6f-0f81-484e-9f0a-93fd28f9c414' })
+          .in('id', idsEquipos)
+      }
+    }
+
     const nuevoEstado = { id: transicion.id, nombre: transicion.nombre }
     setOrdenes(prev => prev.map(o => o.id === orden.id ? { ...o, estado: nuevoEstado } : o))
     setDrawer(prev => ({ ...prev, estado: nuevoEstado }))
     setModalConfirm(null)
-    showToast(`Orden → ${transicion.nombre}`)
+    showToast(transicion.nombre === 'Finalizada' ? 'Orden finalizada — equipos disponibles' : `Orden → ${transicion.nombre}`)
   }
 
   // ── GUARDAR FECHA ENTREGA ────────────────────────────────
@@ -282,6 +293,10 @@ export default function OrdenesClient({
           equipo_id: eqId,
         }))
       )
+      // Los equipos pasan a "En préstamo" — dejan de estar disponibles
+      await supabase.from('equipos')
+        .update({ estado_id: '56abea9f-8cad-413e-bc3c-31ba19fa00fe' })
+        .in('id', wForm.equipos_ids)
     }
 
     if (wForm.plantillas_ids.length > 0) {
@@ -320,12 +335,12 @@ export default function OrdenesClient({
     <div className="flex flex-col h-screen overflow-hidden">
 
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Órdenes de servicio</div>
           <div className="text-[12px] text-slate-400 mt-0.5">{ordenes.length} órdenes registradas</div>
         </div>
-        <button data-tour="btn-nueva-orden" onClick={abrirWizard}
+        <button onClick={abrirWizard}
           className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
           <Plus size={14} strokeWidth={2.5} /> Nueva orden
         </button>
@@ -334,7 +349,7 @@ export default function OrdenesClient({
       <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
 
         {/* Stats */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-6 gap-3 flex-shrink-0">
           {[
             { label: 'Total',       value: stats.total,      color: '#1E293B', f: '' },
             { label: 'Borrador',    value: stats.borrador,   color: '#64748B', f: 'Borrador' },
@@ -372,7 +387,7 @@ export default function OrdenesClient({
         </div>
 
         {/* Tabla */}
-        <div data-tour="tabla-ordenes" className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
           <div className="overflow-auto flex-1">
             <table className="w-full border-collapse min-w-[860px]">
               <thead className="sticky top-0 z-10">
@@ -453,7 +468,7 @@ export default function OrdenesClient({
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-full md:w-[500px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed top-0 right-0 bottom-0 w-[500px] bg-white z-30 flex flex-col shadow-2xl">
 
             {/* Header */}
             <div className={`px-6 py-4 border-b flex items-start justify-between flex-shrink-0 ${drawerRetrasada ? 'bg-[#D81B43]' : 'bg-[#D81B43]'}`}>
