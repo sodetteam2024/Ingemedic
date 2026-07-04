@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import {
@@ -25,6 +25,8 @@ const ESTADO_STYLES = {
   'Finalizada': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
 }
 
+// Transiciones que puede hacer el ADMIN desde el drawer
+// En reparto → Entregada lo hace el repartidor desde Entregas
 const TRANSICIONES_ADMIN = {
   'Borrador':  { id: E.Programada, nombre: 'Programada', requiereRepartidor: true },
   'Entregada': { id: E.Finalizada, nombre: 'Finalizada',  requiereRepartidor: false },
@@ -55,19 +57,19 @@ function EstadoBadge({ orden, retrasada }) {
   const s = ESTADO_STYLES[nombre] || ESTADO_STYLES['Borrador']
 
   if (retrasada) return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#FEF2F2] text-[#D81B43] whitespace-nowrap">
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#FEF2F2] text-[#D81B43]">
       <AlertTriangle size={10} /> Retrasada
     </span>
   )
   if (incompleta) return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-dashed border-slate-300 whitespace-nowrap">
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-dashed border-slate-300">
       <AlertTriangle size={10} className="text-[#B45309]" /> Sin programar
     </span>
   )
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap"
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
       style={{ background: s.bg, color: s.color }}>
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: s.dot }} />
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }} />
       {nombre}
     </span>
   )
@@ -97,6 +99,29 @@ export default function OrdenesClient({
   const supabase = createClient()
 
   const [ordenes, setOrdenes]           = useState(ordenesIniciales)
+
+  // Sincronizar con datos frescos del servidor tras router.refresh()
+  useEffect(() => {
+    const t = setTimeout(() => setOrdenes(ordenesIniciales), 0)
+    return () => clearTimeout(t)
+  }, [ordenesIniciales])
+
+  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
+  // Refleja cambios hechos desde Entregas (iniciar/completar) sin recargar
+  useEffect(() => {
+    const canal = supabase
+      .channel('ordenes-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_servicio' }, () => {
+        router.refresh()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => {
+        router.refresh()
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(canal) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [search, setSearch]             = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [drawer, setDrawer]             = useState(null)
@@ -104,6 +129,18 @@ export default function OrdenesClient({
   const [nuevoRepartidor, setNuevoRepartidor] = useState('')
   const [editFecha, setEditFecha] = useState(false)
   const [nuevaFecha, setNuevaFecha] = useState('')
+
+  // Si el drawer está abierto y esa orden cambió (ej. entrega completada desde otro dispositivo), refrescar su vista
+  useEffect(() => {
+    if (!drawer) return
+    const actualizada = ordenes.find(o => o.id === drawer.id)
+    if (actualizada && JSON.stringify(actualizada) !== JSON.stringify(drawer)) {
+      const t = setTimeout(() => setDrawer(actualizada), 0)
+      return () => clearTimeout(t)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordenes])
+
   const [wizardOpen, setWizardOpen]     = useState(false)
   const [wizardPaso, setWizardPaso]     = useState(1)
   const [saving, setSaving]             = useState(false)
@@ -138,6 +175,7 @@ export default function OrdenesClient({
     })
   }, [ordenes, search, filtroEstado])
 
+  // ── ABRIR DRAWER ────────────────────────────────────────
   function abrirDrawer(orden) {
     setDrawer(orden)
     setEditRepartidor(false)
@@ -146,6 +184,7 @@ export default function OrdenesClient({
     setNuevaFecha(orden.fecha_entrega ? orden.fecha_entrega.slice(0, 16) : '')
   }
 
+  // ── AVANZAR ESTADO ──────────────────────────────────────
   async function avanzarEstado(orden, transicion) {
     if (transicion.requiereRepartidor && !orden.repartidor_id) {
       showToast('Asigna un repartidor primero', 'error')
@@ -155,6 +194,7 @@ export default function OrdenesClient({
       .update({ estado_id: transicion.id }).eq('id', orden.id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
 
+    // Al finalizar la orden, los equipos vuelven a "Disponible"
     if (transicion.nombre === 'Finalizada') {
       const idsEquipos = (orden.equipos || []).map(oe => oe.equipo_id || oe.equipo?.id).filter(Boolean)
       if (idsEquipos.length > 0) {
@@ -171,6 +211,7 @@ export default function OrdenesClient({
     showToast(transicion.nombre === 'Finalizada' ? 'Orden finalizada — equipos disponibles' : `Orden → ${transicion.nombre}`)
   }
 
+  // ── GUARDAR FECHA ENTREGA ────────────────────────────────
   async function guardarFecha() {
     if (!nuevaFecha) { showToast('Selecciona fecha y hora', 'error'); return }
     const { data, error } = await supabase.from('ordenes_servicio')
@@ -187,6 +228,7 @@ export default function OrdenesClient({
     showToast(nuevoEstado?.nombre === 'Programada' ? '✓ Fecha guardada — orden programada' : 'Fecha guardada')
   }
 
+  // ── REASIGNAR REPARTIDOR ─────────────────────────────────
   async function guardarRepartidor() {
     if (!nuevoRepartidor) { showToast('Selecciona un repartidor', 'error'); return }
     const { data, error } = await supabase.from('ordenes_servicio')
@@ -196,6 +238,7 @@ export default function OrdenesClient({
       .single()
     if (error) { showToast('Error: ' + error.message, 'error'); return }
     const rep = usuarios.find(u => u.id === nuevoRepartidor)
+    // El trigger puede haber cambiado el estado a Programada
     const nuevoEstado = data?.estado || drawer.estado
     const updOrden = { ...drawer, repartidor_id: nuevoRepartidor, repartidor: rep || drawer.repartidor, estado: nuevoEstado }
     setOrdenes(prev => prev.map(o => o.id === drawer.id ? updOrden : o))
@@ -204,6 +247,7 @@ export default function OrdenesClient({
     showToast(nuevoEstado?.nombre === 'Programada' ? '✓ Repartidor asignado — orden programada' : 'Repartidor asignado')
   }
 
+  // ── WIZARD ──────────────────────────────────────────────
   function abrirWizard() {
     setWForm({
       tipo_orden_id: '', cliente_id: '', equipos_ids: [], observaciones: '',
@@ -284,6 +328,7 @@ export default function OrdenesClient({
           equipo_id: eqId,
         }))
       )
+      // Los equipos pasan a "En préstamo" — dejan de estar disponibles
       await supabase.from('equipos')
         .update({ estado_id: '56abea9f-8cad-413e-bc3c-31ba19fa00fe' })
         .in('id', wForm.equipos_ids)
@@ -302,40 +347,44 @@ export default function OrdenesClient({
     setOrdenes(prev => [nuevaOrden, ...prev])
     setSaving(false)
     setWizardOpen(false)
+    // Abrir drawer automáticamente con la orden recién creada
     abrirDrawer(nuevaOrden)
     showToast('Orden creada')
   }
 
   const PASOS = ['Tipo y cliente', 'Equipos', 'Logística', 'Documentos']
 
+  // ── DRAWER: info de la orden ─────────────────────────────
   const drawerEstado    = drawer?.estado?.nombre || 'Borrador'
   const drawerRetrasada = drawer ? estaRetrasada(drawer) : false
   const drawerVencida   = drawer ? estaVencida(drawer) : false
   const drawerIncompleta = drawer ? estaIncompleta(drawer) : false
+  // Admin solo puede finalizar (Entregada → Finalizada)
+  // Borrador → Programada es automático vía trigger al asignar repartidor + fecha
   const transicion      = drawer && drawerEstado === 'Entregada'
     ? { id: E.Finalizada, nombre: 'Finalizada', requiereRepartidor: false }
     : null
   const puedeEdRep      = drawer && ['Borrador', 'Programada'].includes(drawerEstado)
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
 
       {/* Topbar */}
-      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
         <div>
-          <div className="text-[15px] md:text-[18px] font-bold text-slate-800">Órdenes de servicio</div>
-          <div className="text-[11px] md:text-[12px] text-slate-400 mt-0.5">{ordenes.length} órdenes registradas</div>
+          <div className="text-[18px] font-bold text-slate-800">Órdenes de servicio</div>
+          <div className="text-[12px] text-slate-400 mt-0.5">{ordenes.length} órdenes registradas</div>
         </div>
         <button onClick={abrirWizard}
-          className="ml-auto flex items-center gap-1.5 px-3 md:px-4 py-2 bg-[#D81B43] text-white text-[12px] md:text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
+          className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
           <Plus size={14} strokeWidth={2.5} /> Nueva orden
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4 pb-20 md:pb-6">
+      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
 
         {/* Stats */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 flex-shrink-0">
+        <div className="grid grid-cols-6 gap-3 flex-shrink-0">
           {[
             { label: 'Total',       value: stats.total,      color: '#1E293B', f: '' },
             { label: 'Borrador',    value: stats.borrador,   color: '#64748B', f: 'Borrador' },
@@ -346,16 +395,16 @@ export default function OrdenesClient({
           ].map(s => (
             <div key={s.label}
               onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
-              className={`bg-white rounded-xl border p-2.5 md:p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${filtroEstado === s.f && s.f ? 'border-[#D81B43]' : 'border-slate-200'}`}>
-              <div className="text-lg md:text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[9px] md:text-[10.5px] text-slate-400 mt-0.5 truncate">{s.label}</div>
+              className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${filtroEstado === s.f && s.f ? 'border-[#D81B43]' : 'border-slate-200'}`}>
+              <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
+              <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
             </div>
           ))}
         </div>
 
         {/* Buscador */}
-        <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-          <div className="relative flex-1 md:max-w-[320px]">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="relative flex-1 max-w-[320px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por código, cliente o repartidor..."
@@ -363,17 +412,17 @@ export default function OrdenesClient({
           </div>
           {filtroEstado && (
             <button onClick={() => setFiltroEstado('')}
-              className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-red-500 whitespace-nowrap">
-              <X size={12} /> Limpiar
+              className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-red-500">
+              <X size={12} /> Limpiar filtro
             </button>
           )}
-          <div className="text-[12px] text-slate-400 ml-auto whitespace-nowrap">
+          <div className="text-[12px] text-slate-400 ml-auto">
             {ordenesFiltradas.length} orden{ordenesFiltradas.length !== 1 ? 'es' : ''}
           </div>
         </div>
 
-        {/* Tabla — solo desktop */}
-        <div className="hidden md:flex flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-col">
+        {/* Tabla */}
+        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
           <div className="overflow-auto flex-1">
             <table className="w-full border-collapse min-w-[860px]">
               <thead className="sticky top-0 z-10">
@@ -448,64 +497,16 @@ export default function OrdenesClient({
             </table>
           </div>
         </div>
-
-        {/* Cards — solo móvil */}
-        <div className="md:hidden flex-1 overflow-y-auto space-y-2">
-          {ordenesFiltradas.length === 0 && (
-            <div className="text-center py-14 text-slate-400 text-[13px]">
-              {search || filtroEstado ? 'Sin resultados' : 'Sin órdenes registradas'}
-            </div>
-          )}
-          {ordenesFiltradas.map(o => {
-            const retrasada  = estaRetrasada(o)
-            const incompleta = estaIncompleta(o)
-            const nEquipos   = o.equipos?.length || 0
-            return (
-              <div key={o.id}
-                onClick={() => abrirDrawer(o)}
-                className={`bg-white rounded-xl border p-3.5 shadow-sm cursor-pointer active:bg-slate-50 transition-colors ${
-                  retrasada  ? 'border-l-4 border-l-[#D81B43] border-[#D81B43]/20' :
-                  incompleta ? 'border-l-4 border-l-[#B45309] border-slate-200 opacity-80' :
-                  'border-slate-200'
-                }`}>
-                <div className="flex items-start justify-between gap-2 mb-2.5">
-                  <div className="min-w-0">
-                    <span className="font-mono text-[12px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{o.codigo || '—'}</span>
-                    <div className="text-[13.5px] font-semibold text-slate-700 mt-1.5 truncate">{o.cliente?.nombre || '—'}</div>
-                  </div>
-                  <EstadoBadge orden={o} retrasada={retrasada} />
-                </div>
-                <TimelineBar estadoNombre={o.estado?.nombre} />
-                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-400">
-                  {o.repartidor
-                    ? <span className="flex items-center gap-1"><User size={11} />{o.repartidor.nombre}</span>
-                    : <span className="flex items-center gap-1 text-[#B45309]"><AlertTriangle size={10} />Sin asignar</span>
-                  }
-                  <span className="flex items-center gap-1">
-                    <Package size={11} />{nEquipos} equipo{nEquipos !== 1 ? 's' : ''}
-                  </span>
-                  {o.fecha_entrega && (
-                    <span className={`flex items-center gap-1 ml-auto ${retrasada ? 'text-[#D81B43] font-semibold' : ''}`}>
-                      <Calendar size={11} />
-                      {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
       </div>
 
       {/* ── DRAWER DETALLE OS ── */}
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          {/* Bottom sheet en móvil, panel lateral en desktop */}
-          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[500px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed top-0 right-0 bottom-0 w-[500px] bg-white z-30 flex flex-col shadow-2xl">
 
             {/* Header */}
-            <div className="px-5 md:px-6 py-4 border-b flex items-start justify-between flex-shrink-0 bg-[#D81B43] rounded-t-2xl md:rounded-none">
+            <div className={`px-6 py-4 border-b flex items-start justify-between flex-shrink-0 ${drawerRetrasada ? 'bg-[#D81B43]' : 'bg-[#D81B43]'}`}>
               <div>
                 <div className="text-[11px] text-white/60">Orden de servicio</div>
                 <div className="text-[15px] font-bold text-white font-mono">{drawer.codigo}</div>
@@ -535,6 +536,7 @@ export default function OrdenesClient({
                   )}
                 </div>
 
+                {/* Aviso orden incompleta */}
                 {drawerIncompleta && (
                   <div className="mb-4 p-3 bg-[#FFFBEB] border border-[#F59E0B]/40 rounded-[9px]">
                     <div className="text-[12.5px] font-semibold text-[#B45309] mb-1 flex items-center gap-1.5">
@@ -550,6 +552,7 @@ export default function OrdenesClient({
                   </div>
                 )}
 
+                {/* Timeline visual */}
                 <div className="flex items-start mt-3">
                   {FLUJO.map((paso, i) => {
                     const idx = FLUJO.indexOf(drawerEstado)
@@ -575,6 +578,7 @@ export default function OrdenesClient({
                   })}
                 </div>
 
+                {/* Alertas */}
                 {drawerRetrasada && (
                   <div className="mt-4 flex items-center gap-2 text-[12px] text-[#D81B43] bg-[#FEF2F2] px-3 py-2.5 rounded-[8px] border border-[#D81B43]/20">
                     <AlertTriangle size={13} /> Entrega retrasada — la hora programada ya pasó
@@ -587,7 +591,7 @@ export default function OrdenesClient({
                 )}
               </div>
 
-              {/* Repartidor */}
+              {/* Repartidor — editable */}
               <div className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Repartidor</div>
@@ -630,7 +634,7 @@ export default function OrdenesClient({
                 )}
               </div>
 
-              {/* Fecha entrega */}
+              {/* Fecha entrega — editable si está en Borrador/Programada */}
               {['Borrador', 'Programada'].includes(drawerEstado) && (
                 <div className="p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -748,11 +752,11 @@ export default function OrdenesClient({
       {wizardOpen && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setWizardOpen(false)} />
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
-            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[600px] max-h-[94vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-[600px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
 
-              <div className="px-5 md:px-6 py-4 border-b flex items-center gap-3 flex-shrink-0 bg-[#D81B43] rounded-t-2xl md:rounded-t-2xl">
+              <div className="px-6 py-4 border-b flex items-center gap-3 flex-shrink-0 bg-[#D81B43]">
                 <div className="flex-1">
                   <div className="text-[11px] text-white/60">Paso {wizardPaso} de {PASOS.length}</div>
                   <div className="text-[15px] font-bold text-white">{PASOS[wizardPaso - 1]}</div>
@@ -767,7 +771,7 @@ export default function OrdenesClient({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-5 md:px-6 py-5">
+              <div className="flex-1 overflow-y-auto px-6 py-5">
 
                 {/* PASO 1 — Tipo y cliente */}
                 {wizardPaso === 1 && (
@@ -804,7 +808,7 @@ export default function OrdenesClient({
                         No hay equipos disponibles en inventario
                       </div>
                     ) : (
-                      <div className="space-y-2 max-h-[300px] md:max-h-[340px] overflow-y-auto border border-slate-200 rounded-[9px] p-2">
+                      <div className="space-y-2 max-h-[340px] overflow-y-auto border border-slate-200 rounded-[9px] p-2">
                         {equiposDisponibles.map(eq => {
                           const sel = wForm.equipos_ids.includes(eq.id)
                           return (
@@ -817,7 +821,7 @@ export default function OrdenesClient({
                                 <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
                                 <div className="text-[11px] font-mono text-slate-400">{eq.serial} · {eq.codigo}</div>
                               </div>
-                              <div className="text-[11px] text-slate-400 flex-shrink-0 hidden sm:block">{eq.tipo_equipo?.categoria?.nombre}</div>
+                              <div className="text-[11px] text-slate-400 flex-shrink-0">{eq.tipo_equipo?.categoria?.nombre}</div>
                             </button>
                           )
                         })}
@@ -846,7 +850,7 @@ export default function OrdenesClient({
                       <input value={wForm.recibido_por} onChange={e => setWForm(f => ({ ...f, recibido_por: e.target.value }))}
                         placeholder="Nombre de quien recibe" className={inputCls} />
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className={labelCls}>Fecha y hora de entrega</label>
                         <input type="datetime-local" value={wForm.fecha_entrega}
@@ -878,7 +882,7 @@ export default function OrdenesClient({
                         <div className="text-[12px] mt-1">Ve a Configuración → Plantillas</div>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         {plantillas.map(p => {
                           const sel = wForm.plantillas_ids.includes(p.id)
                           return (
@@ -897,7 +901,7 @@ export default function OrdenesClient({
                 )}
               </div>
 
-              <div className="px-5 md:px-6 py-4 border-t border-slate-200 flex justify-between flex-shrink-0 bg-white">
+              <div className="px-6 py-4 border-t border-slate-200 flex justify-between flex-shrink-0 bg-white">
                 <button onClick={() => wizardPaso > 1 ? setWizardPaso(p => p - 1) : setWizardOpen(false)}
                   className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
                   {wizardPaso === 1 ? 'Cancelar' : '← Anterior'}
@@ -950,7 +954,7 @@ export default function OrdenesClient({
       )}
 
       {toast && (
-        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

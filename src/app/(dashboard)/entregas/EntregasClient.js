@@ -47,8 +47,8 @@ function Cronometro({ inicio, fin, completada }) {
 }
 
 function TimelineHorizontal({ estadoNombre, inicio, fin, horaProg, alerta }) {
-  // estados_entrega: 'No iniciada' → 0, 'En progreso' → 1, 'Completada' → 2
-  const idx = estadoNombre === 'Completada' ? 2 : estadoNombre === 'En progreso' ? 1 : 0
+  // Cuando está Completada, TODOS los pasos deben verse como terminados (no solo hasta el penúltimo)
+  const idx = estadoNombre === 'Completada' ? TL_STEPS.length : estadoNombre === 'En progreso' ? 1 : 0
   const horas = [
     horaProg || '—',
     inicio ? new Date(inicio).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '—',
@@ -97,7 +97,7 @@ function estaRetrasada(item) {
 }
 
 // ── PAD DE FIRMA ────────────────────────────────────────────
-function FirmaPad({ onFirma, onLimpiar }) {
+function FirmaPad({ onFirma, onLimpiar, fullscreen = false }) {
   const canvasRef = useRef(null)
   const drawing   = useRef(false)
   const [vacio, setVacio] = useState(true)
@@ -121,7 +121,7 @@ function FirmaPad({ onFirma, onLimpiar }) {
     if (!drawing.current) return
     const ctx = canvasRef.current.getContext('2d')
     const pos = getPos(e, canvasRef.current)
-    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#1B3A6B'
+    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#1B3A6B'
     ctx.lineTo(pos.x, pos.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(pos.x, pos.y)
   }
   function end() {
@@ -134,31 +134,82 @@ function FirmaPad({ onFirma, onLimpiar }) {
     setVacio(true); onLimpiar()
   }
   return (
-    <div>
-      <div className="border-2 border-dashed border-slate-300 rounded-[10px] overflow-hidden bg-[#F8FAFC] relative">
-        <canvas ref={canvasRef} width={480} height={160}
-          className="w-full touch-none cursor-crosshair"
+    <div className={fullscreen ? 'flex-1 flex flex-col min-h-0' : ''}>
+      <div className={`border-2 border-dashed border-slate-300 rounded-[10px] overflow-hidden bg-[#F8FAFC] relative ${
+        fullscreen ? 'flex-1 min-h-[240px]' : ''
+      }`}>
+        <canvas ref={canvasRef} width={fullscreen ? 900 : 480} height={fullscreen ? 500 : 160}
+          className={`touch-none cursor-crosshair ${fullscreen ? 'w-full h-full' : 'w-full'}`}
           onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
           onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
         {vacio && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="text-[12px] text-slate-300 font-medium">Firme aquí</span>
+            <span className={`text-slate-300 font-medium ${fullscreen ? 'text-[15px]' : 'text-[12px]'}`}>Firme aquí</span>
           </div>
         )}
       </div>
-      <button onClick={limpiar} className="mt-1.5 text-[12px] text-slate-400 hover:text-red-500 transition-colors">
+      <button onClick={limpiar} className="mt-2 text-[12.5px] text-slate-400 hover:text-red-500 transition-colors flex-shrink-0">
         Limpiar firma
       </button>
     </div>
   )
 }
 
-export default function EntregasClient({ entregasIniciales, ordenesEnReparto, estados }) {
+export default function EntregasClient({ entregasIniciales, ordenesEnReparto, estados, empresa }) {
   const router   = useRouter()
   const supabase = createClient()
 
   const [entregas, setEntregas]           = useState(entregasIniciales)
+  // Evita que un refresh disparado por Realtime (que puede llegar con datos de
+  // un instante intermedio, o ser un evento atrasado) sobreescriba una
+  // actualización local que ACABAMOS de hacer nosotros mismos.
+  const skipSyncUntil = useRef(0)
   const [ordenes, setOrdenes]             = useState(ordenesEnReparto)
+
+  // Mantener el estado local sincronizado cuando el servidor manda datos frescos
+  // (esto se dispara después de router.refresh(), incluido el que llega por realtime)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (Date.now() < skipSyncUntil.current) {
+        return
+      }
+      setEntregas(entregasIniciales)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [entregasIniciales])
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (Date.now() < skipSyncUntil.current) return
+      setOrdenes(ordenesEnReparto)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [ordenesEnReparto])
+
+  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
+  // Sin esto, un dispositivo no se entera de cambios hechos en otro
+  // (ej. otro repartidor completó una entrega) hasta recargar la página.
+  useEffect(() => {
+    let debounceTimer = null
+    function refrescarConDebounce(origen) {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        if (Date.now() < skipSyncUntil.current) {
+          return
+        }
+        router.refresh()
+      }, 500)
+    }
+
+    const canal = supabase
+      .channel('entregas-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => refrescarConDebounce('entregas'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_servicio' }, () => refrescarConDebounce('ordenes_servicio'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orden_plantillas' }, () => refrescarConDebounce('orden_plantillas'))
+      .subscribe()
+
+    return () => { clearTimeout(debounceTimer); supabase.removeChannel(canal) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [search, setSearch]               = useState('')
   const [filtroEstado, setFiltroEstado]   = useState('')
   const [filtroRep, setFiltroRep]         = useState('')
@@ -166,6 +217,8 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
   const [filtroCliente, setFiltroCliente] = useState('')
   const [showFiltros, setShowFiltros]     = useState(false)
   const [drawer, setDrawer]               = useState(null)
+  const [tab, setTab]                     = useState('activas') // 'activas' | 'historial'
+  const [modalExito, setModalExito]       = useState(null)
   const [modalOrden, setModalOrden]       = useState(null)
   const [modalRegistro, setModalRegistro] = useState(null)
   const [paso, setPaso]                   = useState(0) // 0=nombre, 1..n=docs
@@ -217,12 +270,16 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       const fechaRaw = item._tipo === 'pendiente' ? item.fecha_creacion : item.fecha_creacion
       const fecha    = fechaRaw?.split('T')[0] || ''
 
+      // Filtro por pestaña: Activas = todo lo que no está Completada; Historial = solo Completadas
+      const esCompletada = estadoN === 'Completada'
+      const mTab = tab === 'historial' ? esCompletada : !esCompletada
+
       const mq  = !search || [codigo, cliente, item._repartidor].some(v => v?.toLowerCase().includes(search.toLowerCase()))
       const me  = !filtroEstado  || estadoN === filtroEstado
       const mr  = !filtroRep     || item._repartidor === filtroRep
       const mf  = !filtroFecha   || fecha === filtroFecha
       const mc  = !filtroCliente || cliente?.toLowerCase().includes(filtroCliente.toLowerCase())
-      return mq && me && mr && mf && mc
+      return mTab && mq && me && mr && mf && mc
     })
 
     // Ordenar: En progreso primero, pendiente, completada
@@ -240,7 +297,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       grupos[key].items.push(item)
     })
     return Object.values(grupos)
-  }, [ordenes, entregas, ordenesConEntrega, search, filtroEstado, filtroRep, filtroFecha, filtroCliente])
+  }, [ordenes, entregas, ordenesConEntrega, search, filtroEstado, filtroRep, filtroFecha, filtroCliente, tab])
 
   // ── INICIAR ENTREGA ──────────────────────────────────────
   async function iniciarEntrega(orden) {
@@ -295,6 +352,8 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
   // ── COMPLETAR ENTREGA ────────────────────────────────────
   async function completarEntrega() {
     if (!regForm.recibido_por?.trim()) { showToast('Ingresa quién recibe', 'error'); return }
+    const firmaUnica = regForm.firmas.general || null
+    if (!firmaUnica) { showToast('Falta capturar la firma', 'error'); return }
     setSaving(true)
     const ahora   = new Date().toISOString()
     const inicio  = modalRegistro.fecha_inicio ? new Date(modalRegistro.fecha_inicio) : new Date()
@@ -303,7 +362,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     const { error } = await supabase.from('entregas').update({
       estado_id:        ESTADOS_ENTREGA.Completada,
       recibido_por:     regForm.recibido_por.trim(),
-      firma_iniciales:  Object.values(regForm.firmas)[0] || null,
+      firma_iniciales:  firmaUnica,
       observaciones:    regForm.observaciones || null,
       fecha_completada: ahora,
       duracion_minutos: duracion,
@@ -311,18 +370,20 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
 
-    // Guardar cada firma en su documento (orden_plantillas)
+    // La misma firma se aplica a todos los documentos de la orden
     const docs = modalRegistro.orden?.plantillas || []
+    let erroresFirma = 0
     for (const doc of docs) {
-      const firma = regForm.firmas[doc.id]
-      if (firma) {
-        await supabase.from('orden_plantillas').update({
-          firmado:         true,
-          firmado_por:     regForm.recibido_por.trim(),
-          firma_iniciales: firma,
-          fecha_firma:     ahora,
-        }).eq('id', doc.id)
-      }
+      const { error: errFirma } = await supabase.from('orden_plantillas').update({
+        firmado:         true,
+        firmado_por:     regForm.recibido_por.trim(),
+        firma_iniciales: firmaUnica,
+        fecha_firma:     ahora,
+      }).eq('id', doc.id)
+      if (errFirma) { erroresFirma++; console.error('Error guardando firma:', errFirma) }
+    }
+    if (erroresFirma > 0) {
+      showToast(`Entrega completada, pero ${erroresFirma} firma(s) no se guardaron — revisa permisos de la tabla orden_plantillas`, 'error')
     }
 
     await supabase.from('ordenes_servicio')
@@ -330,27 +391,42 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       .eq('id', modalRegistro.orden?.id)
 
     const nuevoEstado = { id: ESTADOS_ENTREGA.Completada, nombre: 'Completada' }
-    setEntregas(prev => prev.map(e => e.id === modalRegistro.id
-      ? { ...e, estado: nuevoEstado, recibido_por: regForm.recibido_por, fecha_completada: ahora }
-      : e
-    ))
-    if (drawer?.id === modalRegistro.id) setDrawer(prev => ({ ...prev, estado: nuevoEstado }))
+    const cambiosCompletos = {
+      estado: nuevoEstado,
+      recibido_por: regForm.recibido_por.trim(),
+      fecha_completada: ahora,
+      duracion_minutos: duracion,
+      observaciones: regForm.observaciones || null,
+    }
+    skipSyncUntil.current = Date.now() + 2500 // protege el estado local por 2.5s tras completar
+    setEntregas(prev => prev.map(e => e.id === modalRegistro.id ? { ...e, ...cambiosCompletos } : e))
+    if (drawer?.id === modalRegistro.id) setDrawer(prev => ({ ...prev, ...cambiosCompletos }))
     setSaving(false)
+
+    // Guardar detalles para el modal de éxito antes de cerrar el wizard
+    setModalExito({
+      codigo: modalRegistro.codigo,
+      ordenCodigo: modalRegistro.orden?.codigo,
+      cliente: modalRegistro.orden?.cliente?.nombre || modalRegistro.cliente?.nombre,
+      equipos: modalRegistro.orden?.equipos || [],
+      recibidoPor: regForm.recibido_por.trim(),
+      duracion,
+      fecha: ahora,
+    })
     setModalRegistro(null)
-    showToast('Entrega completada ✓')
     router.refresh()
   }
 
   // ── GENERAR PDF ACTA DE ENTREGA (con firmas) ─────────────
   async function generarActaEntregaPDF(entrega) {
-    // Traer datos frescos incluyendo firmas actualizadas
+    // Traer datos frescos incluyendo firmas actualizadas y contenido de plantillas
     const { data: entFresh } = await supabase.from('entregas').select(`
       *,
       orden:ordenes_servicio(
         id, codigo, fecha_vigencia, observaciones,
         cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
         equipos:orden_equipos(id, equipo:equipos(id, codigo, serial, tipo_equipo:tipos_equipo(id, nombre, atributos))),
-        plantillas:orden_plantillas(id, firmado, firmado_por, firma_iniciales, fecha_firma, plantilla:plantillas_orden(id, nombre))
+        plantillas:orden_plantillas(id, firmado, firmado_por, firma_iniciales, fecha_firma, plantilla:plantillas_orden(id, nombre, contenido))
       ),
       cliente:clientes(id, nombre),
       repartidor:usuarios!entregas_repartidor_id_fkey(id, nombre)
@@ -448,8 +524,27 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       y += lines.length * 4.5 + 4
     }
 
+    const docsDeLaOrden = e.orden?.plantillas || []
+
+    // ── CLÁUSULA DE CERTIFICACIÓN — lugar fijo, siempre antes de las firmas ──
+    const clausula = empresa?.clausula_certificacion?.trim() ||
+      'El firmante certifica y confirma haber leído los documentos anexos dispuestos previo a la firma de los mismos, por lo cual acepta los términos allí contenidos y confirma la entrega de los equipos relacionados en los estados indicados.'
+
+    if (y > 220) { doc.addPage(); y = M }
+    doc.setFillColor(255, 251, 235)
+    const clausulaLines = doc.splitTextToSize(clausula, CW - 6)
+    const clausulaH = clausulaLines.length * 4.2 + 8
+    doc.rect(M, y, CW, clausulaH, 'F')
+    doc.setDrawColor(245, 158, 11)
+    doc.rect(M, y, CW, clausulaH)
+    doc.setTextColor(180, 83, 9); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
+    doc.text('CERTIFICACIÓN', M + 3, y + 5)
+    doc.setTextColor(70, 60, 40); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
+    doc.text(clausulaLines, M + 3, y + 10)
+    y += clausulaH + 6
+
     // Documentos firmados
-    const docsFirmados = (e.orden?.plantillas || []).filter(p => p.firmado && p.firma_iniciales)
+    const docsFirmados = docsDeLaOrden.filter(p => p.firmado && p.firma_iniciales)
     if (docsFirmados.length > 0 || e.firma_iniciales) {
       if (y > 200) { doc.addPage(); y = M }
       doc.setFillColor(240, 240, 240)
@@ -466,7 +561,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         doc.text(`Firmado por: ${dp.firmado_por || '—'} · ${dp.fecha_firma ? new Date(dp.fecha_firma).toLocaleString('es-CO') : ''}`, M + 2, y + 4.5)
         try {
           doc.addImage(dp.firma_iniciales, 'PNG', M + 2, y + 7, 55, 20)
-        } catch {}
+        } catch (imgErr) { console.error('Error insertando firma en PDF:', imgErr, dp.plantilla?.nombre) }
         doc.setDrawColor(200, 200, 200)
         doc.line(M + 2, y + 28, M + 60, y + 28)
         y += 34
@@ -488,20 +583,95 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       }
     }
 
+    // ── ANEXOS — cada plantilla seleccionada se agrega como páginas adicionales ──
+    if (docsDeLaOrden.length > 0) {
+      const primerEquipo = equipos[0]?.equipo
+      const variables = {
+        empresa_logo: empresa?.logo_url || '',
+        empresa_dir:  empresa?.dir || '',
+        empresa_tel:  empresa?.tel || '',
+        empresa_email: empresa?.email || '',
+        empresa_web:  empresa?.web || '',
+        orden_codigo: e.orden?.codigo || '',
+        orden_fecha:  e.fecha_completada ? new Date(e.fecha_completada).toLocaleDateString('es-CO') : '',
+        cliente_nombre: e.orden?.cliente?.nombre || '',
+        equipo_nombre: primerEquipo?.tipo_equipo?.atributos?.nombre || primerEquipo?.tipo_equipo?.nombre || '',
+        equipo_serial: primerEquipo?.serial || '',
+        equipo_codigo: primerEquipo?.codigo || '',
+      }
+
+      for (let i = 0; i < docsDeLaOrden.length; i++) {
+        const dp = docsDeLaOrden[i]
+        let html = dp.plantilla?.contenido || ''
+        if (!html.trim()) continue
+        for (const [k, v] of Object.entries(variables)) html = html.replaceAll(`{{${k}}}`, v)
+
+        // Portada del anexo
+        doc.addPage()
+        doc.setFillColor(27, 58, 107)
+        doc.rect(0, 0, W, 30, 'F')
+        doc.setTextColor(255, 255, 255); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
+        doc.text(`ANEXO ${i + 1}`, M, 18)
+        doc.setFontSize(9.5); doc.setFont('helvetica', 'normal')
+        doc.text(dp.plantilla?.nombre || 'Documento', M, 25)
+
+        // Renderizar el HTML de la plantilla como imagen dentro del PDF
+        try {
+          const contenedor = document.createElement('div')
+          contenedor.style.position = 'fixed'
+          contenedor.style.left = '-9999px'
+          contenedor.style.top = '0'
+          contenedor.style.width = '750px'
+          contenedor.style.background = '#ffffff'
+          contenedor.style.padding = '20px'
+          contenedor.style.fontFamily = 'Arial, sans-serif'
+          contenedor.innerHTML = html
+          document.body.appendChild(contenedor)
+
+          await doc.html(contenedor, {
+            x: M, y: 36,
+            width: CW,
+            windowWidth: 750,
+            autoPaging: 'text',
+          })
+          document.body.removeChild(contenedor)
+        } catch (htmlErr) {
+          console.error('Error renderizando anexo en PDF:', htmlErr, dp.plantilla?.nombre)
+          doc.setTextColor(150, 150, 150); doc.setFontSize(9)
+          doc.text('No fue posible renderizar este documento.', M, 45)
+        }
+      }
+    }
+
     doc.save(`Acta_Entrega_${e.codigo}.pdf`)
     showToast('PDF generado')
   }
 
+  // Si el drawer está abierto y esa entrega se actualiza (ej. otro dispositivo la completó),
+  // refrescamos su contenido para que el cronómetro se detenga y se vea el estado real
+  useEffect(() => {
+    if (!drawer) return
+    const actualizado = entregas.find(e => e.id === drawer.id)
+    if (actualizado && JSON.stringify(actualizado) !== JSON.stringify(drawer)) {
+      const t = setTimeout(() => setDrawer(actualizado), 0)
+      return () => clearTimeout(t)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entregas])
+
   const plantillasOrden = modalRegistro?.orden?.plantillas || []
-  const totalPasos      = plantillasOrden.length + 1 // paso 0 + un paso por doc
-  const docActual       = paso > 0 ? plantillasOrden[paso - 1] : null
+  // Estructura: [0] info recibido_por -> [1..N] previsualización de cada documento -> [N+1] firma única final
+  const totalPasos    = plantillasOrden.length + 2
+  const esPasoPreview  = paso > 0 && paso <= plantillasOrden.length
+  const esPasoFirma    = paso === totalPasos - 1
+  const docActual      = esPasoPreview ? plantillasOrden[paso - 1] : null
 
   const hayFiltros = filtroEstado || filtroRep || filtroFecha || filtroCliente
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Topbar */}
-      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Entregas</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Rutas del día · En tiempo real</div>
@@ -514,9 +684,9 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         )}
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-4 gap-3 flex-shrink-0">
           {[
             { label: 'Total hoy',   value: stats.totalHoy,    color: '#1E293B', f: '' },
             { label: 'Programadas', value: stats.pendientes,  color: '#64748B', f: 'No iniciada' },
@@ -532,9 +702,27 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
           ))}
         </div>
 
+        {/* Pestañas: Activas / Historial */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-[10px] w-fit flex-shrink-0">
+          {[
+            { id: 'activas',   label: 'Activas' },
+            { id: 'historial', label: 'Historial' },
+          ].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`px-4 py-1.5 rounded-[8px] text-[12.5px] font-semibold transition-all ${
+                tab === t.id ? 'bg-white text-[#D81B43] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}>
+              {t.label}
+              {t.id === 'historial' && stats.completadas > 0 && (
+                <span className="ml-1.5 text-[10.5px] text-slate-400">({stats.completadas})</span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* Buscador + filtros */}
         <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
-          <div className="relative flex-1">
+          <div className="relative flex-1 max-w-[300px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por código, cliente..."
@@ -558,7 +746,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
 
         {/* Panel filtros */}
         {showFiltros && (
-          <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-4 gap-3 flex-shrink-0 shadow-sm">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-[0.07em] text-slate-400 mb-1.5">Repartidor</label>
               <select value={filtroRep} onChange={e => setFiltroRep(e.target.value)}
@@ -592,7 +780,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         )}
 
         {/* Lista agrupada */}
-        <div className="flex-1 overflow-y-auto space-y-5 pb-20 md:pb-0">
+        <div className="flex-1 overflow-y-auto space-y-5">
           {porRepartidor.length === 0 && (
             <div className="text-center py-16 text-slate-400">
               <Truck className="w-12 h-12 mx-auto mb-3 opacity-20" />
@@ -719,8 +907,8 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {modalOrden && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModalOrden(null)} />
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
-            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[520px] max-h-[92vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-[520px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#D81B43]">
                 <div>
@@ -808,7 +996,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[480px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed top-0 right-0 bottom-0 w-[480px] bg-white z-30 flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b flex items-start justify-between flex-shrink-0 bg-[#D81B43]">
               <div>
                 <div className="text-[11px] text-white/60">Entrega · OS: {drawer.orden?.codigo}</div>
@@ -928,9 +1116,13 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {/* ── MODAL WIZARD FIRMA ── */}
       {modalRegistro && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModalRegistro(null)} />
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
-            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[560px] max-h-[92vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => !esPasoFirma && setModalRegistro(null)} />
+          <div className={`fixed z-50 flex ${esPasoFirma ? 'inset-0 md:items-center md:justify-center md:p-4' : 'inset-0 items-center justify-center p-4'}`}>
+            <div className={`bg-white flex flex-col shadow-2xl overflow-hidden transition-all ${
+              esPasoFirma
+                ? 'w-full h-full rounded-none md:w-full md:max-w-[560px] md:h-auto md:max-h-[calc(100vh-2rem)] md:rounded-2xl'
+                : 'rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)]'
+            }`}
               onClick={e => e.stopPropagation()}>
 
               {/* Header */}
@@ -938,10 +1130,11 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                 <div className="flex-1">
                   <div className="text-[11px] text-white/60">Paso {paso + 1} de {totalPasos}</div>
                   <div className="text-[15px] font-bold text-white">
-                    {paso === 0 ? '✍️ Registrar recepción' : `Documento: ${docActual?.plantilla?.nombre}`}
+                    {paso === 0 ? '✍️ Registrar recepción'
+                      : esPasoFirma ? '✒️ Firma de recepción'
+                      : `Documento: ${docActual?.plantilla?.nombre}`}
                   </div>
                 </div>
-                {/* Steps indicator */}
                 <div className="flex gap-1.5">
                   {Array.from({ length: totalPasos }).map((_, i) => (
                     <div key={i} className={`h-2 rounded-full transition-all ${
@@ -949,12 +1142,14 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                     }`} />
                   ))}
                 </div>
-                <button onClick={() => setModalRegistro(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
-                  <X size={16} />
-                </button>
+                {!esPasoFirma && (
+                  <button onClick={() => setModalRegistro(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                    <X size={16} />
+                  </button>
+                )}
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-5">
+              <div className={`flex-1 overflow-y-auto px-6 py-5 ${esPasoFirma ? 'flex flex-col' : ''}`}>
                 {/* PASO 0 — Nombre receptor */}
                 {paso === 0 && (
                   <div className="space-y-4">
@@ -982,41 +1177,46 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                         placeholder="Notas de la entrega..." rows={3}
                         className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
                     </div>
-                    {/* Si no hay docs, pedir firma aquí */}
-                    {plantillasOrden.length === 0 && (
-                      <div>
-                        <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">Firma de recepción</label>
-                        <FirmaPad
-                          onFirma={d => setRegForm(f => ({ ...f, firmas: { ...f.firmas, recepcion: d } }))}
-                          onLimpiar={() => setRegForm(f => { const nf = { ...f.firmas }; delete nf.recepcion; return { ...f, firmas: nf } })}
-                        />
-                      </div>
-                    )}
                   </div>
                 )}
 
-                {/* PASOS DE DOCUMENTOS */}
-                {paso > 0 && docActual && (
-                  <div className="space-y-4">
+                {/* PASOS DE PREVISUALIZACIÓN — solo ver el documento, sin firmar todavía */}
+                {esPasoPreview && docActual && (
+                  <div className="space-y-3">
                     <div className="flex items-center gap-2 text-[12px] text-slate-500 bg-slate-50 px-3 py-2 rounded-[8px] border border-slate-200">
                       <User size={12} /> Firmante: <span className="font-semibold text-slate-700">{regForm.recibido_por}</span>
                     </div>
-                    {/* Vista previa del documento */}
-                    <div>
-                      <div className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-2">Vista previa</div>
-                      <div className="border border-slate-200 rounded-[9px] overflow-hidden bg-slate-50 h-[200px] flex items-center justify-center">
-                        <div className="text-center text-slate-400">
-                          <FileText size={32} className="mx-auto mb-2 opacity-30" />
-                          <div className="text-[13px] font-medium">{docActual?.plantilla?.nombre}</div>
-                          <div className="text-[11px] mt-1">Vista previa disponible en Fase 2</div>
-                        </div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500">Vista previa del documento</div>
+                    <div className="border border-slate-200 rounded-[9px] overflow-hidden bg-slate-50 h-[320px] flex items-center justify-center">
+                      <div className="text-center text-slate-400">
+                        <FileText size={36} className="mx-auto mb-2 opacity-30" />
+                        <div className="text-[13.5px] font-medium">{docActual?.plantilla?.nombre}</div>
+                        <div className="text-[11px] mt-1">Vista previa disponible en Fase 2</div>
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5">Firma a mano alzada</label>
+                    <div className="text-[12px] text-slate-400 text-center">
+                      Documento {paso} de {plantillasOrden.length} · La firma se recoge al final, una sola vez
+                    </div>
+                  </div>
+                )}
+
+                {/* PASO FINAL — firma única a pantalla completa en móvil */}
+                {esPasoFirma && (
+                  <div className="flex-1 flex flex-col">
+                    <div className="flex items-center gap-2 text-[12px] text-slate-500 bg-slate-50 px-3 py-2 rounded-[8px] border border-slate-200 mb-3 flex-shrink-0">
+                      <User size={12} /> Firmante: <span className="font-semibold text-slate-700">{regForm.recibido_por}</span>
+                      {plantillasOrden.length > 0 && (
+                        <span className="ml-auto text-[11px] text-slate-400">Aplica a {plantillasOrden.length} documento{plantillasOrden.length !== 1 ? 's' : ''}</span>
+                      )}
+                    </div>
+                    <label className="block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-2 flex-shrink-0">
+                      Firma a mano alzada
+                    </label>
+                    <div className="flex-1 flex flex-col min-h-0">
                       <FirmaPad
-                        onFirma={d => setRegForm(f => ({ ...f, firmas: { ...f.firmas, [docActual.id]: d } }))}
-                        onLimpiar={() => setRegForm(f => { const nf = { ...f.firmas }; delete nf[docActual.id]; return { ...f, firmas: nf } })}
+                        fullscreen
+                        onFirma={d => setRegForm(f => ({ ...f, firmas: { ...f.firmas, general: d } }))}
+                        onLimpiar={() => setRegForm(f => { const nf = { ...f.firmas }; delete nf.general; return { ...f, firmas: nf } })}
                       />
                     </div>
                   </div>
@@ -1034,7 +1234,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                     if (paso < totalPasos - 1) setPaso(p => p + 1)
                     else completarEntrega()
                   }}
-                  disabled={saving}
+                  disabled={saving || (esPasoFirma && !regForm.firmas.general)}
                   className="px-5 py-2.5 bg-[#0F7B55] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#0a5c3f] disabled:opacity-50">
                   {saving ? 'Guardando...' : paso < totalPasos - 1 ? 'Continuar →' : '✓ Completar entrega'}
                 </button>
@@ -1044,8 +1244,70 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         </>
       )}
 
+      {/* ── MODAL ÉXITO — entrega completada ── */}
+      {modalExito && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-[80] backdrop-blur-sm" onClick={() => setModalExito(null)} />
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-[420px] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="px-6 pt-8 pb-6 text-center bg-gradient-to-b from-[#ECFDF5] to-white">
+                <div className="w-16 h-16 rounded-full bg-[#0F7B55] flex items-center justify-center mx-auto mb-4 shadow-lg shadow-[#0F7B55]/20">
+                  <CheckCircle2 size={32} className="text-white" />
+                </div>
+                <div className="text-[17px] font-bold text-slate-800">Entrega completada exitosamente</div>
+                <div className="text-[12.5px] text-slate-400 mt-1 font-mono">{modalExito.codigo} · OS: {modalExito.ordenCodigo}</div>
+              </div>
+
+              <div className="px-6 py-5 space-y-3 border-t border-slate-100">
+                <div className="flex justify-between text-[13px]">
+                  <span className="text-slate-400">Cliente</span>
+                  <span className="font-semibold text-slate-700">{modalExito.cliente}</span>
+                </div>
+                <div className="flex justify-between text-[13px]">
+                  <span className="text-slate-400">Recibido por</span>
+                  <span className="font-semibold text-slate-700">{modalExito.recibidoPor}</span>
+                </div>
+                <div className="flex justify-between text-[13px]">
+                  <span className="text-slate-400">Duración</span>
+                  <span className="font-semibold text-slate-700">{modalExito.duracion} min</span>
+                </div>
+                <div className="flex justify-between text-[13px]">
+                  <span className="text-slate-400">Equipos entregados</span>
+                  <span className="font-semibold text-slate-700">{modalExito.equipos.length}</span>
+                </div>
+                {modalExito.equipos.length > 0 && (
+                  <div className="pt-2 space-y-1.5">
+                    {modalExito.equipos.map(oe => (
+                      <div key={oe.id} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-[8px] text-[12px] text-slate-600">
+                        <Package size={12} className="text-slate-400 flex-shrink-0" />
+                        <span className="truncate">{nombreEquipo(oe.equipo)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Fase 2 — envío por correo (deshabilitado por ahora) */}
+              <div className="px-6 pb-5">
+                <button disabled
+                  className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-slate-200 text-slate-350 text-[12.5px] font-medium rounded-[9px] cursor-not-allowed opacity-60">
+                  ✉️ Enviar soporte por correo <span className="text-[10.5px]">(próximamente)</span>
+                </button>
+              </div>
+
+              <div className="px-6 pb-6">
+                <button onClick={() => setModalExito(null)}
+                  className="w-full py-2.5 bg-[#0F7B55] text-white rounded-[9px] text-[13.5px] font-semibold hover:bg-[#0a5c3f] transition-colors">
+                  Listo
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {toast && (
-        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

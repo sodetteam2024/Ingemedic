@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
 import OrdenesClient from './OrdenesClient'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function OrdenesPage() {
   const supabase = await createClient()
 

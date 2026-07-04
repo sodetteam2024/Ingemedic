@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase-server'
 import EntregasClient from './EntregasClient'
 
+// Evita que Next.js cachee las consultas de esta página.
+// Sin esto, router.refresh() puede devolver datos desactualizados
+// (ej. una entrega recién completada "revierte" visualmente a pendiente).
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function EntregasPage() {
   const supabase = await createClient()
 
@@ -8,6 +14,7 @@ export default async function EntregasPage() {
     { data: entregas },
     { data: ordenes },
     { data: estados },
+    { data: empresa },
   ] = await Promise.all([
     supabase.from('entregas').select(`
       *,
@@ -22,7 +29,7 @@ export default async function EntregasPage() {
         ),
         plantillas:orden_plantillas(
           id, plantilla_id, firmado, firmado_por, firma_iniciales, fecha_firma,
-          plantilla:plantillas_orden(id, nombre)
+          plantilla:plantillas_orden(id, nombre, contenido)
         )
       ),
       cliente:clientes(id, nombre),
@@ -43,10 +50,11 @@ export default async function EntregasPage() {
       ),
       plantillas:orden_plantillas(
         id, plantilla_id, firmado, firmado_por, firma_iniciales, fecha_firma,
-        plantilla:plantillas_orden(id, nombre)
+        plantilla:plantillas_orden(id, nombre, contenido)
       )
     `).eq('estado_id', '9430f8fe-008f-494e-ada5-3c667799b26c').order('fecha_entrega', { ascending: true }),
     supabase.from('estados_entrega').select('*').order('nombre'),
+    supabase.from('configuracion_empresa').select('*').single(),
   ])
 
   return (
@@ -54,6 +62,7 @@ export default async function EntregasPage() {
       entregasIniciales={entregas || []}
       ordenesEnReparto={ordenes || []}
       estados={estados || []}
+      empresa={empresa || {}}
     />
   )
 }

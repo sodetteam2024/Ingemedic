@@ -541,7 +541,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
         </div>
 
         {/* Cards móvil */}
-        <div className="flex-1 overflow-y-auto pb-20 md:hidden space-y-2">
+        <div className="flex-1 overflow-y-auto pb-28 md:hidden space-y-2">
           {filtrados.length === 0 && (
             <div className="text-center py-16 text-slate-400">
               <Wrench className="w-12 h-12 mx-auto mb-3 opacity-20" />
@@ -997,7 +997,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       )}
 
       {toast && (
-        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-28 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

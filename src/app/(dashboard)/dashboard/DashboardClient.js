@@ -79,7 +79,7 @@ export default function DashboardClient({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-20 md:pb-6 space-y-5">
+      <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-28 md:pb-6 space-y-5">
 
         {/* ── FILA 1: KPIs equipos ── */}
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3">

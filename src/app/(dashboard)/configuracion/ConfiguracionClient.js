@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   Users, Lock, Tag, Cpu, Building2,
   FileText, Upload, Plus, X, Edit3, Trash2,
-  Check, Save, ClipboardList, Download, CheckCircle2
+  Check, Save, ClipboardList, Download, CheckCircle2, Smartphone
 } from 'lucide-react'
 import { GaleriaIconos, IconoEquipo } from '@/components/inventario/IconosEquipo'
 
@@ -17,6 +17,7 @@ const NAV = [
   { id: 'empresa',    label: 'Datos de la empresa',     icon: Building2,     grupo: 'Sistema' },
   { id: 'plantillas', label: 'Plantillas documentos',   icon: FileText,      grupo: 'Sistema' },
   { id: 'cargue',     label: 'Cargue masivo',           icon: Upload,        grupo: 'Sistema' },
+  { id: 'preferencias', label: 'Preferencias',          icon: Smartphone,    grupo: 'Sistema' },
 ]
 const GRUPOS = ['Acceso', 'Inventario', 'Mantenimientos', 'Sistema']
 const TIPOS_CAMPO = [
@@ -225,6 +226,18 @@ export default function ConfiguracionClient({
   actividades: actividadesIniciales = [], empresaInicial = {}
 }) {
   const [seccion, setSeccion]         = useState('usuarios')
+  const [mobileNavMode, setMobileNavMode] = useState(() => {
+    if (typeof window === 'undefined') return 'barra'
+    const saved = localStorage.getItem('ingemedic_mobile_nav_mode')
+    return (saved === 'flotante' || saved === 'barra') ? saved : 'barra'
+  })
+
+  function cambiarModoMobile(modo) {
+    setMobileNavMode(modo)
+    localStorage.setItem('ingemedic_mobile_nav_mode', modo)
+    window.dispatchEvent(new CustomEvent('mobile-nav-mode-change', { detail: modo }))
+    showToast(modo === 'barra' ? 'Modo barra fija activado' : 'Acceso Rápido activado')
+  }
 
   // Escuchar evento del tour para cambiar sección automáticamente
   useEffect(() => {
@@ -398,7 +411,7 @@ export default function ConfiguracionClient({
     if (imagenTipo) {
       setSubiendoImagen(true)
       const ext  = imagenTipo.name.split('.').pop()
-      const path = `tipos/${form.id || Date.now()}.${ext}`
+      const path = `tipos/${form.id || crypto.randomUUID()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('equipos-imagenes').upload(path, imagenTipo, { upsert: true })
       if (uploadError) {
@@ -511,7 +524,8 @@ export default function ConfiguracionClient({
     const { error } = await supabase.from('configuracion_empresa').update({
       razon_social: empresa.razon_social, nit: empresa.nit, tel: empresa.tel,
       email: empresa.email, dir: empresa.dir, rep: empresa.rep, web: empresa.web,
-      logo_url: empresa.logo_url, fecha_actualizacion: new Date().toISOString(),
+      logo_url: empresa.logo_url, clausula_certificacion: empresa.clausula_certificacion || null,
+      fecha_actualizacion: new Date().toISOString(),
     }).eq('id', empresa.id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
     showToast('Datos guardados')
@@ -558,7 +572,7 @@ export default function ConfiguracionClient({
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Configuración</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Panel de control del sistema</div>
@@ -608,7 +622,7 @@ export default function ConfiguracionClient({
         </aside>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-[860px]">
 
             {/* USUARIOS */}
@@ -935,6 +949,19 @@ export default function ConfiguracionClient({
                       </div>
                     ))}
                   </div>
+
+                  {/* Cláusula de certificación — se incluye en el acta de entrega, en un lugar fijo, antes de las firmas */}
+                  <div className="mt-5 pt-5 border-t border-slate-100">
+                    <label className={labelCls}>Cláusula de certificación (aparece en el acta de entrega, antes de las firmas)</label>
+                    <textarea
+                      value={empresa.clausula_certificacion ?? 'El firmante certifica y confirma haber leído los documentos anexos dispuestos previo a la firma de los mismos, por lo cual acepta los términos allí contenidos y confirma la entrega de los equipos relacionados en los estados indicados.'}
+                      onChange={e => setEmpresa(p => ({ ...p, clausula_certificacion: e.target.value }))}
+                      rows={4}
+                      placeholder="Texto de la cláusula..."
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#D81B43] bg-white resize-none placeholder:text-slate-400" />
+                    <div className="text-[11.5px] text-slate-400 mt-1.5">Esta cláusula siempre aparece en el mismo lugar del acta, justo antes de las firmas.</div>
+                  </div>
+
                   <div className="flex justify-end mt-5">
                     <button onClick={guardarEmpresa} className="flex items-center gap-1.5 px-5 py-2.5 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
                       <Save size={14} /> Guardar cambios
@@ -979,6 +1006,66 @@ export default function ConfiguracionClient({
               </div>
             )}
 
+            {/* PREFERENCIAS */}
+            {seccion === 'preferencias' && (
+              <div>
+                <h2 className="text-[20px] font-bold text-slate-800 mb-1">Preferencias</h2>
+                <p className="text-[13px] text-slate-400 mb-6">Ajustes de la experiencia en dispositivos móviles</p>
+
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Smartphone size={16} className="text-slate-400" />
+                    <div className="text-[14px] font-bold text-slate-700">Navegación móvil</div>
+                  </div>
+                  <p className="text-[12.5px] text-slate-400 mb-5">
+                    Elige cómo se muestra la barra de navegación en celular. Este ajuste solo aplica en pantallas pequeñas.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Opción: Barra fija */}
+                    <button onClick={() => cambiarModoMobile('barra')}
+                      className={`text-left p-4 rounded-[12px] border-2 transition-all ${
+                        mobileNavMode === 'barra' ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 hover:border-slate-300'
+                      }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[13px] font-bold text-slate-700">Barra fija</div>
+                        {mobileNavMode === 'barra' && <CheckCircle2 size={16} className="text-[#D81B43]" />}
+                      </div>
+                      <div className="text-[12px] text-slate-500 mb-3">
+                        Accesos críticos siempre visibles abajo. Usa flechas laterales para ver más módulos.
+                      </div>
+                      {/* Mini preview */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-[8px] p-2 flex items-center justify-around">
+                        <span className="text-slate-300 text-[10px]">‹</span>
+                        {[0,1,2,3].map(i => (
+                          <div key={i} className={`w-5 h-5 rounded-full ${i === 0 ? 'bg-[#D81B43]/20' : 'bg-slate-200'}`} />
+                        ))}
+                        <span className="text-slate-300 text-[10px]">›</span>
+                      </div>
+                    </button>
+
+                    {/* Opción: Acceso Rápido */}
+                    <button onClick={() => cambiarModoMobile('flotante')}
+                      className={`text-left p-4 rounded-[12px] border-2 transition-all ${
+                        mobileNavMode === 'flotante' ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 hover:border-slate-300'
+                      }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[13px] font-bold text-slate-700">Acceso Rápido</div>
+                        {mobileNavMode === 'flotante' && <CheckCircle2 size={16} className="text-[#D81B43]" />}
+                      </div>
+                      <div className="text-[12px] text-slate-500 mb-3">
+                        Botón flotante y arrastrable que despliega todos los módulos en una cuadrícula. Muévelo a donde te quede más cómodo.
+                      </div>
+                      {/* Mini preview */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-[8px] p-2 h-[36px] relative">
+                        <div className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-slate-400/70" />
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       </div>
@@ -987,10 +1074,10 @@ export default function ConfiguracionClient({
       {modal && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(null)} />
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
-            <div className={`bg-white rounded-t-2xl md:rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden
-              ${modal === 'categoria' ? 'md:max-w-[640px]' : modal === 'tipo' ? 'md:max-w-[600px]' : 'md:max-w-[480px]'}
-              max-h-[92vh] md:max-h-[calc(100vh-2rem)]`}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className={`bg-white rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden
+              ${modal === 'categoria' ? 'max-w-[640px]' : modal === 'tipo' ? 'max-w-[600px]' : 'max-w-[480px]'}
+              max-h-[calc(100vh-2rem)]`}
               onClick={e => e.stopPropagation()}>
 
               {/* Modal header */}
@@ -1013,7 +1100,7 @@ export default function ConfiguracionClient({
                     <label className={labelCls}>Nombre completo</label>
                     <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} placeholder="Nombre del usuario" />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Correo</label>
                       <input value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputCls} type="email" />
@@ -1048,7 +1135,7 @@ export default function ConfiguracionClient({
 
                 {/* CATEGORÍA */}
                 {modal === 'categoria' && <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Nombre</label>
                       <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} placeholder="ej. Oxigenoterapia" />
@@ -1134,7 +1221,7 @@ export default function ConfiguracionClient({
 
                 {/* TIPO */}
                 {modal === 'tipo' && <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Categoría</label>
                       <select value={form.categoria_id || ''}
@@ -1207,7 +1294,7 @@ export default function ConfiguracionClient({
                     return (
                       <div className="border-t border-slate-100 pt-3 space-y-3">
                         <div className="text-[11px] font-bold uppercase tracking-[0.07em] text-[#25A9E0]">Columnas del tipo — {cat.nombre}</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                           {campos.map(campo => (
                             <div key={campo.clave}>
                               <label className={labelCls}>{campo.nombre}{campo.obligatorio && <span className="text-[#D81B43] ml-1">*</span>}</label>
@@ -1252,7 +1339,7 @@ export default function ConfiguracionClient({
       )}
 
       {toast && (
-        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

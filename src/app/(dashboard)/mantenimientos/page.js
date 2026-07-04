@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
 import MantenimientosClient from './MantenimientosClient'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function MantenimientosPage() {
   const supabase = await createClient()
 

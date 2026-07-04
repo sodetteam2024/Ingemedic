@@ -130,7 +130,7 @@ export default function ServiciosClient({ serviciosIniciales }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4 pb-20 md:pb-6">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4 pb-28 md:pb-6">
         {/* Controles */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap flex-shrink-0 shadow-sm">
           {/* Fila 1: search + estado + agrupar */}

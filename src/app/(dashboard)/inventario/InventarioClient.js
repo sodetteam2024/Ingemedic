@@ -321,7 +321,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-20 md:pb-6">
+      <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-28 md:pb-6">
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -858,7 +858,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       )}
 
       {toast && (
-        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[60] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-28 md:bottom-6 right-4 md:right-6 z-[60] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

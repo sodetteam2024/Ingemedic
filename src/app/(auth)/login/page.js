@@ -72,8 +72,9 @@ export default function LoginPage() {
       localStorage.setItem(TOUR_USER_KEY, currentUser)
     }
 
-    router.push('/dashboard')
-    router.refresh()
+    // Recarga completa (no client-side navigation) para evitar que el Router Cache
+    // de Next.js muestre datos de la sesión anterior al cambiar de usuario.
+    window.location.href = '/dashboard'
   }
 
   return (
@@ -183,7 +184,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-[11.5px] text-slate-300 mt-8">
-            © 2026 Ingemedic de Colombia S.A.S. — Desarrollado por SODET
+            © 2024 Ingemedic de Colombia S.A.S. — Desarrollado por SODET
           </p>
         </div>
       </div>

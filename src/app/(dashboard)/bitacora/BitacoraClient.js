@@ -101,7 +101,7 @@ export default function BitacoraClient({ registrosIniciales }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4 pb-20 md:pb-6">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4 pb-28 md:pb-6">
         {/* Filtros */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 flex-wrap flex-shrink-0 shadow-sm">
           <div className="relative flex-1 min-w-[160px] md:max-w-[280px]">

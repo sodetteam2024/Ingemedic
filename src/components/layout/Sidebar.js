@@ -1,8 +1,8 @@
 'use client'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 
 const NAV = [
@@ -32,21 +32,11 @@ const NAV = [
   },
 ]
 
-// Items primarios visibles en la barra (los más usados en campo)
-const PRIMARY_HREFS = ['/entregas', '/inventario', '/ordenes', '/mantenimientos']
-
-// Etiquetas cortas para la barra móvil
-const SHORT_LABELS = {
-  '/entregas':       'Entregas',
-  '/inventario':     'Inventario',
-  '/ordenes':        'Órdenes',
-  '/mantenimientos': 'Soporte',
-  '/dashboard':      'Inicio',
-  '/clientes':       'Clientes',
-  '/servicios':      'Servicios',
-  '/bitacora':       'Bitácora',
-  '/configuracion':  'Config',
-}
+const MOBILE_CRITICOS = ['/dashboard', '/entregas', '/ordenes', '/inventario']
+const MOBILE_NAV_MODE_KEY = 'ingemedic_mobile_nav_mode'
+const FAB_POS_KEY = 'ingemedic_fab_pos'
+const FAB_SIZE = 56
+const TOP_MARGIN = 64 // espacio reservado arriba para no chocar con headers/notch
 
 const ICONS = {
   grid:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
@@ -57,41 +47,121 @@ const ICONS = {
   tool:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
   book:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
   settings: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>,
-  logout:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+  logout:   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
   map:      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>,
-  dots:     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>,
+  chevronL: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>,
+  chevronR: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>,
+  grip:     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></svg>,
+  alert:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
 }
 
 export default function Sidebar({ usuario, empresa }) {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
-  const [masOpen, setMasOpen] = useState(false)
+
+  // Estado inicial SIEMPRE igual en servidor y cliente (evita hydration mismatch).
+  // Las preferencias guardadas se cargan después del montaje, no durante el render inicial.
+  const [mobileMode, setMobileMode] = useState('barra')
+  const [paginaBarra, setPaginaBarra]   = useState(0)
+  const [panelAbierto, setPanelAbierto] = useState(false)
+  const [panelPage, setPanelPage]       = useState('main') // 'main' | 'sistema'
+  const [confirmSalir, setConfirmSalir] = useState(false)
+  const [pos, setPos] = useState({ right: 24, bottom: 96 })
+  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, startRight: 0, startBottom: 0, moved: false })
+
+  // Cargar preferencias del cliente después de hidratar (no durante el render inicial)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const savedMode = localStorage.getItem(MOBILE_NAV_MODE_KEY)
+      if (savedMode === 'flotante' || savedMode === 'barra') setMobileMode(savedMode)
+      try {
+        const savedPos = JSON.parse(localStorage.getItem(FAB_POS_KEY) || 'null')
+        if (savedPos && typeof savedPos.right === 'number') setPos(savedPos)
+      } catch {}
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
+
+  useEffect(() => {
+    function onModeChange(e) { setMobileMode(e.detail) }
+    window.addEventListener('mobile-nav-mode-change', onModeChange)
+    return () => window.removeEventListener('mobile-nav-mode-change', onModeChange)
+  }, [])
+
+  // Ajusta el espacio reservado abajo del contenido según el modo activo.
+  // En modo "barra" reserva espacio para la barra fija; en "flotante" no reserva nada.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      '--mobile-nav-space',
+      mobileMode === 'barra' ? '78px' : '0px'
+    )
+  }, [mobileMode])
 
   async function logout() {
     await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    // Recarga completa para limpiar cualquier caché de navegación de la sesión anterior
+    window.location.href = '/login'
   }
 
-  function lanzarTour() {
-    window.dispatchEvent(new Event('reiniciar-tour'))
+  // ── ARRASTRE con Pointer Events (unifica mouse y touch, sin warnings de listeners pasivos) ──
+  function onPointerDown(e) {
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    dragRef.current = {
+      dragging: true, moved: false,
+      startX: e.clientX, startY: e.clientY,
+      startRight: pos.right, startBottom: pos.bottom,
+    }
+  }
+  function onPointerMove(e) {
+    if (!dragRef.current.dragging) return
+    const dx = e.clientX - dragRef.current.startX
+    const dy = e.clientY - dragRef.current.startY
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) dragRef.current.moved = true
+    if (!dragRef.current.moved) return
+    const vw = window.innerWidth, vh = window.innerHeight
+    let newRight  = dragRef.current.startRight - dx
+    let newBottom = dragRef.current.startBottom - dy
+    newRight  = Math.max(8, Math.min(newRight, vw - FAB_SIZE - 8))
+    newBottom = Math.max(16, Math.min(newBottom, vh - TOP_MARGIN - FAB_SIZE))
+    setPos({ right: newRight, bottom: newBottom })
+  }
+  function onPointerUp() {
+    if (!dragRef.current.dragging) return
+    dragRef.current.dragging = false
+    if (!dragRef.current.moved) return // fue un tap — el onClick abre el panel
+    setPos(prev => {
+      const vw = window.innerWidth
+      const distFromLeftEdge = vw - prev.right - FAB_SIZE
+      const snapped = { right: distFromLeftEdge < prev.right ? vw - FAB_SIZE - 8 : 8, bottom: prev.bottom }
+      localStorage.setItem(FAB_POS_KEY, JSON.stringify(snapped))
+      return snapped
+    })
+  }
+  function handleFabClick() {
+    if (!dragRef.current.moved) setPanelAbierto(v => !v)
   }
 
-  const allItems    = NAV.flatMap(g => g.items)
-  const primaryItems   = allItems.filter(i => PRIMARY_HREFS.includes(i.href))
-  const secondaryItems = allItems.filter(i => !PRIMARY_HREFS.includes(i.href))
+  const mobileItems = NAV.flatMap(group => group.items)
+  const criticos = mobileItems.filter(i => MOBILE_CRITICOS.includes(i.href))
+  const resto    = mobileItems.filter(i => !MOBILE_CRITICOS.includes(i.href))
 
-  function isActive(href) {
-    return pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
-  }
+  // Panel flotante: Dashboard + Operaciones en la vista principal, Bitácora + Configuración en "Más"
+  const itemsOperacion = mobileItems.filter(i => i.href !== '/bitacora' && i.href !== '/configuracion')
+  const itemsSistema   = mobileItems.filter(i => i.href === '/bitacora' || i.href === '/configuracion')
+
+  const PAGE_SIZE = 4
+  const paginasResto = []
+  for (let i = 0; i < resto.length; i += PAGE_SIZE) paginasResto.push(resto.slice(i, i + PAGE_SIZE))
+  const totalPaginas = 1 + paginasResto.length
+  const itemsPaginaActual = paginaBarra === 0 ? criticos : paginasResto[paginaBarra - 1] || []
+
+  const panelAbreHaciaIzquierda = pos.right > 100
 
   return (
     <>
       {/* ── DESKTOP SIDEBAR ── */}
       <aside className="hidden md:flex w-56 min-w-[224px] flex-col h-screen overflow-y-auto flex-shrink-0 bg-white border-r border-slate-200">
-
-        {/* Logo */}
         <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-center">
           {empresa?.logo_url ? (
             <Image src={empresa.logo_url} alt={empresa.razon_social || 'Logo'} width={300} height={100}
@@ -102,7 +172,6 @@ export default function Sidebar({ usuario, empresa }) {
           )}
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 py-3 overflow-y-auto">
           {NAV.map(group => (
             <div key={group.label} className="mb-3">
@@ -110,7 +179,8 @@ export default function Sidebar({ usuario, empresa }) {
                 {group.label}
               </div>
               {group.items.map(item => {
-                const active = isActive(item.href)
+                const active = pathname === item.href ||
+                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
                 return (
                   <Link key={item.href} href={item.href}
                     data-tour={item.tour}
@@ -128,128 +198,216 @@ export default function Sidebar({ usuario, empresa }) {
               })}
             </div>
           ))}
-
-          {/* Divs ocultos para targeting del tour */}
           {['nav-empresa','nav-categorias','nav-tipos','nav-listas','nav-usuarios'].map(id => (
             <div key={id} data-tour={id} className="hidden" />
           ))}
         </nav>
 
-        {/* Tour del sistema */}
         <div className="px-3 pb-2">
-          <button onClick={lanzarTour}
+          <button onClick={() => window.dispatchEvent(new Event('reiniciar-tour'))}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-[9px] text-[12px] font-medium text-slate-500 hover:bg-slate-50 hover:text-[#D81B43] transition-all border border-dashed border-slate-200 hover:border-[#D81B43]/30">
-            <span className="w-[18px] flex items-center justify-center text-slate-400">
-              {ICONS.map}
-            </span>
+            <span className="w-[18px] flex items-center justify-center text-slate-400">{ICONS.map}</span>
             Tour del sistema
           </button>
         </div>
 
-        {/* Usuario */}
         <div className="px-4 py-3 border-t border-slate-100 flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-full bg-[#E53935] flex items-center justify-center text-[12px] font-bold text-white flex-shrink-0">
             {usuario?.nombre?.charAt(0) || 'U'}
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[12.5px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
-            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.roles?.nombre || 'admin'}</div>
+            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.roles.nombre || 'admin'}</div>
           </div>
-          <button onClick={logout} className="text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0 p-1">
+          <button onClick={() => setConfirmSalir(true)} className="text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0 p-1">
             {ICONS.logout}
           </button>
         </div>
       </aside>
 
-      {/* ── MOBILE NAV ── */}
+      {/* ── MOBILE: BOTÓN CERRAR SESIÓN — siempre visible arriba a la derecha ── */}
+      <button
+        onClick={() => setConfirmSalir(true)}
+        className="fixed top-3 right-3 z-40 md:hidden w-9 h-9 rounded-full flex items-center justify-center shadow-sm"
+        style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', border: '1px solid rgba(0,0,0,0.06)' }}>
+        <span className="text-slate-500">{ICONS.logout}</span>
+      </button>
 
-      {/* Overlay para cerrar el menú "Más" */}
-      {masOpen && (
-        <div className="fixed inset-0 z-30 md:hidden" onClick={() => setMasOpen(false)} />
+      {/* ── MOBILE: MODO BARRA FIJA ── */}
+      {mobileMode === 'barra' && (
+        <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_-1px_15px_rgba(15,23,42,0.06)]">
+          <div className="flex items-center px-1 py-2">
+            {totalPaginas > 1 && (
+              <button
+                onClick={() => setPaginaBarra(p => (p - 1 + totalPaginas) % totalPaginas)}
+                className="flex-shrink-0 w-8 h-12 flex items-center justify-center text-slate-300 active:text-[#E53935] transition-colors">
+                {ICONS.chevronL}
+              </button>
+            )}
+            <div className="flex-1 flex items-center justify-around">
+              {itemsPaginaActual.map(item => {
+                const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                return (
+                  <Link key={item.href} href={item.href}
+                    data-tour={item.tour}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-[12px] px-2 py-1.5 text-[9.5px] font-semibold transition-all min-w-0 ${
+                      active ? 'text-[#E53935]' : 'text-slate-500'
+                    }`}>
+                    <span className={`flex items-center justify-center w-8 h-8 rounded-full transition-all ${
+                      active ? 'bg-[#E53935]/10 text-[#E53935]' : 'bg-slate-50 text-slate-500'
+                    }`}>
+                      {ICONS[item.icon]}
+                    </span>
+                    <span className="whitespace-nowrap leading-none tracking-tight">{item.label.split(' ')[0]}</span>
+                  </Link>
+                )
+              })}
+            </div>
+            {totalPaginas > 1 && (
+              <button
+                onClick={() => setPaginaBarra(p => (p + 1) % totalPaginas)}
+                className="flex-shrink-0 w-8 h-12 flex items-center justify-center text-slate-300 active:text-[#E53935] transition-colors">
+                {ICONS.chevronR}
+              </button>
+            )}
+          </div>
+          {totalPaginas > 1 && (
+            <div className="flex items-center justify-center gap-1 pb-1.5">
+              {Array.from({ length: totalPaginas }).map((_, i) => (
+                <div key={i} className="h-1 rounded-full transition-all"
+                  style={{ width: i === paginaBarra ? 12 : 4, background: i === paginaBarra ? '#E53935' : '#E2E8F0' }} />
+              ))}
+            </div>
+          )}
+        </nav>
       )}
 
-      {/* Popup "Más" — aparece encima de la barra */}
-      {masOpen && (
-        <div className="fixed bottom-[84px] left-4 right-4 z-40 md:hidden bg-white rounded-2xl shadow-xl border border-slate-200/80 p-3">
-          <div className="grid grid-cols-3 gap-1 mb-2">
-            {secondaryItems.map(item => {
-              const active = isActive(item.href)
-              return (
-                <Link key={item.href} href={item.href}
-                  data-tour={item.tour}
-                  onClick={() => setMasOpen(false)}
-                  className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all ${
-                    active ? 'bg-[#E53935]/8 text-[#E53935]' : 'text-slate-500 hover:bg-slate-50'
-                  }`}>
-                  <span className={`w-8 h-8 flex items-center justify-center rounded-full ${
-                    active ? 'bg-[#E53935]/12 text-[#E53935]' : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    {ICONS[item.icon]}
-                  </span>
-                  <span className="text-[10px] font-medium text-center leading-tight">
-                    {SHORT_LABELS[item.href] || item.label}
-                  </span>
-                </Link>
-              )
-            })}
-          </div>
-          <div className="border-t border-slate-100 pt-2 flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-[#E53935] flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
-              {usuario?.nombre?.charAt(0) || 'U'}
+      {/* ── MOBILE: MODO ACCESO RÁPIDO (flotante, arrastrable) ── */}
+      {mobileMode === 'flotante' && (
+        <>
+          {panelAbierto && (
+            <div className="fixed inset-0 z-40 md:hidden" onClick={() => { setPanelAbierto(false); setPanelPage('main') }} />
+          )}
+
+          {/* Panel de módulos — reemplaza al botón en su misma posición aproximada */}
+          {panelAbierto && (
+            <div className="fixed z-50 md:hidden w-[248px] rounded-[24px] shadow-2xl"
+              style={{
+                background: 'rgba(255,255,255,0.96)',
+                backdropFilter: 'blur(16px)',
+                border: '1px solid rgba(0,0,0,0.07)',
+                right:  panelAbreHaciaIzquierda ? Math.max(8, pos.right - 96) : undefined,
+                left:   !panelAbreHaciaIzquierda ? 8 : undefined,
+                bottom: pos.bottom,
+              }}>
+              {panelPage === 'main' ? (
+                <div className="grid grid-cols-3 gap-1 p-3">
+                  {itemsOperacion.map(item => {
+                    const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                    return (
+                      <Link key={item.href} href={item.href}
+                        onClick={() => { setPanelAbierto(false); setPanelPage('main') }}
+                        className="flex flex-col items-center justify-center gap-1 rounded-[14px] py-2.5 active:bg-slate-100 transition-colors">
+                        <span className={`flex items-center justify-center w-9 h-9 rounded-full ${
+                          active ? 'bg-[#E53935]/12 text-[#E53935]' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {ICONS[item.icon]}
+                        </span>
+                        <span className={`text-[9px] font-medium text-center leading-tight ${active ? 'text-[#E53935]' : 'text-slate-500'}`}>
+                          {item.label.split(' ')[0]}
+                        </span>
+                      </Link>
+                    )
+                  })}
+                  {/* Botón "más" — abre Bitácora / Configuración */}
+                  <button onClick={() => setPanelPage('sistema')}
+                    className="flex flex-col items-center justify-center gap-1 rounded-[14px] py-2.5 active:bg-slate-100 transition-colors">
+                    <span className="flex items-center justify-center w-9 h-9 rounded-full bg-slate-100 text-slate-600">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+                    </span>
+                    <span className="text-[9px] font-medium text-slate-500">Más</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3">
+                  <button onClick={() => setPanelPage('main')}
+                    className="flex items-center gap-1.5 px-2 py-1.5 mb-1.5 text-[11.5px] font-semibold text-slate-500 active:text-slate-700">
+                    {ICONS.chevronL} Volver
+                  </button>
+                  <div className="grid grid-cols-3 gap-1">
+                    {itemsSistema.map(item => {
+                      const active = pathname === item.href || pathname.startsWith(item.href)
+                      return (
+                        <Link key={item.href} href={item.href}
+                          onClick={() => { setPanelAbierto(false); setPanelPage('main') }}
+                          className="flex flex-col items-center justify-center gap-1 rounded-[14px] py-2.5 active:bg-slate-100 transition-colors">
+                          <span className={`flex items-center justify-center w-9 h-9 rounded-full ${
+                            active ? 'bg-[#E53935]/12 text-[#E53935]' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {ICONS[item.icon]}
+                          </span>
+                          <span className={`text-[9px] font-medium text-center leading-tight ${active ? 'text-[#E53935]' : 'text-slate-500'}`}>
+                            {item.label.split(' ')[0]}
+                          </span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[12px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
-              <div className="text-[10px] text-slate-400 capitalize">{usuario?.roles?.nombre || 'admin'}</div>
-            </div>
-            <button onClick={logout}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-medium text-slate-500 hover:border-red-200 hover:text-red-500 transition-all">
-              {ICONS.logout}
-              <span>Salir</span>
+          )}
+
+          {/* Botón flotante — desaparece cuando el panel está abierto, igual que AssistiveTouch */}
+          {!panelAbierto && (
+            <button
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onClick={handleFabClick}
+              className="fixed z-50 md:hidden w-14 h-14 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform select-none"
+              style={{
+                right:  pos.right,
+                bottom: pos.bottom,
+                background: 'rgba(60,60,67,0.55)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                touchAction: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+              }}>
+              <span className="text-white/90 pointer-events-none">{ICONS.grip}</span>
             </button>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
-      {/* Barra flotante principal */}
-      <nav className="fixed bottom-4 left-4 right-4 z-40 md:hidden bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-lg px-2 py-1.5">
-        <div className="flex items-center justify-between">
-
-          {/* 4 items primarios */}
-          {primaryItems.map(item => {
-            const active = isActive(item.href)
-            return (
-              <Link key={item.href} href={item.href}
-                data-tour={item.tour}
-                className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all ${
-                  active ? 'text-[#E53935]' : 'text-slate-400 hover:text-slate-600'
-                }`}>
-                <span className={`w-7 h-7 flex items-center justify-center rounded-full mb-0.5 transition-colors ${
-                  active ? 'bg-[#E53935]/10 text-[#E53935]' : ''
-                }`}>
-                  {ICONS[item.icon]}
-                </span>
-                <span className="text-[10px] font-medium tracking-tight">
-                  {SHORT_LABELS[item.href]}
-                </span>
-              </Link>
-            )
-          })}
-
-          {/* Botón "Más" */}
-          <button onClick={() => setMasOpen(prev => !prev)}
-            className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all ${
-              masOpen ? 'text-[#E53935]' : 'text-slate-400 hover:text-slate-600'
-            }`}>
-            <span className={`w-7 h-7 flex items-center justify-center rounded-full mb-0.5 transition-colors ${
-              masOpen ? 'bg-[#E53935]/10 text-[#E53935]' : ''
-            }`}>
-              {ICONS.dots}
-            </span>
-            <span className="text-[10px] font-medium tracking-tight">Más</span>
-          </button>
-
-        </div>
-      </nav>
+      {/* ── MODAL CONFIRMAR CERRAR SESIÓN ── */}
+      {confirmSalir && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-[100] backdrop-blur-sm" onClick={() => setConfirmSalir(false)} />
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-[340px] p-6 shadow-2xl text-center" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+                <span className="text-[#D81B43]">{ICONS.alert}</span>
+              </div>
+              <h3 className="text-[16px] font-bold text-slate-800 mb-1">¿Cerrar sesión?</h3>
+              <p className="text-[13px] text-slate-400 mb-6">Tendrás que volver a iniciar sesión para acceder al sistema.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmSalir(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-[9px] text-[13px] font-semibold hover:bg-slate-200 transition-colors">
+                  Cancelar
+                </button>
+                <button onClick={logout}
+                  className="flex-1 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] transition-colors">
+                  Sí, salir
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   )
 }
