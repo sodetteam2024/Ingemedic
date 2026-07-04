@@ -137,7 +137,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Clientes</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Gestión de clientes y arrendatarios</div>
@@ -149,9 +149,9 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="p-6 pb-4 flex-shrink-0">
+        <div className="p-3 md:p-6 pb-3 md:pb-4 flex-shrink-0">
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
             {[
               { label: 'Total clientes',      value: stats.total,    color: '#1E293B' },
               { label: 'Personas jurídicas',  value: stats.juridica, color: '#0E86A0' },
@@ -165,99 +165,150 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
           </div>
 
           {/* Filtros */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-[340px]">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+            <div className="relative flex-1 md:max-w-[340px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Buscar por nombre, NIT, email o teléfono..."
                 className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
             </div>
             <div className="flex items-center gap-2">
-              {[
-                { value: '',         label: 'Todos' },
-                { value: 'Jurídica', label: 'Persona jurídica' },
-                { value: 'Natural',  label: 'Persona natural' },
-              ].map(t => (
-                <button key={t.value} onClick={() => setFiltroTipo(t.value)}
-                  className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all ${
-                    filtroTipo === t.value
-                      ? 'bg-[#D81B43] text-white'
-                      : 'bg-white border border-slate-200 text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43]'
-                  }`}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            <div className="text-[12px] text-slate-400 ml-auto">
-              {clientesFiltrados.length} cliente{clientesFiltrados.length !== 1 ? 's' : ''}
+              <div className="flex items-center gap-2 overflow-x-auto flex-1">
+                {[
+                  { value: '',         label: 'Todos' },
+                  { value: 'Jurídica', label: 'Persona jurídica' },
+                  { value: 'Natural',  label: 'Persona natural' },
+                ].map(t => (
+                  <button key={t.value} onClick={() => setFiltroTipo(t.value)}
+                    className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all whitespace-nowrap ${
+                      filtroTipo === t.value
+                        ? 'bg-[#D81B43] text-white'
+                        : 'bg-white border border-slate-200 text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43]'
+                    }`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <div className="text-[12px] text-slate-400 flex-shrink-0 md:ml-auto">
+                {clientesFiltrados.length} cliente{clientesFiltrados.length !== 1 ? 's' : ''}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Tabla */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            {clientesFiltrados.length === 0 ? (
+        {/* Tabla / Cards */}
+        <div className="flex-1 overflow-y-auto px-3 md:px-6 pb-20 md:pb-6">
+          {clientesFiltrados.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="text-center py-16 text-slate-400">
                 <Building2 className="w-12 h-12 mx-auto mb-3 opacity-20" />
                 <div className="font-semibold mb-1">{search || filtroTipo ? 'Sin resultados' : 'Sin clientes registrados'}</div>
                 <div className="text-[13px]">{search || filtroTipo ? 'Intenta con otros filtros' : 'Usa "Nuevo cliente" para agregar uno'}</div>
               </div>
-            ) : (
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b-2 border-slate-100">
-                    {['Cliente', 'Tipo', 'NIT / CC', 'Contacto', 'Ubicación', ''].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {clientesFiltrados.map(c => {
-                    const st = estiloTipo(c)
-                    return (
-                      <tr key={c.id} onClick={() => setDrawer(c)}
-                        className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-[12px] font-bold"
-                              style={{ background: st.bg, color: st.color }}>
-                              {c.nombre?.charAt(0)?.toUpperCase()}
-                            </div>
-                            <span className="text-[13px] font-semibold text-slate-700">{c.nombre}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
+            </div>
+          ) : (
+            <>
+              {/* Cards móvil */}
+              <div className="md:hidden space-y-2">
+                {clientesFiltrados.map(c => {
+                  const st = estiloTipo(c)
+                  return (
+                    <div key={c.id} onClick={() => setDrawer(c)}
+                      className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 cursor-pointer active:bg-slate-50 transition-colors">
+                      <div className="flex items-center gap-3 mb-2.5">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold flex-shrink-0"
+                          style={{ background: st.bg, color: st.color }}>
+                          {c.nombre?.charAt(0)?.toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[14px] font-semibold text-slate-700 truncate">{c.nombre}</div>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold mt-0.5"
                             style={{ background: st.bg, color: st.color }}>
                             {st.icon} {c.tipo_persona || '—'}
                           </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {c.nit_cc
-                            ? <span className="font-mono text-[12.5px] text-slate-600">{c.nit_cc}{c.digito_verificacion ? `-${c.digito_verificacion}` : ''}</span>
-                            : <span className="text-slate-300">—</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="space-y-0.5">
-                            {c.telefono && <div className="flex items-center gap-1.5 text-[12px] text-slate-500"><Phone size={11} className="text-slate-400" />{c.telefono}</div>}
-                            {c.email    && <div className="flex items-center gap-1.5 text-[12px] text-slate-500"><Mail size={11} className="text-slate-400" />{c.email}</div>}
-                            {!c.telefono && !c.email && <span className="text-slate-300 text-[12px]">—</span>}
+                        </div>
+                        <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
+                      </div>
+                      <div className="space-y-1 pl-1">
+                        {c.nit_cc && (
+                          <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                            <FileText size={11} className="text-slate-400" />
+                            <span className="font-mono">{c.nit_cc}{c.digito_verificacion ? `-${c.digito_verificacion}` : ''}</span>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-[12.5px] text-slate-500">
-                          {c.municipio?.nombre
-                            ? <div className="flex items-center gap-1"><MapPin size={11} className="text-slate-400 flex-shrink-0" />{c.municipio.nombre}, {c.departamento?.nombre}</div>
-                            : <span className="text-slate-300">—</span>}
-                        </td>
-                        <td className="px-3 py-3 text-slate-300"><ChevronRight size={14} /></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
+                        )}
+                        {c.telefono && (
+                          <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                            <Phone size={11} className="text-slate-400" /> {c.telefono}
+                          </div>
+                        )}
+                        {c.email && (
+                          <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                            <Mail size={11} className="text-slate-400" /> {c.email}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Tabla desktop */}
+              <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-slate-100">
+                      {['Cliente', 'Tipo', 'NIT / CC', 'Contacto', 'Ubicación', ''].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientesFiltrados.map(c => {
+                      const st = estiloTipo(c)
+                      return (
+                        <tr key={c.id} onClick={() => setDrawer(c)}
+                          className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-[12px] font-bold"
+                                style={{ background: st.bg, color: st.color }}>
+                                {c.nombre?.charAt(0)?.toUpperCase()}
+                              </div>
+                              <span className="text-[13px] font-semibold text-slate-700">{c.nombre}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
+                              style={{ background: st.bg, color: st.color }}>
+                              {st.icon} {c.tipo_persona || '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {c.nit_cc
+                              ? <span className="font-mono text-[12.5px] text-slate-600">{c.nit_cc}{c.digito_verificacion ? `-${c.digito_verificacion}` : ''}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="space-y-0.5">
+                              {c.telefono && <div className="flex items-center gap-1.5 text-[12px] text-slate-500"><Phone size={11} className="text-slate-400" />{c.telefono}</div>}
+                              {c.email    && <div className="flex items-center gap-1.5 text-[12px] text-slate-500"><Mail size={11} className="text-slate-400" />{c.email}</div>}
+                              {!c.telefono && !c.email && <span className="text-slate-300 text-[12px]">—</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] text-slate-500">
+                            {c.municipio?.nombre
+                              ? <div className="flex items-center gap-1"><MapPin size={11} className="text-slate-400 flex-shrink-0" />{c.municipio.nombre}, {c.departamento?.nombre}</div>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-3 py-3 text-slate-300"><ChevronRight size={14} /></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -265,7 +316,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[420px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[420px] bg-white z-30 flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-[15px] font-bold flex-shrink-0"
@@ -328,8 +379,8 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       {modal && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
                 <h3 className="text-[16px] font-bold text-slate-800">{form.id ? 'Editar cliente' : 'Nuevo cliente'}</h3>
@@ -434,8 +485,8 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       {modalEliminar && (
         <>
           <div className="fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm" />
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[360px] p-6 shadow-2xl text-center">
+          <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[360px] p-6 shadow-2xl text-center">
               <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
                 <AlertTriangle size={22} className="text-[#D81B43]" />
               </div>
@@ -458,7 +509,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

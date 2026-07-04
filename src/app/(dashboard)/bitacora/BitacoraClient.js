@@ -90,7 +90,7 @@ export default function BitacoraClient({ registrosIniciales }) {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-[#1B3A6B]">Bitácora</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Registro de actividad del sistema</div>
@@ -101,10 +101,10 @@ export default function BitacoraClient({ registrosIniciales }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4 pb-20 md:pb-6">
         {/* Filtros */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 flex-wrap flex-shrink-0 shadow-sm">
-          <div className="relative flex-1 min-w-[200px] max-w-[280px]">
+          <div className="relative flex-1 min-w-[160px] md:max-w-[280px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar acción, usuario, entidad..."
@@ -121,7 +121,7 @@ export default function BitacoraClient({ registrosIniciales }) {
             {acciones.map(a => <option key={a} value={a}>{ACCION_STYLES[a]?.label || a}</option>)}
           </select>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
             <span className="text-[12px] text-slate-500 font-medium">Desde</span>
             <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#2EB5D4] bg-white" />
@@ -139,7 +139,7 @@ export default function BitacoraClient({ registrosIniciales }) {
         </div>
 
         {/* Stats rápidas */}
-        <div className="grid grid-cols-4 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
           {[
             { label: 'Total registros', value: filtrados.length,                                             color: '#1B3A6B' },
             { label: 'Creaciones',      value: filtrados.filter(r => r.accion === 'crear').length,           color: '#0F7B55' },
@@ -153,8 +153,8 @@ export default function BitacoraClient({ registrosIniciales }) {
           ))}
         </div>
 
-        {/* Tabla */}
-        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        {/* Tabla — md+ */}
+        <div className="hidden md:flex flex-col flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-auto flex-1">
             <table className="w-full border-collapse min-w-[800px]">
               <thead className="sticky top-0 z-10">
@@ -206,6 +206,51 @@ export default function BitacoraClient({ registrosIniciales }) {
             </table>
           </div>
           <div className="px-4 py-2.5 border-t border-slate-200 bg-slate-50 text-[12px] text-slate-400 flex-shrink-0">
+            {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+
+        {/* Cards móvil */}
+        <div className="md:hidden flex flex-col gap-2 flex-1 overflow-y-auto">
+          {filtrados.length === 0 && (
+            <div className="text-center py-12 text-slate-400">No hay registros que coincidan</div>
+          )}
+          {filtrados.map(r => {
+            const estilo = ACCION_STYLES[r.accion] || { bg: '#F1F5F9', color: '#64748B', label: r.accion?.toUpperCase() }
+            return (
+              <div key={r.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-[#1B3A6B] flex items-center justify-center flex-shrink-0">
+                      <User size={12} className="text-white" />
+                    </div>
+                    <div>
+                      <div className="text-[13px] font-semibold text-slate-700">{r.usuario?.nombre || '—'}</div>
+                      <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-1">
+                        <Clock size={9} />{fmtFecha(r.fecha)}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0"
+                    style={{ background: estilo.bg, color: estilo.color }}>
+                    {estilo.label}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11.5px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">
+                    {MODULO_LABELS[r.modulo] || r.modulo || '—'}
+                  </span>
+                  {r.entidad && <span className="text-[11.5px] text-slate-500">{r.entidad}</span>}
+                </div>
+                {(r.detalle?.descripcion || r.detalle) && (
+                  <div className="text-[11.5px] text-slate-400 mt-1.5 line-clamp-2">
+                    {r.detalle?.descripcion || JSON.stringify(r.detalle)}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          <div className="text-[12px] text-slate-400 text-center py-2">
             {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}
           </div>
         </div>

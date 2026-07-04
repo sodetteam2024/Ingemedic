@@ -481,7 +481,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Mantenimientos</div>
           <div className="text-[12px] text-slate-400 mt-0.5">{(mantenimientos || []).length} registros</div>
@@ -492,9 +492,9 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-4">
         {/* Stats */}
-        <div className="grid grid-cols-5 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-3 flex-shrink-0">
           {[
             { label: 'Total',       value: stats.total,       color: '#1E293B', f: '',           t: '' },
             { label: 'Abiertos',    value: stats.abiertos,    color: '#B45309', f: 'Abierto',    t: '' },
@@ -515,7 +515,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
 
         {/* Filtros */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="relative flex-1 max-w-[320px]">
+          <div className="relative flex-1 md:max-w-[320px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por código, equipo o técnico..."
@@ -540,8 +540,61 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           <div className="text-[12px] text-slate-400 ml-auto">{filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}</div>
         </div>
 
-        {/* Tabla */}
-        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        {/* Cards móvil */}
+        <div className="flex-1 overflow-y-auto pb-20 md:hidden space-y-2">
+          {filtrados.length === 0 && (
+            <div className="text-center py-16 text-slate-400">
+              <Wrench className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <div className="font-semibold">{search || filtroEstado || filtroTipo ? 'Sin resultados' : 'Sin mantenimientos registrados'}</div>
+            </div>
+          )}
+          {filtrados.map(m => (
+            <div key={m.id} onClick={() => setDrawer(m)}
+              className={`bg-white rounded-xl p-4 cursor-pointer shadow-sm ${
+                m.tipo?.nombre === 'Correctivo' && m.estado?.nombre !== 'Cerrado'
+                  ? 'border-l-4 border-l-[#D81B43] border border-t-slate-200 border-r-slate-200 border-b-slate-200'
+                  : 'border border-slate-200'
+              }`}>
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="font-mono text-[12px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{m.codigo}</span>
+                <TipoBadge nombre={m.tipo?.nombre} />
+                <div className="ml-auto"><EstadoBadge nombre={m.estado?.nombre} /></div>
+              </div>
+              <div className="mb-2">
+                <div className="text-[13px] font-semibold text-slate-700">{nombreEquipo(m.equipo)}</div>
+                <div className="text-[11px] font-mono text-slate-400">{m.equipo?.serial}</div>
+              </div>
+              <div className="flex items-center gap-3 text-[11px] text-slate-400 mb-3 flex-wrap">
+                {m.tecnico && <span>Técnico: {m.tecnico}</span>}
+                <span>Apertura: {m.fecha_apertura || '—'}</span>
+                {m.fecha_cierre && <span>Cierre: {m.fecha_cierre}</span>}
+              </div>
+              <div className="flex justify-end" onClick={e => e.stopPropagation()}>
+                {m.estado?.nombre === 'En proceso' && (
+                  <button onClick={() => { const mc = mantenimientos.find(x => x.id === m.id) || m; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: new Date().toISOString().split('T')[0], resultado: 'disponible' }) }}
+                    className="px-3 py-1.5 bg-[#D81B43] text-white text-[11px] font-bold rounded-[7px] hover:bg-[#B0172F]">
+                    🛠 Cerrar
+                  </button>
+                )}
+                {m.estado?.nombre === 'Cerrado' && (
+                  <button onClick={() => generarActaPDF(m)}
+                    className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 text-slate-600 text-[11px] font-medium rounded-[7px] hover:border-[#D81B43] hover:text-[#D81B43]">
+                    <Download size={11} /> PDF
+                  </button>
+                )}
+                {m.estado?.nombre === 'Abierto' && (
+                  <button onClick={() => setDrawer(m)}
+                    className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 text-slate-600 text-[11px] font-medium rounded-[7px] hover:border-slate-300">
+                    <Eye size={11} /> Ver
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabla (solo escritorio) */}
+        <div className="hidden md:flex flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-col">
           <div className="overflow-auto flex-1">
             <table className="w-full border-collapse min-w-[800px]">
               <thead className="sticky top-0 z-10">
@@ -603,7 +656,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[520px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[520px] bg-white z-30 flex flex-col shadow-2xl">
             <div className={`px-6 py-4 border-b flex items-start justify-between flex-shrink-0 ${drawer.tipo?.nombre === 'Correctivo' ? 'bg-[#D81B43]' : 'bg-[#1D4ED8]'}`}>
               <div>
                 <div className="text-[11px] text-white/60">{drawer.tipo?.nombre} · {drawer.codigo}</div>
@@ -729,8 +782,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       {modal && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[560px] max-h-[92vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#D81B43]">
                 <div className="text-[15px] font-bold text-white">Nuevo mantenimiento</div>
@@ -825,8 +878,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       {modalCierre && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModalCierre(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[520px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[520px] max-h-[92vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#D81B43]">
                 <div>
@@ -944,7 +997,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

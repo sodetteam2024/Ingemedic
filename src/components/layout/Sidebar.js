@@ -1,6 +1,7 @@
 'use client'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
@@ -31,6 +32,22 @@ const NAV = [
   },
 ]
 
+// Items primarios visibles en la barra (los más usados en campo)
+const PRIMARY_HREFS = ['/entregas', '/inventario', '/ordenes', '/mantenimientos']
+
+// Etiquetas cortas para la barra móvil
+const SHORT_LABELS = {
+  '/entregas':       'Entregas',
+  '/inventario':     'Inventario',
+  '/ordenes':        'Órdenes',
+  '/mantenimientos': 'Soporte',
+  '/dashboard':      'Inicio',
+  '/clientes':       'Clientes',
+  '/servicios':      'Servicios',
+  '/bitacora':       'Bitácora',
+  '/configuracion':  'Config',
+}
+
 const ICONS = {
   grid:     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
   truck:    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
@@ -42,12 +59,14 @@ const ICONS = {
   settings: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>,
   logout:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
   map:      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>,
+  dots:     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>,
 }
 
 export default function Sidebar({ usuario, empresa }) {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
+  const [masOpen, setMasOpen] = useState(false)
 
   async function logout() {
     await supabase.auth.signOut()
@@ -59,7 +78,13 @@ export default function Sidebar({ usuario, empresa }) {
     window.dispatchEvent(new Event('reiniciar-tour'))
   }
 
-  const mobileItems = NAV.flatMap(group => group.items)
+  const allItems    = NAV.flatMap(g => g.items)
+  const primaryItems   = allItems.filter(i => PRIMARY_HREFS.includes(i.href))
+  const secondaryItems = allItems.filter(i => !PRIMARY_HREFS.includes(i.href))
+
+  function isActive(href) {
+    return pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+  }
 
   return (
     <>
@@ -85,8 +110,7 @@ export default function Sidebar({ usuario, empresa }) {
                 {group.label}
               </div>
               {group.items.map(item => {
-                const active = pathname === item.href ||
-                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                const active = isActive(item.href)
                 return (
                   <Link key={item.href} href={item.href}
                     data-tour={item.tour}
@@ -129,7 +153,7 @@ export default function Sidebar({ usuario, empresa }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[12.5px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
-            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.roles.nombre || 'admin'}</div>
+            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.roles?.nombre || 'admin'}</div>
           </div>
           <button onClick={logout} className="text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0 p-1">
             {ICONS.logout}
@@ -138,30 +162,92 @@ export default function Sidebar({ usuario, empresa }) {
       </aside>
 
       {/* ── MOBILE NAV ── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_-1px_15px_rgba(15,23,42,0.05)]">
-        <div className="flex items-center justify-between gap-1 overflow-x-auto px-2 py-2">
-          {mobileItems.map(item => {
-            const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+
+      {/* Overlay para cerrar el menú "Más" */}
+      {masOpen && (
+        <div className="fixed inset-0 z-30 md:hidden" onClick={() => setMasOpen(false)} />
+      )}
+
+      {/* Popup "Más" — aparece encima de la barra */}
+      {masOpen && (
+        <div className="fixed bottom-[84px] left-4 right-4 z-40 md:hidden bg-white rounded-2xl shadow-xl border border-slate-200/80 p-3">
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {secondaryItems.map(item => {
+              const active = isActive(item.href)
+              return (
+                <Link key={item.href} href={item.href}
+                  data-tour={item.tour}
+                  onClick={() => setMasOpen(false)}
+                  className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all ${
+                    active ? 'bg-[#E53935]/8 text-[#E53935]' : 'text-slate-500 hover:bg-slate-50'
+                  }`}>
+                  <span className={`w-8 h-8 flex items-center justify-center rounded-full ${
+                    active ? 'bg-[#E53935]/12 text-[#E53935]' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {ICONS[item.icon]}
+                  </span>
+                  <span className="text-[10px] font-medium text-center leading-tight">
+                    {SHORT_LABELS[item.href] || item.label}
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+          <div className="border-t border-slate-100 pt-2 flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-[#E53935] flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
+              {usuario?.nombre?.charAt(0) || 'U'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
+              <div className="text-[10px] text-slate-400 capitalize">{usuario?.roles?.nombre || 'admin'}</div>
+            </div>
+            <button onClick={logout}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-medium text-slate-500 hover:border-red-200 hover:text-red-500 transition-all">
+              {ICONS.logout}
+              <span>Salir</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Barra flotante principal */}
+      <nav className="fixed bottom-4 left-4 right-4 z-40 md:hidden bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-lg px-2 py-1.5">
+        <div className="flex items-center justify-between">
+
+          {/* 4 items primarios */}
+          {primaryItems.map(item => {
+            const active = isActive(item.href)
             return (
               <Link key={item.href} href={item.href}
                 data-tour={item.tour}
-                className={`min-w-[64px] flex flex-col items-center justify-center gap-1 rounded-[12px] px-2 py-2 text-[11px] font-medium transition-all ${
-                  active ? 'bg-[#E53935]/8 text-[#E53935]' : 'text-slate-500 hover:bg-slate-100'
+                className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all ${
+                  active ? 'text-[#E53935]' : 'text-slate-400 hover:text-slate-600'
                 }`}>
-                <span className={`flex items-center justify-center w-7 h-7 rounded-full ${active ? 'bg-[#E53935]/12 text-[#E53935]' : 'bg-slate-100 text-slate-500'}`}>
+                <span className={`w-7 h-7 flex items-center justify-center rounded-full mb-0.5 transition-colors ${
+                  active ? 'bg-[#E53935]/10 text-[#E53935]' : ''
+                }`}>
                   {ICONS[item.icon]}
                 </span>
-                <span className="whitespace-nowrap">{item.label}</span>
+                <span className="text-[10px] font-medium tracking-tight">
+                  {SHORT_LABELS[item.href]}
+                </span>
               </Link>
             )
           })}
-          <button onClick={logout}
-            className="min-w-[64px] flex flex-col items-center justify-center gap-1 rounded-[12px] px-2 py-2 text-[11px] font-medium text-slate-500 hover:bg-slate-100">
-            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-100 text-slate-600">
-              {ICONS.logout}
+
+          {/* Botón "Más" */}
+          <button onClick={() => setMasOpen(prev => !prev)}
+            className={`flex flex-col items-center justify-center flex-1 py-1.5 rounded-xl transition-all ${
+              masOpen ? 'text-[#E53935]' : 'text-slate-400 hover:text-slate-600'
+            }`}>
+            <span className={`w-7 h-7 flex items-center justify-center rounded-full mb-0.5 transition-colors ${
+              masOpen ? 'bg-[#E53935]/10 text-[#E53935]' : ''
+            }`}>
+              {ICONS.dots}
             </span>
-            <span className="whitespace-nowrap">Salir</span>
+            <span className="text-[10px] font-medium tracking-tight">Más</span>
           </button>
+
         </div>
       </nav>
     </>

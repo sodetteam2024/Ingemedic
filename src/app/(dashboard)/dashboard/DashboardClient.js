@@ -64,7 +64,7 @@ export default function DashboardClient({
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Dashboard</div>
           <div className="text-[12px] text-slate-400 mt-0.5">
@@ -79,10 +79,10 @@ export default function DashboardClient({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-5">
+      <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-20 md:pb-6 space-y-5">
 
         {/* ── FILA 1: KPIs equipos ── */}
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
           {[
             { label: 'Total equipos',    value: totalEquipos, color: '#1E293B', icon: Package,       sub: 'en inventario' },
             { label: 'Disponibles',      value: disponibles,  color: '#0F7B55', icon: CheckCircle2,  sub: 'listos para préstamo' },
@@ -101,14 +101,14 @@ export default function DashboardClient({
                   <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
                 </div>
                 <div className="text-[12px] font-semibold text-slate-700">{s.label}</div>
-                <div className="text-[10.5px] text-slate-400 mt-0.5">{s.sub}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5 hidden md:block">{s.sub}</div>
               </div>
             )
           })}
         </div>
 
         {/* ── FILA 2: Estado operacional ── */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
           {/* Órdenes activas */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -227,7 +227,7 @@ export default function DashboardClient({
 
         {/* ── FILA 3: Alertas ── */}
         {(ordenesRetrasadas.length > 0 || vigenciasProximas.length > 0 || conNovedad > 0) && (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
             {/* Órdenes retrasadas */}
             <div className={`bg-white rounded-xl border shadow-sm overflow-hidden ${ordenesRetrasadas.length > 0 ? 'border-[#D81B43]/30' : 'border-slate-200'}`}>
@@ -346,7 +346,7 @@ export default function DashboardClient({
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-[13px] font-semibold text-slate-700">
                           <span className="font-mono">{o.codigo}</span>
-                          <span className="text-slate-400 font-normal ml-2">— {o.cliente?.nombre}</span>
+                          <span className="text-slate-400 font-normal ml-2 hidden sm:inline">— {o.cliente?.nombre}</span>
                         </div>
                         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{ background: s.bg, color: s.color }}>

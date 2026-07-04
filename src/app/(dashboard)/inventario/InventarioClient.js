@@ -58,7 +58,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   }
 
   const stats = useMemo(() => {
-    // Filtrar equipos según el nivel de la vista actual
     let base = equipos
     if (vista === 'tipos' && catActual) {
       const idsTipos = tipos.filter(t => t.categoria_id === catActual.id).map(t => t.id)
@@ -156,7 +155,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     router.refresh()
   }
 
-  // ── EXPORTAR vía API route ──────────────────────────────
   async function exportar(nivel, extra = {}) {
     setExportando(true)
     try {
@@ -178,7 +176,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     }
   }
 
-  // ── NUEVO TIPO ──────────────────────────────────────────
   function abrirModalTipo() {
     setFormTipo({ icono: '', atributos: {} })
     setModalTipo(true)
@@ -209,7 +206,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     setModalTipo(false)
   }
 
-  // ── NUEVA UNIDAD ────────────────────────────────────────
   function abrirModalNueva() {
     const estadoDisponible = estados.find(e => e.nombre === 'Disponible')
     setFormUnidad({ serial: '', codigo: '', estado_id: estadoDisponible?.id || '', atributos: {} })
@@ -263,18 +259,14 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     return tipo?.atributos?.nombre || tipo?.nombre || '—'
   }
 
-  // Renderiza imagen del tipo, o ícono de la categoría como fallback
   function renderIconoTipo(tipo, size = 48) {
-    // Imagen real del tipo (URL de Supabase storage)
     if (tipo?.imagen_url && !tipo.imagen_url.startsWith('icono:')) {
       return <img src={tipo.imagen_url} alt={nombreTipo(tipo)}
         style={{ width: size, height: size, objectFit: 'contain', padding: 4 }} />
     }
-    // Ícono de la categoría
     const cat = categorias.find(c => c.id === tipo?.categoria_id || c.id === tipo?.categoria?.id)
     const iconoCat = cat?.imagen_url?.startsWith('icono:') ? cat.imagen_url.replace('icono:', '') : null
     if (iconoCat) return <IconoEquipo clave={iconoCat} size={size} color="#D81B43" />
-    // Fallback genérico
     return <Package className="text-slate-200" style={{ width: size, height: size }} />
   }
 
@@ -282,8 +274,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     <div className="flex flex-col h-screen overflow-hidden">
 
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
-        <div className="flex items-center gap-2 text-sm text-slate-400">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0 flex-wrap gap-2">
+        <div className="flex items-center gap-2 text-sm text-slate-400 flex-wrap">
           <button onClick={() => { setVista('categorias'); setCatActual(null); setTipoActual(null) }}
             className="hover:text-slate-700 transition-colors font-medium">Inventario</button>
           {catActual && <>
@@ -296,7 +288,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
             <span className="text-slate-700 font-semibold">{nombreTipo(tipoActual)}</span>
           </>}
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
           {vista !== 'categorias' && (
             <button onClick={volver}
               className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-slate-500 border border-slate-200 rounded-[9px] hover:border-slate-300 transition-all">
@@ -329,10 +321,10 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-20 md:pb-6">
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
             { label: 'Total equipos', value: stats.total,       color: '#1E293B' },
             { label: 'Disponibles',   value: stats.disponibles, color: '#0F7B55' },
@@ -385,7 +377,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         {/* VISTA TIPOS */}
         {vista === 'tipos' && (
           <div>
-            {/* Buscador */}
             {tiposDeCat.length > 0 && (
               <div className="flex items-center gap-3 mb-4">
                 <div className="relative flex-1 max-w-[280px]">
@@ -416,11 +407,9 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   return (
                     <div key={tipo.id} onClick={() => irATipo(tipo)}
                       className="bg-white rounded-xl border border-slate-200 overflow-hidden cursor-pointer hover:border-[#D81B43]/50 hover:shadow-md transition-all group">
-                      {/* Imagen/ícono */}
                       <div className="h-[70px] bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
                         {renderIconoTipo(tipo, 44)}
                       </div>
-                      {/* Info */}
                       <div className="p-3">
                         <div className="flex items-start justify-between gap-1 mb-1.5">
                           <div className="text-[13px] font-bold text-slate-800 leading-tight">{nombreTipo(tipo)}</div>
@@ -453,11 +442,11 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
           </div>
         )}
 
-        {/* VISTA UNIDADES — tabla plana */}
+        {/* VISTA UNIDADES */}
         {vista === 'unidades' && (
           <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="relative flex-1 max-w-[300px]">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <div className="relative flex-1 min-w-[160px] max-w-[300px]">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar..."
                   className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
@@ -472,59 +461,104 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              {unidadesDeTipo.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">
-                  <Inbox className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                  <div className="font-semibold mb-1">Sin unidades registradas</div>
-                  <div className="text-[13px]">Usa &quot;Nueva unidad&quot; para registrar el primer equipo</div>
-                </div>
-              ) : (
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b-2 border-slate-100">
-                      {camposUnidad.map(c => (
-                        <th key={c.clave} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{c.nombre}</th>
-                      ))}
-                      <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Estado</th>
-                      <th className="w-10 bg-slate-50"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unidadesDeTipo.map(eq => {
-                      const est    = eq.estado?.nombre || '—'
-                      const estSty = ESTADO_STYLES[est] || {}
-                      return (
-                        <tr key={eq.id}
-                          className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
-                          onClick={() => setDrawer(eq)}>
-                          {camposUnidad.map(c => (
-                            <td key={c.clave} className="px-4 py-3 text-[13px] text-slate-600">
-                              {c.clave === 'serial' || c.clave === 'codigo'
-                                ? <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                                    {eq.atributos?.[c.clave] || eq[c.clave] || '—'}
-                                  </span>
-                                : formatearValor(eq.atributos?.[c.clave] || eq[c.clave], c.tipo)
-                              }
+            {unidadesDeTipo.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm text-center py-12 text-slate-400">
+                <Inbox className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <div className="font-semibold mb-1">Sin unidades registradas</div>
+                <div className="text-[13px]">Usa &quot;Nueva unidad&quot; para registrar el primer equipo</div>
+              </div>
+            ) : (
+              <>
+                {/* Tabla — solo en md+ */}
+                <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b-2 border-slate-100">
+                        {camposUnidad.map(c => (
+                          <th key={c.clave} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{c.nombre}</th>
+                        ))}
+                        <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Estado</th>
+                        <th className="w-10 bg-slate-50"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unidadesDeTipo.map(eq => {
+                        const est    = eq.estado?.nombre || '—'
+                        const estSty = ESTADO_STYLES[est] || {}
+                        return (
+                          <tr key={eq.id}
+                            className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
+                            onClick={() => setDrawer(eq)}>
+                            {camposUnidad.map(c => (
+                              <td key={c.clave} className="px-4 py-3 text-[13px] text-slate-600">
+                                {c.clave === 'serial' || c.clave === 'codigo'
+                                  ? <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                                      {eq.atributos?.[c.clave] || eq[c.clave] || '—'}
+                                    </span>
+                                  : formatearValor(eq.atributos?.[c.clave] || eq[c.clave], c.tipo)
+                                }
+                              </td>
+                            ))}
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
+                                style={{ background: estSty.bg, color: estSty.color }}>
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: estSty.dot }} />
+                                {est}
+                              </span>
                             </td>
-                          ))}
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
-                              style={{ background: estSty.bg, color: estSty.color }}>
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: estSty.dot }} />
-                              {est}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-slate-300">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                            <td className="px-3 py-3 text-slate-300">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Cards móvil — solo en mobile */}
+                <div className="md:hidden flex flex-col gap-2">
+                  {unidadesDeTipo.map(eq => {
+                    const est    = eq.estado?.nombre || '—'
+                    const estSty = ESTADO_STYLES[est] || {}
+                    const primerCampo = camposUnidad[0]
+                    const segundoCampo = camposUnidad[1]
+                    return (
+                      <div key={eq.id}
+                        className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 cursor-pointer active:bg-slate-50"
+                        onClick={() => setDrawer(eq)}>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div>
+                            {primerCampo && (
+                              <div className="font-mono text-[13px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded inline-block">
+                                {eq.atributos?.[primerCampo.clave] || eq[primerCampo.clave] || '—'}
+                              </div>
+                            )}
+                            {segundoCampo && (
+                              <div className="text-[12px] text-slate-500 mt-1">
+                                <span className="text-slate-400">{segundoCampo.nombre}:</span>{' '}
+                                {formatearValor(eq.atributos?.[segundoCampo.clave] || eq[segundoCampo.clave], segundoCampo.tipo)}
+                              </div>
+                            )}
+                          </div>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold flex-shrink-0"
+                            style={{ background: estSty.bg, color: estSty.color }}>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: estSty.dot }} />
+                            {est}
+                          </span>
+                        </div>
+                        {camposUnidad.slice(2).map(c => (
+                          <div key={c.clave} className="text-[11.5px] text-slate-500">
+                            <span className="text-slate-400">{c.nombre}:</span>{' '}
+                            {formatearValor(eq.atributos?.[c.clave] || eq[c.clave], c.tipo)}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -533,7 +567,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[500px] bg-white z-30 flex flex-col shadow-2xl overflow-hidden">
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[500px] bg-white z-30 flex flex-col shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
               <div>
                 <div className="text-[16px] font-bold text-slate-800">
@@ -548,8 +582,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {/* Info */}
-              <div className="p-6 grid grid-cols-2 gap-6 border-b border-slate-100">
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-slate-100">
                 {camposTipo.length > 0 && (
                   <div>
                     <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Información del equipo</div>
@@ -584,13 +617,11 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 </div>
               </div>
 
-              {/* Línea de tiempo */}
               <div className="p-6">
                 <div className="text-[13px] font-bold text-slate-700 mb-4">Hoja de vida · Línea de tiempo</div>
                 <div className="relative">
                   <div className="absolute left-[7px] top-2 bottom-0 w-[1.5px] bg-slate-100" />
                   <div className="space-y-5">
-                    {/* Evento: registro */}
                     <div className="flex gap-3">
                       <div className="w-4 h-4 rounded-full bg-[#25A9E0] flex-shrink-0 mt-0.5 z-10 flex items-center justify-center">
                         <div className="w-1.5 h-1.5 rounded-full bg-white" />
@@ -603,7 +634,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                         </div>
                       </div>
                     </div>
-                    {/* Aquí se conectarán los mantenimientos */}
                     <div className="flex gap-3 opacity-40">
                       <div className="w-4 h-4 rounded-full border-2 border-dashed border-slate-300 flex-shrink-0 mt-0.5 z-10" />
                       <div className="text-[12px] text-slate-400 italic">Los mantenimientos aparecerán aquí</div>
@@ -630,8 +660,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       {modalEditar && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={intentarCerrarEditar} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[540px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[540px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
                 <h3 className="text-[15px] font-bold text-slate-800">Editar equipo</h3>
                 <button onClick={intentarCerrarEditar} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
@@ -687,8 +717,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       {modalSalir && (
         <>
           <div className="fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm" />
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[360px] p-6 shadow-2xl text-center">
+          <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[360px] p-6 shadow-2xl text-center">
               <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
                 <AlertTriangle size={22} className="text-[#D81B43]" />
               </div>
@@ -713,8 +743,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       {modalTipo && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onClick={() => setModalTipo(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[560px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[560px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
                 <div>
                   <h3 className="text-[15px] font-bold text-slate-800">Nuevo tipo de equipo</h3>
@@ -730,12 +760,10 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   </div>
                 ) : (
                   <>
-                    {/* Galería de iconos */}
                     <div>
                       <label className={labelCls}>Ícono del tipo <span className="text-slate-300 font-normal normal-case">(opcional)</span></label>
                       <GaleriaIconos seleccionado={formTipo.icono} onSeleccionar={clave => setFormTipo(f => ({ ...f, icono: f.icono === clave ? '' : clave }))} />
                     </div>
-                    {/* Campos del tipo */}
                     <div className="border-t border-slate-100 pt-4 space-y-3">
                       <div className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-400">Columnas del tipo</div>
                       {camposTipo.map(campo => (
@@ -764,8 +792,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       {modalNueva && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onClick={() => setModalNueva(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[520px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[520px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
                 <div>
                   <h3 className="text-[15px] font-bold text-slate-800">Nueva unidad</h3>
@@ -830,7 +858,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[60] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

@@ -501,7 +501,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Entregas</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Rutas del día · En tiempo real</div>
@@ -514,9 +514,9 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         )}
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-4">
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
           {[
             { label: 'Total hoy',   value: stats.totalHoy,    color: '#1E293B', f: '' },
             { label: 'Programadas', value: stats.pendientes,  color: '#64748B', f: 'No iniciada' },
@@ -534,7 +534,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
 
         {/* Buscador + filtros */}
         <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
-          <div className="relative flex-1 max-w-[300px]">
+          <div className="relative flex-1">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por código, cliente..."
@@ -558,7 +558,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
 
         {/* Panel filtros */}
         {showFiltros && (
-          <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-4 gap-3 flex-shrink-0 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0 shadow-sm">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-[0.07em] text-slate-400 mb-1.5">Repartidor</label>
               <select value={filtroRep} onChange={e => setFiltroRep(e.target.value)}
@@ -592,7 +592,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         )}
 
         {/* Lista agrupada */}
-        <div className="flex-1 overflow-y-auto space-y-5">
+        <div className="flex-1 overflow-y-auto space-y-5 pb-20 md:pb-0">
           {porRepartidor.length === 0 && (
             <div className="text-center py-16 text-slate-400">
               <Truck className="w-12 h-12 mx-auto mb-3 opacity-20" />
@@ -719,8 +719,8 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {modalOrden && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModalOrden(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[520px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[520px] max-h-[92vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#D81B43]">
                 <div>
@@ -808,7 +808,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[480px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[480px] bg-white z-30 flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b flex items-start justify-between flex-shrink-0 bg-[#D81B43]">
               <div>
                 <div className="text-[11px] text-white/60">Entrega · OS: {drawer.orden?.codigo}</div>
@@ -929,8 +929,8 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {modalRegistro && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModalRegistro(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[560px] max-h-[92vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
 
               {/* Header */}
@@ -1045,7 +1045,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}

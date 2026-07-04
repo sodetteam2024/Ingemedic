@@ -20,7 +20,6 @@ export default function ServiciosClient({ serviciosIniciales }) {
       const me = filtroEstado === 'todos'
         || (filtroEstado === 'activo'     && !s.fecha_devolucion)
         || (filtroEstado === 'finalizado' && s.fecha_devolucion)
-      // Solapamiento con rango
       let mp = true
       if (desde || hasta) {
         const ini = new Date(s.fecha_entrega)
@@ -43,7 +42,6 @@ export default function ServiciosClient({ serviciosIniciales }) {
     return { activos: activos.length, clientes: cliActivos.length, totalDias, maxSrv }
   }, [filtrados])
 
-  // Agrupar por cliente
   const grupos = useMemo(() => {
     if (!agrupado) return null
     const map = {}
@@ -71,7 +69,7 @@ export default function ServiciosClient({ serviciosIniciales }) {
       s.fecha_entrega, s.fecha_devolucion || '',
       s.dias_activo, s.fecha_devolucion ? 'Finalizado' : 'Activo'
     ])
-    const bom = '\uFEFF'
+    const bom = '﻿'
     const csv = bom + [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
     const a   = document.createElement('a')
     a.href    = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
@@ -118,59 +116,67 @@ export default function ServiciosClient({ serviciosIniciales }) {
     )
   }
 
+  const filtradosOrdenados = filtrados
+    .slice()
+    .sort((a, b) => (!a.fecha_devolucion ? -1 : 1) || (b.dias_activo - a.dias_activo))
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-[#1B3A6B]">Servicios prestados</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Datos para facturación por cliente y período</div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+      <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-3 md:gap-4 pb-20 md:pb-6">
         {/* Controles */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 flex-wrap flex-shrink-0 shadow-sm">
-          <div className="relative flex-1 min-w-[200px] max-w-[260px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar cliente o equipo..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#2EB5D4] bg-slate-50" />
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap flex-shrink-0 shadow-sm">
+          {/* Fila 1: search + estado + agrupar */}
+          <div className="flex items-center gap-3 flex-wrap w-full sm:w-auto">
+            <div className="relative flex-1 min-w-[160px] max-w-[260px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar cliente o equipo..."
+                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#2EB5D4] bg-slate-50" />
+            </div>
+
+            <div className="flex bg-slate-100 rounded-[8px] p-1 gap-1 flex-shrink-0">
+              {[['todos','Todos'],['activo','Activos'],['finalizado','Finalizados']].map(([v,l]) => (
+                <button key={v} onClick={() => setFiltroEstado(v)}
+                  className={`px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-all ${filtroEstado === v ? 'bg-white text-[#1B3A6B] font-bold shadow-sm' : 'text-slate-500'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            <button onClick={() => setAgrupado(v => !v)}
+              className="flex items-center gap-2 text-[12.5px] font-medium text-slate-600 hover:text-[#1B3A6B] transition-colors flex-shrink-0">
+              {agrupado ? <ToggleRight size={20} className="text-[#1B3A6B]" /> : <ToggleLeft size={20} className="text-slate-400" />}
+              Agrupar por cliente
+            </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Calendar size={14} className="text-slate-400" />
+          {/* Fila 2: date range + export */}
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+            <Calendar size={14} className="text-slate-400 flex-shrink-0" />
             <span className="text-[12px] text-slate-500 font-medium">Desde</span>
             <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#2EB5D4] bg-white" />
             <span className="text-[12px] text-slate-500 font-medium">Hasta</span>
             <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#2EB5D4] bg-white" />
+
+            <button onClick={exportarCSV}
+              className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#059669] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#047857] transition-colors flex-shrink-0">
+              <Download size={14} /> Exportar CSV
+            </button>
           </div>
-
-          <div className="flex bg-slate-100 rounded-[8px] p-1 gap-1">
-            {[['todos','Todos'],['activo','Activos'],['finalizado','Finalizados']].map(([v,l]) => (
-              <button key={v} onClick={() => setFiltroEstado(v)}
-                className={`px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-all ${filtroEstado === v ? 'bg-white text-[#1B3A6B] font-bold shadow-sm' : 'text-slate-500'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
-
-          <button onClick={() => setAgrupado(v => !v)}
-            className="flex items-center gap-2 text-[12.5px] font-medium text-slate-600 hover:text-[#1B3A6B] transition-colors">
-            {agrupado ? <ToggleRight size={20} className="text-[#1B3A6B]" /> : <ToggleLeft size={20} className="text-slate-400" />}
-            Agrupar por cliente
-          </button>
-
-          <button onClick={exportarCSV}
-            className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#059669] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#047857] transition-colors">
-            <Download size={14} /> Exportar CSV
-          </button>
         </div>
 
         {/* Métricas */}
-        <div className="grid grid-cols-4 gap-3 flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
           {[
             { label: 'Equipos en campo', value: stats.activos,    color: '#2EB5D4', sub: 'Servicios activos ahora' },
             { label: 'Clientes activos', value: stats.clientes,   color: '#1B3A6B', sub: 'Con equipos en campo' },
@@ -185,8 +191,8 @@ export default function ServiciosClient({ serviciosIniciales }) {
           ))}
         </div>
 
-        {/* Tabla */}
-        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        {/* Tabla — md+ */}
+        <div className="hidden md:flex flex-col flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-auto flex-1">
             <table className="w-full border-collapse min-w-[700px]">
               <thead className="sticky top-0 z-10">
@@ -221,15 +227,53 @@ export default function ServiciosClient({ serviciosIniciales }) {
                       {items.map(s => <FilaServicio key={s.orden_id} s={s} indent />)}
                     </Fragment>
                   )
-                }) : filtrados
-                  .slice()
-                  .sort((a, b) => (!a.fecha_devolucion ? -1 : 1) || (b.dias_activo - a.dias_activo))
-                  .map(s => <FilaServicio key={s.orden_id} s={s} />)
+                }) : filtradosOrdenados.map(s => <FilaServicio key={s.orden_id} s={s} />)
                 }
               </tbody>
             </table>
           </div>
           <div className="px-4 py-2.5 border-t border-slate-200 bg-slate-50 text-[12px] text-slate-400 flex-shrink-0">
+            {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''} · {stats.totalDias} días totales
+          </div>
+        </div>
+
+        {/* Cards móvil — solo mobile */}
+        <div className="md:hidden flex flex-col gap-2 flex-1 overflow-y-auto">
+          {filtrados.length === 0 && (
+            <div className="text-center py-12 text-slate-400">No hay servicios que coincidan</div>
+          )}
+          {(agrupado && grupos
+            ? grupos.flatMap(([, items]) => items)
+            : filtradosOrdenados
+          ).map(s => {
+            const activo = !s.fecha_devolucion
+            return (
+              <div key={s.orden_id} className={`bg-white rounded-xl border shadow-sm p-4 ${activo ? 'border-l-4 border-l-[#2EB5D4] border-slate-200' : 'border-slate-200'}`}>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <div className="text-[13px] font-bold text-slate-800">{s.cliente}</div>
+                    <div className="text-[12px] text-slate-500 mt-0.5">{s.equipo}</div>
+                  </div>
+                  {activo
+                    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-[#E8F7FB] text-[#0E86A0] flex-shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#2EB5D4] animate-pulse" />
+                        En campo
+                      </span>
+                    : <span className="text-[11px] text-slate-400 flex-shrink-0">Finalizado</span>
+                  }
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="font-mono text-[11.5px] font-bold bg-slate-100 text-[#1B3A6B] px-2 py-0.5 rounded">{s.codigo_equipo}</span>
+                  <span className="text-[11.5px] text-slate-400">Entrega: <span className="text-slate-600 font-medium">{fmtF(s.fecha_entrega)}</span></span>
+                  {!activo && s.fecha_devolucion && (
+                    <span className="text-[11.5px] text-slate-400">Dev: <span className="text-slate-600 font-medium">{fmtF(s.fecha_devolucion)}</span></span>
+                  )}
+                  <span className="ml-auto font-mono font-bold text-[14px] text-[#1B3A6B]">{s.dias_activo} <span className="text-[11px] font-normal text-slate-400">días</span></span>
+                </div>
+              </div>
+            )
+          })}
+          <div className="text-[12px] text-slate-400 text-center py-2">
             {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''} · {stats.totalDias} días totales
           </div>
         </div>

@@ -558,7 +558,7 @@ export default function ConfiguracionClient({
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Configuración</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Panel de control del sistema</div>
@@ -608,7 +608,7 @@ export default function ConfiguracionClient({
         </aside>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8">
           <div className="max-w-[860px]">
 
             {/* USUARIOS */}
@@ -987,10 +987,10 @@ export default function ConfiguracionClient({
       {modal && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className={`bg-white rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden
-              ${modal === 'categoria' ? 'max-w-[640px]' : modal === 'tipo' ? 'max-w-[600px]' : 'max-w-[480px]'}
-              max-h-[calc(100vh-2rem)]`}
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className={`bg-white rounded-t-2xl md:rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden
+              ${modal === 'categoria' ? 'md:max-w-[640px]' : modal === 'tipo' ? 'md:max-w-[600px]' : 'md:max-w-[480px]'}
+              max-h-[92vh] md:max-h-[calc(100vh-2rem)]`}
               onClick={e => e.stopPropagation()}>
 
               {/* Modal header */}
@@ -1013,7 +1013,7 @@ export default function ConfiguracionClient({
                     <label className={labelCls}>Nombre completo</label>
                     <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} placeholder="Nombre del usuario" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Correo</label>
                       <input value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputCls} type="email" />
@@ -1048,7 +1048,7 @@ export default function ConfiguracionClient({
 
                 {/* CATEGORÍA */}
                 {modal === 'categoria' && <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Nombre</label>
                       <input value={form.nombre || ''} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} placeholder="ej. Oxigenoterapia" />
@@ -1134,7 +1134,7 @@ export default function ConfiguracionClient({
 
                 {/* TIPO */}
                 {modal === 'tipo' && <>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Categoría</label>
                       <select value={form.categoria_id || ''}
@@ -1207,7 +1207,7 @@ export default function ConfiguracionClient({
                     return (
                       <div className="border-t border-slate-100 pt-3 space-y-3">
                         <div className="text-[11px] font-bold uppercase tracking-[0.07em] text-[#25A9E0]">Columnas del tipo — {cat.nombre}</div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {campos.map(campo => (
                             <div key={campo.clave}>
                               <label className={labelCls}>{campo.nombre}{campo.obligatorio && <span className="text-[#D81B43] ml-1">*</span>}</label>
@@ -1252,7 +1252,7 @@ export default function ConfiguracionClient({
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
+        <div className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
           {toast.msg}
         </div>
       )}
