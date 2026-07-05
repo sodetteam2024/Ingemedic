@@ -1,9 +1,11 @@
 'use client'
 import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
+import { registrarBitacora } from '@/lib/bitacora'
 import {
   Plus, X, Edit3, Search, Building2, User,
-  Phone, Mail, MapPin, FileText, AlertTriangle, ChevronRight
+  Phone, Mail, MapPin, FileText, AlertTriangle, ChevronRight,
+  Package, Truck, Clock, ArrowDownLeft, ArrowUpRight, Download, UserPlus
 } from 'lucide-react'
 
 const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#D81B43] bg-white transition-colors placeholder:text-slate-400'
@@ -27,6 +29,8 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   const [toast, setToast]                 = useState(null)
   const [form, setForm]                   = useState({})
   const [municipiosFiltrados, setMunicipiosFiltrados] = useState([])
+  const [historial, setHistorial]         = useState({ loading: false, ordenes: [], entregas: [] })
+  const [tabHoja, setTabHoja]             = useState('prestamo') // 'prestamo' | 'ordenes' | 'linea'
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
@@ -59,6 +63,119 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   function onChangeDepartamento(depId) {
     setForm(f => ({ ...f, departamento_id: depId, municipio_id: '' }))
     setMunicipiosFiltrados(municipios.filter(m => m.departamento_id === depId))
+  }
+
+  // ── HOJA DE VIDA DEL CLIENTE — órdenes, entregas y equipos en préstamo ──
+  async function abrirDrawer(cliente) {
+    setDrawer(cliente)
+    setTabHoja('prestamo')
+    setHistorial({ loading: true, ordenes: [], entregas: [] })
+
+    const [{ data: ordenes }, { data: entregas }] = await Promise.all([
+      supabase.from('ordenes_servicio').select(`
+        id, codigo, fecha_creacion, fecha_vigencia, observaciones,
+        tipo:tipos_orden(id, nombre),
+        estado:estados_orden(id, nombre),
+        equipos:orden_equipos(
+          id, fecha_entrega, fecha_devolucion,
+          equipo:equipos(id, codigo, serial, tipo_equipo:tipos_equipo(id, nombre, atributos))
+        )
+      `).eq('cliente_id', cliente.id).order('fecha_creacion', { ascending: false }),
+      supabase.from('entregas').select(`
+        id, codigo, tipo, fecha_completada, fecha_asignacion, recibido_por,
+        estado:estados_entrega(id, nombre),
+        orden:ordenes_servicio(id, codigo)
+      `).eq('cliente_id', cliente.id).order('fecha_asignacion', { ascending: false }),
+    ])
+
+    setHistorial({ loading: false, ordenes: ordenes || [], entregas: entregas || [] })
+  }
+
+  // Equipos actualmente en préstamo: tienen fecha_entrega pero no fecha_devolucion,
+  // en una orden que no esté cancelada.
+  const equiposEnPrestamo = useMemo(() => {
+    const lista = []
+    for (const orden of historial.ordenes) {
+      for (const oe of orden.equipos || []) {
+        if (oe.fecha_entrega && !oe.fecha_devolucion) {
+          lista.push({ ...oe, orden })
+        }
+      }
+    }
+    return lista
+  }, [historial.ordenes])
+
+  // ── LÍNEA DE TIEMPO — cliente creado + órdenes + entregas, todo en un solo hilo cronológico ──
+  const lineaTiempo = useMemo(() => {
+    if (!drawer) return []
+    const eventos = []
+
+    if (drawer.fecha_creacion) {
+      eventos.push({ fecha: drawer.fecha_creacion, tipo: 'cliente', label: 'Cliente registrado en el sistema' })
+    }
+    for (const o of historial.ordenes) {
+      eventos.push({ fecha: o.fecha_creacion, tipo: 'orden', label: `Orden ${o.codigo} creada · ${o.tipo?.nombre || '—'}`, sub: o.estado?.nombre })
+    }
+    for (const en of historial.entregas) {
+      const fecha = en.fecha_completada || en.fecha_asignacion
+      eventos.push({
+        fecha,
+        tipo: en.tipo === 'devolucion' ? 'devolucion' : 'entrega',
+        label: `${en.tipo === 'devolucion' ? 'Devolución' : 'Entrega'} ${en.codigo} · OS ${en.orden?.codigo || '—'}`,
+        sub: en.recibido_por ? `Recibido por ${en.recibido_por}` : en.estado?.nombre,
+      })
+    }
+    return eventos
+      .filter(ev => ev.fecha)
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+  }, [drawer, historial])
+
+  const ICONO_EVENTO = {
+    cliente:     { icon: <UserPlus size={13} />,      color: '#64748B', bg: '#F1F5F9' },
+    orden:       { icon: <FileText size={13} />,      color: '#1B3A6B', bg: '#E8EEF9' },
+    entrega:     { icon: <ArrowUpRight size={13} />,  color: '#0F7B55', bg: '#E7F6EF' },
+    devolucion:  { icon: <ArrowDownLeft size={13} />, color: '#B45309', bg: '#FEF3E2' },
+  }
+
+  // ── EXPORTAR HOJA DE VIDA A CSV ──
+  function exportarHojaDeVida() {
+    const filas = []
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+
+    filas.push(['HOJA DE VIDA DEL CLIENTE'])
+    filas.push(['Nombre', drawer.nombre])
+    filas.push(['Tipo persona', drawer.tipo_persona])
+    filas.push(['NIT/CC', drawer.nit_cc])
+    filas.push(['Teléfono', drawer.telefono])
+    filas.push(['Email', drawer.email])
+    filas.push(['Dirección', drawer.direccion])
+    filas.push(['Ubicación', drawer.municipio ? `${drawer.municipio.nombre}, ${drawer.departamento?.nombre}` : ''])
+    filas.push(['Cliente desde', drawer.fecha_creacion ? new Date(drawer.fecha_creacion).toLocaleDateString('es-CO') : ''])
+    filas.push([])
+
+    filas.push(['EQUIPOS ACTUALMENTE EN PRÉSTAMO'])
+    filas.push(['Equipo', 'Serial', 'Código', 'Orden', 'Desde'])
+    equiposEnPrestamo.forEach(oe => filas.push([
+      oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || '',
+      oe.equipo?.serial || '', oe.equipo?.codigo || '', oe.orden?.codigo || '',
+      oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '',
+    ]))
+    filas.push([])
+
+    filas.push(['LÍNEA DE TIEMPO'])
+    filas.push(['Fecha', 'Evento', 'Detalle'])
+    lineaTiempo.forEach(ev => filas.push([
+      new Date(ev.fecha).toLocaleString('es-CO'), ev.label, ev.sub || '',
+    ]))
+
+    const csv = filas.map(fila => fila.map(esc).join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `HojaDeVida_${drawer.nombre?.replace(/\s+/g, '_')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const clientesFiltrados = useMemo(() => {
@@ -105,6 +222,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
         municipio:    municipios.find(m => m.id === form.municipio_id)       || prev.municipio,
       }))
       showToast('Cliente actualizado')
+      registrarBitacora({ modulo: 'clientes', accion: 'editar', entidad: 'cliente', entidad_id: form.id, detalle: { nombre: payload.nombre } })
     } else {
       const { data, error } = await supabase.from('clientes')
         .insert({ ...payload, activo: true })
@@ -113,6 +231,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setClientes(prev => [data, ...prev])
       showToast('Cliente creado')
+      registrarBitacora({ modulo: 'clientes', accion: 'crear', entidad: 'cliente', entidad_id: data.id, detalle: { nombre: data.nombre } })
     }
     setSaving(false); setModal(false)
   }
@@ -120,10 +239,12 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   async function eliminarCliente(id) {
     const { error } = await supabase.from('clientes').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
+    const cliente = clientes.find(c => c.id === id)
     setClientes(prev => prev.filter(c => c.id !== id))
     if (drawer?.id === id) setDrawer(null)
     setModalEliminar(null)
     showToast('Cliente eliminado')
+    registrarBitacora({ modulo: 'clientes', accion: 'eliminar', entidad: 'cliente', entidad_id: id, detalle: { nombre: cliente?.nombre } })
   }
 
   const estiloTipo = c => TIPO_STYLES[c.tipo_persona] || TIPO_STYLES['Jurídica']
@@ -137,21 +258,27 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 md:bg-white md:border-b md:border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Clientes</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Gestión de clientes y arrendatarios</div>
         </div>
         <button onClick={() => abrirModal()}
-          className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
+          className="ml-auto hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
           <Plus size={14} strokeWidth={2.5} /> Nuevo cliente
         </button>
       </div>
 
+      {/* FAB móvil */}
+      <button onClick={() => abrirModal()}
+        className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
+        <Plus size={22} strokeWidth={2.5} />
+      </button>
+
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="p-3 md:p-6 pb-3 md:pb-4 flex-shrink-0">
           {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+          <div className="hidden md:grid md:grid-cols-3 gap-4 mb-5">
             {[
               { label: 'Total clientes',      value: stats.total,    color: '#1E293B' },
               { label: 'Personas jurídicas',  value: stats.juridica, color: '#0E86A0' },
@@ -189,7 +316,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                   </button>
                 ))}
               </div>
-              <div className="text-[12px] text-slate-400 flex-shrink-0 md:ml-auto">
+              <div className="hidden md:block text-[12px] text-slate-400 flex-shrink-0 md:ml-auto">
                 {clientesFiltrados.length} cliente{clientesFiltrados.length !== 1 ? 's' : ''}
               </div>
             </div>
@@ -213,7 +340,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                 {clientesFiltrados.map(c => {
                   const st = estiloTipo(c)
                   return (
-                    <div key={c.id} onClick={() => setDrawer(c)}
+                    <div key={c.id} onClick={() => abrirDrawer(c)}
                       className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 cursor-pointer active:bg-slate-50 transition-colors">
                       <div className="flex items-center gap-3 mb-2.5">
                         <div className="w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold flex-shrink-0"
@@ -266,7 +393,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                     {clientesFiltrados.map(c => {
                       const st = estiloTipo(c)
                       return (
-                        <tr key={c.id} onClick={() => setDrawer(c)}
+                        <tr key={c.id} onClick={() => abrirDrawer(c)}
                           className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5">
@@ -352,12 +479,121 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
               </div>
 
               <div className="p-6">
-                <div className="text-[13px] font-bold text-slate-700 mb-4">Equipos en préstamo</div>
-                <div className="text-center py-8 text-slate-400">
-                  <FileText className="w-10 h-10 mx-auto mb-2 opacity-20" />
-                  <div className="text-[12.5px]">Sin equipos activos</div>
-                  <div className="text-[11.5px] mt-1 text-slate-300">Los préstamos aparecerán aquí</div>
+                {/* Tabs + exportar */}
+                <div className="flex items-center justify-between mb-1 gap-2">
+                  <div className="flex gap-1 border-b border-slate-200 flex-1 overflow-x-auto">
+                    {[
+                      { id: 'prestamo', label: 'En préstamo', count: equiposEnPrestamo.length },
+                      { id: 'ordenes',  label: 'Órdenes',     count: historial.ordenes.length },
+                      { id: 'linea',    label: 'Línea de tiempo', count: lineaTiempo.length },
+                    ].map(t => (
+                      <button key={t.id} onClick={() => setTabHoja(t.id)}
+                        className={`px-3 py-2 text-[12.5px] font-semibold border-b-2 whitespace-nowrap transition-all ${tabHoja === t.id ? 'border-[#D81B43] text-[#D81B43]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                        {t.label} {t.count > 0 && <span className="ml-1 text-[10.5px] opacity-60">({t.count})</span>}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={exportarHojaDeVida}
+                    title="Exportar hoja de vida a CSV"
+                    className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 rounded-[8px] text-[11.5px] font-medium text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43] transition-all mb-2">
+                    <Download size={12} /> CSV
+                  </button>
                 </div>
+
+                {historial.loading ? (
+                  <div className="py-10 text-center text-slate-400 text-[12.5px]">Cargando historial…</div>
+                ) : (
+                  <div className="mt-3">
+                    {/* EQUIPOS EN PRÉSTAMO */}
+                    {tabHoja === 'prestamo' && (
+                      equiposEnPrestamo.length > 0 ? (
+                        <div className="space-y-2">
+                          {equiposEnPrestamo.map(oe => (
+                            <div key={oe.id} className="flex items-start gap-2.5 p-3 rounded-[9px] border border-slate-100 bg-slate-50">
+                              <Package size={15} className="text-[#D81B43] mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[12.5px] font-semibold text-slate-700">
+                                  {oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || 'Equipo'}
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  Serial: {oe.equipo?.serial || '—'} · Código: {oe.equipo?.codigo || '—'}
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  OS {oe.orden?.codigo} · desde {oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '—'}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-slate-400">
+                          <FileText className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                          <div className="text-[12.5px]">Sin equipos activos</div>
+                          <div className="text-[11.5px] mt-1 text-slate-300">Los préstamos aparecerán aquí</div>
+                        </div>
+                      )
+                    )}
+
+                    {/* ÓRDENES */}
+                    {tabHoja === 'ordenes' && (
+                      historial.ordenes.length > 0 ? (
+                        <div className="space-y-2">
+                          {historial.ordenes.map(o => (
+                            <div key={o.id} className="p-3 rounded-[9px] border border-slate-100">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[12.5px] font-semibold text-slate-700">{o.codigo}</span>
+                                <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{o.estado?.nombre || '—'}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-1">
+                                {o.tipo?.nombre || '—'} · {new Date(o.fecha_creacion).toLocaleDateString('es-CO')}
+                                {o.fecha_vigencia && ` · vigente hasta ${new Date(o.fecha_vigencia).toLocaleDateString('es-CO')}`}
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">{(o.equipos || []).length} equipo(s)</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-slate-400">
+                          <FileText className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                          <div className="text-[12.5px]">Sin órdenes registradas</div>
+                        </div>
+                      )
+                    )}
+
+                    {/* LÍNEA DE TIEMPO */}
+                    {tabHoja === 'linea' && (
+                      lineaTiempo.length > 0 ? (
+                        <div className="relative pl-5">
+                          <div className="absolute left-[7px] top-1 bottom-1 w-px bg-slate-200" />
+                          <div className="space-y-4">
+                            {lineaTiempo.map((ev, i) => {
+                              const ic = ICONO_EVENTO[ev.tipo] || ICONO_EVENTO.orden
+                              return (
+                                <div key={i} className="relative flex items-start gap-3">
+                                  <div className="absolute -left-5 w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                                    style={{ background: ic.bg, color: ic.color }}>
+                                    <div className="scale-75">{ic.icon}</div>
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[12px] font-semibold text-slate-700">{ev.label}</div>
+                                    <div className="text-[10.5px] text-slate-400 mt-0.5">
+                                      {new Date(ev.fecha).toLocaleString('es-CO')} {ev.sub && `· ${ev.sub}`}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-slate-400">
+                          <Clock className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                          <div className="text-[12.5px]">Sin actividad registrada</div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

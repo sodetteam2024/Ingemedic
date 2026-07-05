@@ -32,6 +32,31 @@ const TRANSICIONES_ADMIN = {
   'Entregada': { id: E.Finalizada, nombre: 'Finalizada',  requiereRepartidor: false },
 }
 
+// ── ZONA HORARIA ──────────────────────────────────────────────────
+// Colombia es UTC-5 fijo (no tiene horario de verano). El input
+// datetime-local da/recibe un string "naive" (sin zona horaria) que
+// SIEMPRE representa hora de Bogotá — hay que convertirlo explícitamente
+// a UTC antes de guardar, y de vuelta a "hora de Bogotá naive" al
+// recargarlo en el input. Sin esto, Postgres interpreta el string como
+// UTC directamente y la hora queda corrida por 5 horas (ej: 9pm se
+// guarda como si fueran las 9pm UTC = 4pm Bogotá).
+const TZ_BOGOTA = '-05:00'
+
+// "2026-07-05T21:00" (asumido hora de Bogotá) → ISO UTC correcto para guardar en Supabase
+function localBogotaToISO(str) {
+  if (!str) return null
+  return new Date(`${str}:00${TZ_BOGOTA}`).toISOString()
+}
+
+// ISO guardado en BD (UTC) → "2026-07-05T21:00" para poblar el input datetime-local,
+// ya expresado en hora de Bogotá (independiente de la zona horaria del navegador)
+function isoToLocalBogotaInput(iso) {
+  if (!iso) return ''
+  const d = new Date(new Date(iso).getTime() - 5 * 60 * 60 * 1000)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+}
+
 function estaRetrasada(orden) {
   if (!orden.fecha_entrega) return false
   if (orden.estado?.nombre !== 'Programada') return false
@@ -181,7 +206,7 @@ export default function OrdenesClient({
     setEditRepartidor(false)
     setNuevoRepartidor(orden.repartidor_id || '')
     setEditFecha(false)
-    setNuevaFecha(orden.fecha_entrega ? orden.fecha_entrega.slice(0, 16) : '')
+    setNuevaFecha(orden.fecha_entrega ? isoToLocalBogotaInput(orden.fecha_entrega) : '')
   }
 
   // ── AVANZAR ESTADO ──────────────────────────────────────
@@ -214,14 +239,15 @@ export default function OrdenesClient({
   // ── GUARDAR FECHA ENTREGA ────────────────────────────────
   async function guardarFecha() {
     if (!nuevaFecha) { showToast('Selecciona fecha y hora', 'error'); return }
+    const fechaISO = localBogotaToISO(nuevaFecha)
     const { data, error } = await supabase.from('ordenes_servicio')
-      .update({ fecha_entrega: nuevaFecha })
+      .update({ fecha_entrega: fechaISO })
       .eq('id', drawer.id)
       .select('estado_id, estado:estados_orden(id, nombre)')
       .single()
     if (error) { showToast('Error: ' + error.message, 'error'); return }
     const nuevoEstado = data?.estado || drawer.estado
-    const updOrden = { ...drawer, fecha_entrega: nuevaFecha, estado: nuevoEstado }
+    const updOrden = { ...drawer, fecha_entrega: fechaISO, estado: nuevoEstado }
     setOrdenes(prev => prev.map(o => o.id === drawer.id ? updOrden : o))
     setDrawer(updOrden)
     setEditFecha(false)
@@ -296,7 +322,7 @@ export default function OrdenesClient({
         repartidor_id:  wForm.repartidor_id  || null,
         recibido_por:   wForm.recibido_por   || null,
         observaciones:  wForm.observaciones  || null,
-        fecha_entrega:  wForm.fecha_entrega  || null,
+        fecha_entrega:  localBogotaToISO(wForm.fecha_entrega),
         fecha_vigencia: wForm.fecha_vigencia || null,
       })
       .select(`
@@ -370,41 +396,66 @@ export default function OrdenesClient({
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 md:bg-white md:border-b md:border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Órdenes de servicio</div>
           <div className="text-[12px] text-slate-400 mt-0.5">{ordenes.length} órdenes registradas</div>
         </div>
         <button onClick={abrirWizard}
-          className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
+          className="ml-auto hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
           <Plus size={14} strokeWidth={2.5} /> Nueva orden
         </button>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+      {/* FAB móvil */}
+      <button onClick={abrirWizard}
+        className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
+        <Plus size={22} strokeWidth={2.5} />
+      </button>
 
-        {/* Stats */}
-        <div className="grid grid-cols-6 gap-3 flex-shrink-0">
-          {[
-            { label: 'Total',       value: stats.total,      color: '#1E293B', f: '' },
-            { label: 'Borrador',    value: stats.borrador,   color: '#64748B', f: 'Borrador' },
-            { label: 'Programada',  value: stats.programada, color: '#1D4ED8', f: 'Programada' },
-            { label: 'En reparto',  value: stats.enReparto,  color: '#B45309', f: 'En reparto' },
-            { label: 'Entregada',   value: stats.entregada,  color: '#0E86A0', f: 'Entregada' },
-            { label: 'Finalizada',  value: stats.finalizada, color: '#0F7B55', f: 'Finalizada' },
-          ].map(s => (
-            <div key={s.label}
-              onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
-              className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${filtroEstado === s.f && s.f ? 'border-[#D81B43]' : 'border-slate-200'}`}>
-              <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
-            </div>
-          ))}
+      <div className="flex-1 overflow-hidden flex flex-col p-4 md:p-6 gap-4">
+
+        {/* Stats — en móvil, chips compactos con scroll horizontal (siguen filtrando); en desktop, cards */}
+        <div className="flex-shrink-0">
+          {/* Móvil: chips */}
+          <div className="flex md:hidden gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {[
+              { label: 'Total',      value: stats.total,     color: '#1E293B', f: '' },
+              { label: 'En reparto', value: stats.enReparto, color: '#B45309', f: 'En reparto' },
+              { label: 'Entregada',  value: stats.entregada, color: '#0E86A0', f: 'Entregada' },
+            ].map(s => (
+              <button key={s.label}
+                onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium whitespace-nowrap transition-all ${filtroEstado === s.f && s.f ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 bg-white'}`}>
+                <span className="font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</span>
+                <span className="text-slate-500">{s.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Desktop: cards (igual que antes) */}
+          <div className="hidden md:grid md:grid-cols-6 gap-3">
+            {[
+              { label: 'Total',       value: stats.total,      color: '#1E293B', f: '' },
+              { label: 'Borrador',    value: stats.borrador,   color: '#64748B', f: 'Borrador' },
+              { label: 'Programada', value: stats.programada, color: '#1D4ED8', f: 'Programada' },
+              { label: 'En reparto',  value: stats.enReparto,  color: '#B45309', f: 'En reparto' },
+              { label: 'Entregada',   value: stats.entregada,  color: '#0E86A0', f: 'Entregada' },
+              { label: 'Finalizada',  value: stats.finalizada, color: '#0F7B55', f: 'Finalizada' },
+            ].map(s => (
+              <div key={s.label}
+                onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
+                className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${filtroEstado === s.f && s.f ? 'border-[#D81B43]' : 'border-slate-200'}`}>
+                <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Buscador */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="relative flex-1 max-w-[320px]">
+          <div className="relative flex-1 md:max-w-[320px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por código, cliente o repartidor..."
@@ -421,8 +472,48 @@ export default function OrdenesClient({
           </div>
         </div>
 
-        {/* Tabla */}
-        <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        {/* Cards móvil */}
+        <div className="md:hidden flex-1 overflow-y-auto flex flex-col gap-2 pb-28">
+          {ordenesFiltradas.length === 0 && (
+            <div className="text-center py-16 text-slate-400">
+              {search || filtroEstado ? 'Sin resultados' : 'Sin órdenes registradas'}
+            </div>
+          )}
+          {ordenesFiltradas.map(o => {
+            const retrasada  = estaRetrasada(o)
+            const incompleta = estaIncompleta(o)
+            return (
+              <div key={o.id} onClick={() => abrirDrawer(o)}
+                className={`bg-white rounded-xl border shadow-sm p-4 cursor-pointer active:bg-slate-50 ${
+                  retrasada ? 'border-l-4 border-l-[#D81B43] border-slate-200' :
+                  incompleta ? 'border-l-4 border-l-[#B45309] border-slate-200 opacity-80' : 'border-slate-200'
+                }`}>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                      {o.codigo || '—'}
+                    </span>
+                    <div className="text-[13px] font-semibold text-slate-700 mt-1 truncate max-w-[200px]">
+                      {o.cliente?.nombre || '—'}
+                    </div>
+                  </div>
+                  <EstadoBadge orden={o} retrasada={retrasada} />
+                </div>
+                <div className="flex items-center justify-between text-[11.5px] text-slate-400">
+                  <span>{o.repartidor?.nombre || <span className="text-[#B45309]">Sin repartidor</span>}</span>
+                  {o.fecha_entrega && (
+                    <span className={retrasada ? 'text-[#D81B43] font-semibold' : ''}>
+                      {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Tabla — solo en md+ */}
+        <div className="hidden md:flex flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-col">
           <div className="overflow-auto flex-1">
             <table className="w-full border-collapse min-w-[860px]">
               <thead className="sticky top-0 z-10">
@@ -503,7 +594,7 @@ export default function OrdenesClient({
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[500px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[500px] bg-white z-30 flex flex-col shadow-2xl">
 
             {/* Header */}
             <div className={`px-6 py-4 border-b flex items-start justify-between flex-shrink-0 ${drawerRetrasada ? 'bg-[#D81B43]' : 'bg-[#D81B43]'}`}>
@@ -640,7 +731,7 @@ export default function OrdenesClient({
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Fecha y hora de entrega</div>
                     {!editFecha && (
-                      <button onClick={() => { setEditFecha(true); setNuevaFecha(drawer.fecha_entrega ? drawer.fecha_entrega.slice(0,16) : '') }}
+                      <button onClick={() => { setEditFecha(true); setNuevaFecha(drawer.fecha_entrega ? isoToLocalBogotaInput(drawer.fecha_entrega) : '') }}
                         className="flex items-center gap-1 text-[11.5px] text-[#D81B43] font-semibold hover:underline">
                         <Edit3 size={11} /> {drawer.fecha_entrega ? 'Cambiar' : 'Programar'}
                       </button>
@@ -852,12 +943,12 @@ export default function OrdenesClient({
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className={labelCls}>Fecha y hora de entrega</label>
+                        <label className={`${labelCls} min-h-[28px] flex items-end`}>Fecha y hora de entrega</label>
                         <input type="datetime-local" value={wForm.fecha_entrega}
                           onChange={e => setWForm(f => ({ ...f, fecha_entrega: e.target.value }))} className={inputCls} />
                       </div>
                       <div>
-                        <label className={labelCls}>Fecha de vigencia</label>
+                        <label className={`${labelCls} min-h-[28px] flex items-end`}>Fecha de vigencia</label>
                         <input type="date" value={wForm.fecha_vigencia}
                           onChange={e => setWForm(f => ({ ...f, fecha_vigencia: e.target.value }))} className={inputCls} />
                       </div>

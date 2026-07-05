@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
+import { registrarBitacora } from '@/lib/bitacora'
 
 const NAV = [
   {
@@ -99,6 +100,8 @@ export default function Sidebar({ usuario, empresa }) {
   }, [mobileMode])
 
   async function logout() {
+    const { data: { user } } = await supabase.auth.getUser()
+    await registrarBitacora({ modulo: 'auth', accion: 'logout', entidad: 'sesión', entidad_id: user?.id })
     await supabase.auth.signOut()
     // Recarga completa para limpiar cualquier caché de navegación de la sesión anterior
     window.location.href = '/login'
@@ -225,13 +228,23 @@ export default function Sidebar({ usuario, empresa }) {
         </div>
       </aside>
 
-      {/* ── MOBILE: BOTÓN CERRAR SESIÓN — siempre visible arriba a la derecha ── */}
-      <button
-        onClick={() => setConfirmSalir(true)}
-        className="fixed top-3 right-3 z-40 md:hidden w-9 h-9 rounded-full flex items-center justify-center shadow-sm"
-        style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', border: '1px solid rgba(0,0,0,0.06)' }}>
-        <span className="text-slate-500">{ICONS.logout}</span>
-      </button>
+      {/* ── MOBILE: HEADER FIJO ARRIBA — logo/nombre + cerrar sesión (ya no flota sobre el contenido) ── */}
+      <header className="fixed top-0 left-0 right-0 z-40 md:hidden h-12 flex items-center justify-between px-3 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-full bg-[#E53935] flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0">
+            {usuario?.nombre?.charAt(0) || 'U'}
+          </div>
+          <div className="min-w-0 leading-none">
+            <div className="text-[12px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
+            <div className="text-[9px] text-slate-400 capitalize truncate mt-0.5">{usuario?.roles.nombre || 'admin'}</div>
+          </div>
+        </div>
+        <button
+          onClick={() => setConfirmSalir(true)}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0">
+          {ICONS.logout}
+        </button>
+      </header>
 
       {/* ── MOBILE: MODO BARRA FIJA ── */}
       {mobileMode === 'barra' && (

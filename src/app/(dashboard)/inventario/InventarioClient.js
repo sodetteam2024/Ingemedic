@@ -1,4 +1,5 @@
 'use client'
+import { registrarBitacora } from '@/lib/bitacora'
 import Image from 'next/image'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -148,6 +149,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       atributos: Object.keys(formEditar.atributos).length > 0 ? formEditar.atributos : null,
     }).eq('id', drawer.id)
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+    registrarBitacora({ modulo: 'inventario', accion: 'editar', entidad: 'equipo', entidad_id: drawer.id, detalle: { codigo: drawer.codigo || drawer.atributos?.codigo } })
     showToast('Equipo actualizado')
     setSaving(false)
     setModalEditar(false)
@@ -200,6 +202,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       })
       .select('*, categoria:categorias_equipo(id, nombre, atributos_extra)').single()
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+    registrarBitacora({ modulo: 'inventario', accion: 'crear', entidad: 'tipo de equipo', entidad_id: data.id, detalle: { nombre: formTipo.atributos?.nombre } })
     setTipos(prev => [...prev, data])
     showToast('Tipo creado')
     setSaving(false)
@@ -219,14 +222,15 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       }
     }
     setSaving(true)
-    const { error } = await supabase.from('equipos').insert({
+    const { data: newUnit, error } = await supabase.from('equipos').insert({
       tipo_equipo_id: tipoActual.id,
       serial:         formUnidad.serial?.trim() || null,
       codigo:         formUnidad.codigo?.trim() || null,
       estado_id:      formUnidad.estado_id || null,
       atributos:      Object.keys(formUnidad.atributos).length > 0 ? formUnidad.atributos : null,
-    })
+    }).select('id').single()
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+    registrarBitacora({ modulo: 'inventario', accion: 'crear', entidad: 'equipo', entidad_id: newUnit?.id, detalle: { codigo: formUnidad.codigo?.trim() || null, serial: formUnidad.serial?.trim() || null } })
     showToast('Equipo registrado')
     setSaving(false)
     setModalNueva(false)
@@ -274,10 +278,16 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     <div className="flex flex-col h-screen overflow-hidden">
 
       {/* Topbar */}
-      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0 flex-wrap gap-2">
-        <div className="flex items-center gap-2 text-sm text-slate-400 flex-wrap">
+      <div className="h-14 md:h-16 md:bg-white md:border-b md:border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0 flex-wrap gap-2">
+        <div className="flex items-center gap-2 text-sm text-slate-600 md:text-slate-400 flex-wrap">
+          {vista !== 'categorias' && (
+            <button onClick={volver}
+              className="md:hidden w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors text-slate-700 font-bold text-base">
+              ←
+            </button>
+          )}
           <button onClick={() => { setVista('categorias'); setCatActual(null); setTipoActual(null) }}
-            className="hover:text-slate-700 transition-colors font-medium">Inventario</button>
+            className="text-[18px] font-bold text-slate-800 md:text-sm md:font-medium md:text-slate-400 md:hover:text-slate-700 transition-colors">Inventario</button>
           {catActual && <>
             <span>/</span>
             <button onClick={() => { setVista('tipos'); setTipoActual(null) }}
@@ -291,7 +301,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           {vista !== 'categorias' && (
             <button onClick={volver}
-              className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-slate-500 border border-slate-200 rounded-[9px] hover:border-slate-300 transition-all">
+              className="hidden md:flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-slate-500 border border-slate-200 rounded-[9px] hover:border-slate-300 transition-all">
               ← Volver
             </button>
           )}
@@ -303,28 +313,42 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               : exportar('unidades', { tipo_id: tipoActual?.id })
             }
             disabled={exportando}
-            className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-slate-600 border border-slate-200 rounded-[9px] hover:border-slate-300 transition-all disabled:opacity-50">
+            className="hidden md:flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-slate-600 border border-slate-200 rounded-[9px] hover:border-slate-300 transition-all disabled:opacity-50">
             <Download size={13} /> {exportando ? 'Exportando...' : 'Exportar Excel'}
           </button>
           {vista === 'tipos' && (
             <button onClick={abrirModalTipo}
-              className="flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
+              className="hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
               <Plus size={14} strokeWidth={2.5} /> Nuevo tipo
             </button>
           )}
           {vista === 'unidades' && (
             <button onClick={abrirModalNueva}
-              className="flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
+              className="hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
               <Plus size={14} strokeWidth={2.5} /> Nueva unidad
             </button>
           )}
         </div>
       </div>
 
+      {/* FAB móvil — solo en vista tipos o unidades */}
+      {vista === 'tipos' && (
+        <button onClick={abrirModalTipo}
+          className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
+          <Plus size={22} strokeWidth={2.5} />
+        </button>
+      )}
+      {vista === 'unidades' && (
+        <button onClick={abrirModalNueva}
+          className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
+          <Plus size={22} strokeWidth={2.5} />
+        </button>
+      )}
+
       <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-28 md:pb-6">
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="hidden md:grid md:grid-cols-4 gap-4 mb-6">
           {[
             { label: 'Total equipos', value: stats.total,       color: '#1E293B' },
             { label: 'Disponibles',   value: stats.disponibles, color: '#0F7B55' },

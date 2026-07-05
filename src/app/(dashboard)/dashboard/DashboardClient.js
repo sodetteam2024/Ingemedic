@@ -4,8 +4,9 @@ import { useRouter } from 'next/navigation'
 import {
   Package, Truck, Wrench, FileText, AlertTriangle,
   Clock, CheckCircle2, TrendingUp, Calendar, ChevronRight,
-  ArrowUpRight, Users
+  ArrowUpRight, Users, X
 } from 'lucide-react'
+import EntregaEnCursoBanner from '@/components/dashboard/EntregaEnCursoBanner'
 
 const ESTADO_EQUIPO_STYLES = {
   'Disponible':       { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
@@ -50,6 +51,7 @@ export default function DashboardClient({
   ordenesRetrasadas, actividadReciente
 }) {
   const router = useRouter()
+  const [alertaAbierta, setAlertaAbierta] = useState(false)
 
   const disponibles    = estadosEquipo['Disponible'] || 0
   const enPrestamo     = estadosEquipo['En préstamo'] || 0
@@ -64,7 +66,7 @@ export default function DashboardClient({
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 md:bg-white md:border-b md:border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Dashboard</div>
           <div className="text-[12px] text-slate-400 mt-0.5">
@@ -72,17 +74,78 @@ export default function DashboardClient({
           </div>
         </div>
         {totalAlertas > 0 && (
-          <div className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-[#FEF2F2] border border-[#D81B43]/20 rounded-full">
-            <AlertTriangle size={13} className="text-[#D81B43]" />
-            <span className="text-[12px] font-semibold text-[#D81B43]">{totalAlertas} alerta{totalAlertas !== 1 ? 's' : ''}</span>
+          <div className="ml-auto relative">
+            <button onClick={() => setAlertaAbierta(v => !v)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#FEF2F2] border border-[#D81B43]/20 rounded-full hover:bg-[#FEE2E2] transition-colors">
+              <AlertTriangle size={13} className="text-[#D81B43]" />
+              <span className="text-[12px] font-semibold text-[#D81B43]">{totalAlertas} alerta{totalAlertas !== 1 ? 's' : ''}</span>
+            </button>
+
+            {alertaAbierta && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setAlertaAbierta(false)} />
+                <div className="absolute right-0 top-[calc(100%+8px)] z-40 w-64 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden">
+                  {ordenesRetrasadas.length > 0 && (
+                    <button onClick={() => { setAlertaAbierta(false); router.push('/ordenes') }}
+                      className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-slate-50 border-b border-slate-100 text-left">
+                      <span className="text-[12.5px] text-slate-600 flex items-center gap-2">
+                        <AlertTriangle size={13} className="text-[#D81B43]" /> Entregas retrasadas
+                      </span>
+                      <span className="text-[12px] font-bold text-[#D81B43]">{ordenesRetrasadas.length}</span>
+                    </button>
+                  )}
+                  {vigenciasProximas.length > 0 && (
+                    <button onClick={() => { setAlertaAbierta(false); router.push('/ordenes') }}
+                      className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-slate-50 border-b border-slate-100 text-left">
+                      <span className="text-[12.5px] text-slate-600 flex items-center gap-2">
+                        <Clock size={13} className="text-[#B45309]" /> Vigencias por vencer
+                      </span>
+                      <span className="text-[12px] font-bold text-[#B45309]">{vigenciasProximas.length}</span>
+                    </button>
+                  )}
+                  {conNovedad > 0 && (
+                    <button onClick={() => { setAlertaAbierta(false); router.push('/inventario') }}
+                      className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-slate-50 text-left">
+                      <span className="text-[12.5px] text-slate-600 flex items-center gap-2">
+                        <Package size={13} className="text-[#D81B43]" /> Equipos con novedad
+                      </span>
+                      <span className="text-[12px] font-bold text-[#D81B43]">{conNovedad}</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-28 md:pb-6 space-y-5">
 
-        {/* ── FILA 1: KPIs equipos ── */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+        {/* ── BANNER ENTREGA EN CURSO — solo aparece si hay entregas activas, en cualquier tamaño de pantalla ── */}
+        <EntregaEnCursoBanner />
+
+        {/* ── FILA 1 (MÓVIL): 3 KPIs esenciales — Disponibles / En préstamo / Mantenimientos ── */}
+        <div className="grid grid-cols-3 gap-2 md:hidden">
+          {[
+            { label: 'Mantenimiento', value: mantenimientosActivos.length, color: '#B45309', icon: Wrench },
+            { label: 'Disponibles',   value: disponibles,                  color: '#0F7B55', icon: CheckCircle2 },
+            { label: 'En préstamo',   value: enPrestamo,                   color: '#0E86A0', icon: ArrowUpRight },
+          ].map(s => {
+            const Icon = s.icon
+            return (
+              <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-2" style={{ background: s.color + '15' }}>
+                  <Icon size={13} style={{ color: s.color }} />
+                </div>
+                <div className="text-lg font-extrabold tabular-nums leading-none" style={{ color: s.color }}>{s.value}</div>
+                <div className="text-[10.5px] font-semibold text-slate-500 mt-1 leading-tight">{s.label}</div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* ── FILA 1 (DESKTOP): 6 KPIs completos ── */}
+        <div className="hidden md:grid md:grid-cols-6 gap-3">
           {[
             { label: 'Total equipos',    value: totalEquipos, color: '#1E293B', icon: Package,       sub: 'en inventario' },
             { label: 'Disponibles',      value: disponibles,  color: '#0F7B55', icon: CheckCircle2,  sub: 'listos para préstamo' },
@@ -107,142 +170,59 @@ export default function DashboardClient({
           })}
         </div>
 
-        {/* ── FILA 2: Estado operacional ── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-          {/* Órdenes activas */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <div className="text-[14px] font-bold text-slate-800">Órdenes activas</div>
-                <div className="text-[11.5px] text-slate-400 mt-0.5">{ordenesActivas.length} en curso</div>
+        {/* ── ENTREGAS HOY — ahora primero, es lo más urgente del día a día ── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <div className="text-[14px] font-bold text-slate-800">Entregas hoy</div>
+              <div className="text-[11.5px] text-slate-400 mt-0.5">
+                {entregasCompletadas} completadas · {entregasPendientes} en curso
               </div>
-              <button onClick={() => router.push('/ordenes')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
-                Ver todas <ChevronRight size={13} />
-              </button>
             </div>
-            <div className="divide-y divide-slate-50 max-h-[260px] overflow-y-auto">
-              {ordenesActivas.length === 0 && (
-                <div className="px-5 py-8 text-center text-[13px] text-slate-400">Sin órdenes activas</div>
-              )}
-              {ordenesActivas.map(o => {
-                const retrasada = o.fecha_entrega && new Date(o.fecha_entrega) < new Date() && o.estado?.nombre === 'Programada'
-                const s = ESTADO_OS_STYLES[o.estado?.nombre] || ESTADO_OS_STYLES['Borrador']
-                return (
-                  <div key={o.id} onClick={() => router.push('/ordenes')}
-                    className="px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[12px] font-bold text-slate-600">{o.codigo}</span>
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>
-                        {o.estado?.nombre}
-                      </span>
-                    </div>
-                    <div className="text-[12px] text-slate-500 mt-0.5 flex items-center justify-between">
-                      <span className="truncate max-w-[140px]">{o.cliente?.nombre}</span>
-                      {o.fecha_entrega && (
-                        <span className={`flex items-center gap-1 text-[11px] ${retrasada ? 'text-[#D81B43] font-bold' : 'text-slate-400'}`}>
-                          {retrasada && <AlertTriangle size={10} />}
-                          {formatFecha(o.fecha_entrega)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            <button onClick={() => router.push('/entregas')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
+              Ver todas <ChevronRight size={13} />
+            </button>
           </div>
-
-          {/* Mantenimientos en curso */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <div className="text-[14px] font-bold text-slate-800">Mantenimientos</div>
-                <div className="text-[11.5px] text-slate-400 mt-0.5">{mantenimientosActivos.length} activos</div>
-              </div>
-              <button onClick={() => router.push('/mantenimientos')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
-                Ver todos <ChevronRight size={13} />
-              </button>
+          {entregasHoy.length === 0 ? (
+            <div className="px-5 py-8 text-center text-[13px] text-slate-400">
+              <Truck className="w-8 h-8 mx-auto mb-2 opacity-20" />
+              Sin entregas hoy
             </div>
-            <div className="divide-y divide-slate-50 max-h-[260px] overflow-y-auto">
-              {mantenimientosActivos.length === 0 && (
-                <div className="px-5 py-8 text-center text-[13px] text-slate-400">Sin mantenimientos activos</div>
-              )}
-              {mantenimientosActivos.map(m => (
-                <div key={m.id} onClick={() => router.push('/mantenimientos')}
+          ) : (
+            <div className="divide-y divide-slate-50 max-h-[280px] overflow-y-auto">
+              {entregasHoy.map(e => (
+                <div key={e.id} onClick={() => router.push('/entregas')}
                   className="px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[12px] font-bold text-slate-600">{m.codigo}</span>
+                    <span className="font-mono text-[12px] font-bold text-slate-600">{e.codigo}</span>
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                      m.tipo?.nombre === 'Correctivo' ? 'bg-[#FEF2F2] text-[#D81B43]' : 'bg-[#E8F7FB] text-[#0E86A0]'
-                    }`}>{m.tipo?.nombre}</span>
+                      e.estado?.nombre === 'Completada' ? 'bg-[#ECFDF5] text-[#0F7B55]' : 'bg-[#FFFBEB] text-[#B45309]'
+                    }`}>{e.estado?.nombre}</span>
                   </div>
                   <div className="text-[12px] text-slate-500 mt-0.5 flex items-center justify-between">
-                    <span className="truncate max-w-[140px]">{nombreEquipo(m.equipo)}</span>
-                    <span className="text-[11px] text-slate-400">{formatFecha(m.fecha_apertura)}</span>
+                    <span className="truncate max-w-[200px]">{e.cliente?.nombre}</span>
+                    <span className="text-[11px] text-slate-400">{e.repartidor?.nombre}</span>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Entregas del día */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <div className="text-[14px] font-bold text-slate-800">Entregas hoy</div>
-                <div className="text-[11.5px] text-slate-400 mt-0.5">
-                  {entregasCompletadas} completadas · {entregasPendientes} en curso
-                </div>
-              </div>
-              <button onClick={() => router.push('/entregas')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
-                Ver <ChevronRight size={13} />
-              </button>
-            </div>
-            {entregasHoy.length === 0 ? (
-              <div className="px-5 py-8 text-center text-[13px] text-slate-400">
-                <Truck className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                Sin entregas hoy
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-50 max-h-[260px] overflow-y-auto">
-                {entregasHoy.map(e => (
-                  <div key={e.id} onClick={() => router.push('/entregas')}
-                    className="px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[12px] font-bold text-slate-600">{e.codigo}</span>
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                        e.estado?.nombre === 'Completada' ? 'bg-[#ECFDF5] text-[#0F7B55]' : 'bg-[#FFFBEB] text-[#B45309]'
-                      }`}>{e.estado?.nombre}</span>
-                    </div>
-                    <div className="text-[12px] text-slate-500 mt-0.5 flex items-center justify-between">
-                      <span className="truncate max-w-[140px]">{e.cliente?.nombre}</span>
-                      <span className="text-[11px] text-slate-400">{e.repartidor?.nombre}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
-        {/* ── FILA 3: Alertas ── */}
+        {/* ── ALERTAS — solo se muestran las que tienen datos, para no ocupar espacio en vano ── */}
         {(ordenesRetrasadas.length > 0 || vigenciasProximas.length > 0 || conNovedad > 0) && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 gap-4 ${
+            [ordenesRetrasadas.length > 0, vigenciasProximas.length > 0, conNovedad > 0].filter(Boolean).length >= 2
+              ? 'md:grid-cols-2' : ''
+          } ${[ordenesRetrasadas.length > 0, vigenciasProximas.length > 0, conNovedad > 0].filter(Boolean).length >= 3 ? 'md:grid-cols-3' : ''}`}>
 
-            {/* Órdenes retrasadas */}
-            <div className={`bg-white rounded-xl border shadow-sm overflow-hidden ${ordenesRetrasadas.length > 0 ? 'border-[#D81B43]/30' : 'border-slate-200'}`}>
-              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
-                <AlertTriangle size={14} className={ordenesRetrasadas.length > 0 ? 'text-[#D81B43]' : 'text-slate-400'} />
-                <div className="text-[13px] font-bold text-slate-800">Entregas retrasadas</div>
-                {ordenesRetrasadas.length > 0 && (
+            {ordenesRetrasadas.length > 0 && (
+              <div className="bg-white rounded-xl border border-[#D81B43]/30 shadow-sm overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-[#D81B43]" />
+                  <div className="text-[13px] font-bold text-slate-800">Entregas retrasadas</div>
                   <span className="ml-auto text-[11px] font-bold text-white bg-[#D81B43] px-2 py-0.5 rounded-full">{ordenesRetrasadas.length}</span>
-                )}
-              </div>
-              {ordenesRetrasadas.length === 0 ? (
-                <div className="px-5 py-5 text-center text-[12.5px] text-[#0F7B55] flex items-center justify-center gap-2">
-                  <CheckCircle2 size={14} /> Sin retrasos
                 </div>
-              ) : (
                 <div className="divide-y divide-slate-50">
                   {ordenesRetrasadas.map(o => (
                     <div key={o.id} onClick={() => router.push('/ordenes')}
@@ -257,23 +237,16 @@ export default function DashboardClient({
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-
-            {/* Vigencias próximas */}
-            <div className={`bg-white rounded-xl border shadow-sm overflow-hidden ${vigenciasProximas.length > 0 ? 'border-[#F59E0B]/40' : 'border-slate-200'}`}>
-              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
-                <Clock size={14} className={vigenciasProximas.length > 0 ? 'text-[#B45309]' : 'text-slate-400'} />
-                <div className="text-[13px] font-bold text-slate-800">Vigencias — 7 días</div>
-                {vigenciasProximas.length > 0 && (
-                  <span className="ml-auto text-[11px] font-bold text-white bg-[#B45309] px-2 py-0.5 rounded-full">{vigenciasProximas.length}</span>
-                )}
               </div>
-              {vigenciasProximas.length === 0 ? (
-                <div className="px-5 py-5 text-center text-[12.5px] text-[#0F7B55] flex items-center justify-center gap-2">
-                  <CheckCircle2 size={14} /> Sin vencimientos próximos
+            )}
+
+            {vigenciasProximas.length > 0 && (
+              <div className="bg-white rounded-xl border border-[#F59E0B]/40 shadow-sm overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
+                  <Clock size={14} className="text-[#B45309]" />
+                  <div className="text-[13px] font-bold text-slate-800">Vigencias — 7 días</div>
+                  <span className="ml-auto text-[11px] font-bold text-white bg-[#B45309] px-2 py-0.5 rounded-full">{vigenciasProximas.length}</span>
                 </div>
-              ) : (
                 <div className="divide-y divide-slate-50">
                   {vigenciasProximas.map(o => {
                     const dias = diasRestantes(o.fecha_vigencia)
@@ -291,23 +264,16 @@ export default function DashboardClient({
                     )
                   })}
                 </div>
-              )}
-            </div>
-
-            {/* Equipos con novedad */}
-            <div className={`bg-white rounded-xl border shadow-sm overflow-hidden ${conNovedad > 0 ? 'border-[#D81B43]/30' : 'border-slate-200'}`}>
-              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
-                <Package size={14} className={conNovedad > 0 ? 'text-[#D81B43]' : 'text-slate-400'} />
-                <div className="text-[13px] font-bold text-slate-800">Equipos con novedad</div>
-                {conNovedad > 0 && (
-                  <span className="ml-auto text-[11px] font-bold text-white bg-[#D81B43] px-2 py-0.5 rounded-full">{conNovedad}</span>
-                )}
               </div>
-              {conNovedad === 0 ? (
-                <div className="px-5 py-5 text-center text-[12.5px] text-[#0F7B55] flex items-center justify-center gap-2">
-                  <CheckCircle2 size={14} /> Sin novedades
+            )}
+
+            {conNovedad > 0 && (
+              <div className="bg-white rounded-xl border border-[#D81B43]/30 shadow-sm overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
+                  <Package size={14} className="text-[#D81B43]" />
+                  <div className="text-[13px] font-bold text-slate-800">Equipos con novedad</div>
+                  <span className="ml-auto text-[11px] font-bold text-white bg-[#D81B43] px-2 py-0.5 rounded-full">{conNovedad}</span>
                 </div>
-              ) : (
                 <div className="px-5 py-5 text-center">
                   <div className="text-3xl font-extrabold text-[#D81B43] mb-1">{conNovedad}</div>
                   <div className="text-[12.5px] text-slate-500">equipo{conNovedad !== 1 ? 's' : ''} requieren atención</div>
@@ -316,10 +282,52 @@ export default function DashboardClient({
                     Ver en inventario →
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
+
+        {/* ── ÓRDENES ACTIVAS — top 3 + ver todas, prioridad menor que Entregas ── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <div className="text-[14px] font-bold text-slate-800">Órdenes activas</div>
+              <div className="text-[11.5px] text-slate-400 mt-0.5">{ordenesActivas.length} en curso</div>
+            </div>
+            <button onClick={() => router.push('/ordenes')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
+              Ver todas <ChevronRight size={13} />
+            </button>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {ordenesActivas.length === 0 && (
+              <div className="px-5 py-8 text-center text-[13px] text-slate-400">Sin órdenes activas</div>
+            )}
+            {ordenesActivas.slice(0, 3).map(o => {
+              const retrasada = o.fecha_entrega && new Date(o.fecha_entrega) < new Date() && o.estado?.nombre === 'Programada'
+              const s = ESTADO_OS_STYLES[o.estado?.nombre] || ESTADO_OS_STYLES['Borrador']
+              return (
+                <div key={o.id} onClick={() => router.push('/ordenes')}
+                  className="px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-[12px] font-bold text-slate-600">{o.codigo}</span>
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>
+                      {o.estado?.nombre}
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-slate-500 mt-0.5 flex items-center justify-between">
+                    <span className="truncate max-w-[200px]">{o.cliente?.nombre}</span>
+                    {o.fecha_entrega && (
+                      <span className={`flex items-center gap-1 text-[11px] ${retrasada ? 'text-[#D81B43] font-bold' : 'text-slate-400'}`}>
+                        {retrasada && <AlertTriangle size={10} />}
+                        {formatFecha(o.fecha_entrega)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
 
         {/* ── FILA 4: Actividad reciente ── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

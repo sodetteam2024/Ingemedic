@@ -1,4 +1,5 @@
 'use client'
+import { registrarBitacora } from '@/lib/bitacora'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -334,6 +335,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     .single()
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+    registrarBitacora({ modulo: 'entregas', accion: 'avanzar', entidad: 'entrega', entidad_id: data.id, detalle: { estado: 'iniciada', codigo: orden.codigo } })
     setOrdenes(prev => prev.filter(o => o.id !== orden.id))
     setEntregas(prev => [data, ...prev])
     setSaving(false)
@@ -369,6 +371,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     }).eq('id', modalRegistro.id)
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+    registrarBitacora({ modulo: 'entregas', accion: 'cerrar', entidad: 'entrega', entidad_id: modalRegistro.id, detalle: { codigo: modalRegistro.codigo, tipo: modalRegistro.tipo, recibido_por: regForm.recibido_por.trim() } })
 
     // La misma firma se aplica a todos los documentos de la orden
     const docs = modalRegistro.orden?.plantillas || []
@@ -615,26 +618,79 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         doc.setFontSize(9.5); doc.setFont('helvetica', 'normal')
         doc.text(dp.plantilla?.nombre || 'Documento', M, 25)
 
-        // Renderizar el HTML de la plantilla como imagen dentro del PDF
+        // Renderizar el HTML de la plantilla dentro de un iframe (con <body> real,
+        // para que las reglas CSS "body {...}" de la plantilla sí se apliquen) y
+        // capturarlo con html2canvas → doc.addImage(). NUNCA usar doc.html() aquí:
+        // ese plugin corrompe el stream de contenido de páginas ya dibujadas
+        // (confirmado: Chrome/PDFium se niega a renderizar el PDF resultante,
+        // aunque la extracción de texto siga funcionando porque el texto en sí
+        // no se borra, solo queda el stream inconsistente).
         try {
-          const contenedor = document.createElement('div')
-          contenedor.style.position = 'fixed'
-          contenedor.style.left = '-9999px'
-          contenedor.style.top = '0'
-          contenedor.style.width = '750px'
-          contenedor.style.background = '#ffffff'
-          contenedor.style.padding = '20px'
-          contenedor.style.fontFamily = 'Arial, sans-serif'
-          contenedor.innerHTML = html
-          document.body.appendChild(contenedor)
+          const { default: html2canvas } = await import('html2canvas')
+          const ANCHO_RENDER = 750
 
-          await doc.html(contenedor, {
-            x: M, y: 36,
-            width: CW,
-            windowWidth: 750,
-            autoPaging: 'text',
+          const iframe = document.createElement('iframe')
+          iframe.style.position = 'fixed'
+          iframe.style.left = '-9999px'
+          iframe.style.top = '0'
+          iframe.style.width = `${ANCHO_RENDER}px`
+          iframe.style.height = '1px'
+          iframe.style.border = 'none'
+          document.body.appendChild(iframe)
+
+          const idoc = iframe.contentDocument
+          idoc.open()
+          idoc.write(html.trim().startsWith('<!DOCTYPE') || html.trim().startsWith('<html')
+            ? html
+            : `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`)
+          idoc.close()
+
+          await new Promise(r => setTimeout(r, 150))
+
+          const alturaReal = Math.max(idoc.body.scrollHeight, idoc.documentElement.scrollHeight)
+          iframe.style.height = `${alturaReal}px`
+
+          const canvas = await html2canvas(idoc.body, {
+            width: ANCHO_RENDER,
+            windowWidth: ANCHO_RENDER,
+            height: alturaReal,
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
           })
-          document.body.removeChild(contenedor)
+          document.body.removeChild(iframe)
+
+          const imgData = canvas.toDataURL('image/png')
+          const imgHmm = (canvas.height * CW) / canvas.width
+
+          if (imgHmm <= 261 - 36) {
+            doc.addImage(imgData, 'PNG', M, 36, CW, imgHmm)
+          } else {
+            const PAGE_H_MM = 261 - 36
+            const pxPerMm = canvas.width / CW
+            let renderedPx = 0
+            let firstSlice = true
+            while (renderedPx < canvas.height) {
+              const disponibleMm = firstSlice ? PAGE_H_MM : (297 - 30)
+              const sliceHeightPx = Math.min(disponibleMm * pxPerMm, canvas.height - renderedPx)
+
+              const sliceCanvas = document.createElement('canvas')
+              sliceCanvas.width = canvas.width
+              sliceCanvas.height = sliceHeightPx
+              sliceCanvas.getContext('2d').drawImage(
+                canvas, 0, renderedPx, canvas.width, sliceHeightPx,
+                0, 0, canvas.width, sliceHeightPx
+              )
+              const sliceData = sliceCanvas.toDataURL('image/png')
+              const sliceHmm = (sliceHeightPx * CW) / canvas.width
+
+              if (!firstSlice) doc.addPage()
+              doc.addImage(sliceData, 'PNG', M, firstSlice ? 36 : 15, CW, sliceHmm)
+
+              renderedPx += sliceHeightPx
+              firstSlice = false
+            }
+          }
         } catch (htmlErr) {
           console.error('Error renderizando anexo en PDF:', htmlErr, dp.plantilla?.nombre)
           doc.setTextColor(150, 150, 150); doc.setFontSize(9)
@@ -642,6 +698,17 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         }
       }
     }
+
+    // Fecha y hora de generación — esquina inferior derecha de la página 1, para poder
+    // verificar cuándo se generó este PDF específico ante cualquier duda de versión/caché.
+    doc.setPage(1)
+    doc.setFontSize(6.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(180, 180, 180)
+    const generadoEl = new Date().toLocaleString('es-CO', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+    })
+    doc.text(`Generado: ${generadoEl}`, W - M, 290, { align: 'right' })
 
     doc.save(`Acta_Entrega_${e.codigo}.pdf`)
     showToast('PDF generado')
@@ -671,7 +738,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Topbar */}
-      <div className="h-16 bg-white border-b border-slate-200 flex items-center px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 md:bg-white md:border-b md:border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Entregas</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Rutas del día · En tiempo real</div>
@@ -684,22 +751,42 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         )}
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 flex-shrink-0">
-          {[
-            { label: 'Total hoy',   value: stats.totalHoy,    color: '#1E293B', f: '' },
-            { label: 'Programadas', value: stats.pendientes,  color: '#64748B', f: 'No iniciada' },
-            { label: 'En ruta',     value: stats.enRuta,      color: '#B45309', f: 'En progreso' },
-            { label: 'Completadas', value: stats.completadas, color: '#0F7B55', f: 'Completada'  },
-          ].map(s => (
-            <div key={s.label}
-              onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
-              className={`bg-white rounded-xl border p-4 shadow-sm cursor-pointer transition-all hover:shadow-md ${filtroEstado === s.f && s.f ? 'border-[#D81B43]' : 'border-slate-200'}`}>
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[11.5px] text-slate-400 mt-1">{s.label}</div>
-            </div>
-          ))}
+      <div className="flex-1 overflow-hidden flex flex-col p-4 md:p-6 gap-4">
+        {/* Stats — en móvil, chips compactos con scroll horizontal (siguen filtrando); en desktop, cards */}
+        <div className="flex-shrink-0">
+          {/* Móvil: chips */}
+          <div className="flex md:hidden gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {[
+              { label: 'Total hoy',   value: stats.totalHoy,    color: '#1E293B', f: '' },
+              { label: 'Programadas', value: stats.pendientes,  color: '#64748B', f: 'No iniciada' },
+              { label: 'En ruta',     value: stats.enRuta,      color: '#B45309', f: 'En progreso' },
+              { label: 'Completadas', value: stats.completadas, color: '#0F7B55', f: 'Completada'  },
+            ].map(s => (
+              <button key={s.label}
+                onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium whitespace-nowrap transition-all ${filtroEstado === s.f && s.f ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 bg-white'}`}>
+                <span className="font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</span>
+                <span className="text-slate-500">{s.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Desktop: cards (igual que antes) */}
+          <div className="hidden md:grid md:grid-cols-4 gap-3">
+            {[
+              { label: 'Total hoy',   value: stats.totalHoy,    color: '#1E293B', f: '' },
+              { label: 'Programadas', value: stats.pendientes,  color: '#64748B', f: 'No iniciada' },
+              { label: 'En ruta',     value: stats.enRuta,      color: '#B45309', f: 'En progreso' },
+              { label: 'Completadas', value: stats.completadas, color: '#0F7B55', f: 'Completada'  },
+            ].map(s => (
+              <div key={s.label}
+                onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
+                className={`bg-white rounded-xl border p-4 shadow-sm cursor-pointer transition-all hover:shadow-md ${filtroEstado === s.f && s.f ? 'border-[#D81B43]' : 'border-slate-200'}`}>
+                <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
+                <div className="text-[11.5px] text-slate-400 mt-1">{s.label}</div>
+              </div>
+            ))}
+        </div>
         </div>
 
         {/* Pestañas: Activas / Historial */}
@@ -722,7 +809,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
 
         {/* Buscador + filtros */}
         <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
-          <div className="relative flex-1 max-w-[300px]">
+          <div className="relative flex-1 md:max-w-[300px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por código, cliente..."
@@ -746,7 +833,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
 
         {/* Panel filtros */}
         {showFiltros && (
-          <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-4 gap-3 flex-shrink-0 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0 shadow-sm">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-[0.07em] text-slate-400 mb-1.5">Repartidor</label>
               <select value={filtroRep} onChange={e => setFiltroRep(e.target.value)}
@@ -919,7 +1006,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                   <X size={16} />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100 pb-[calc(var(--mobile-nav-space,0px)+16px)] md:pb-0">
                 <div className="p-5">
                   <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Cliente</div>
                   <div className="space-y-2">
@@ -996,7 +1083,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {drawer && (
         <>
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[480px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[480px] bg-white z-30 flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b flex items-start justify-between flex-shrink-0 bg-[#D81B43]">
               <div>
                 <div className="text-[11px] text-white/60">Entrega · OS: {drawer.orden?.codigo}</div>
@@ -1016,7 +1103,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 pb-[calc(var(--mobile-nav-space,0px)+16px)] md:pb-0">
               {/* Timeline + cronómetro */}
               <div className="p-5">
                 <TimelineHorizontal

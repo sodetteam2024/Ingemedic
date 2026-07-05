@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { registrarBitacora } from '@/lib/bitacora'
 
 const TOUR_KEY      = 'ingemedic_tour_completado'
 const TOUR_PASO_KEY = 'ingemedic_tour_paso'
@@ -52,7 +53,7 @@ export default function LoginPage() {
       userId = data.id
     }
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -71,6 +72,8 @@ export default function LoginPage() {
       localStorage.removeItem(TOUR_PASO_KEY)
       localStorage.setItem(TOUR_USER_KEY, currentUser)
     }
+
+    registrarBitacora({ modulo: 'auth', accion: 'login', entidad: 'sesión', entidad_id: authData.user?.id, detalle: { email } })
 
     // Recarga completa (no client-side navigation) para evitar que el Router Cache
     // de Next.js muestre datos de la sesión anterior al cambiar de usuario.

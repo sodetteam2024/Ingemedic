@@ -1,4 +1,5 @@
 'use client'
+import { registrarBitacora } from '@/lib/bitacora'
 import Image from 'next/image'
 import { useState, useEffect } from 'react'
 import {
@@ -321,9 +322,11 @@ export default function ConfiguracionClient({
     if (!res.ok) { showToast('Error: ' + data.error, 'error'); setSaving(false); return }
     if (form.id) {
       setUsuarios(prev => prev.map(u => u.id === form.id ? data.usuario : u))
+      registrarBitacora({ modulo: 'configuracion', accion: 'editar', entidad: 'usuario', entidad_id: form.id, detalle: { nombre: form.nombre, email: form.email } })
       showToast('Usuario actualizado')
     } else {
       setUsuarios(prev => [data.usuario, ...prev])
+      registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'usuario', entidad_id: data.usuario?.id, detalle: { nombre: form.nombre, email: form.email } })
       showToast('Usuario creado')
     }
     setSaving(false); setModal(null); setForm({})
@@ -336,6 +339,7 @@ export default function ConfiguracionClient({
     })
     const data = await res.json()
     if (!res.ok) { showToast('Error: ' + data.error, 'error'); return }
+    registrarBitacora({ modulo: 'configuracion', accion: u.activo ? 'desactivar' : 'activar', entidad: 'usuario', entidad_id: u.id, detalle: { nombre: u.nombre } })
     setUsuarios(prev => prev.map(x => x.id === u.id ? { ...x, activo: !x.activo } : x))
     showToast(u.activo ? 'Usuario desactivado' : 'Usuario activado')
   }
@@ -354,11 +358,13 @@ export default function ConfiguracionClient({
       const { error } = await supabase.from('categorias_equipo').update(payload).eq('id', form.id)
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setCats(prev => prev.map(c => c.id === form.id ? { ...c, ...payload } : c))
+      registrarBitacora({ modulo: 'configuracion', accion: 'editar', entidad: 'categoría de equipo', entidad_id: form.id, detalle: { nombre: form.nombre } })
       showToast('Categoría actualizada')
     } else {
       const { data, error } = await supabase.from('categorias_equipo').insert({ ...payload, activo: true }).select().single()
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setCats(prev => [...prev, data])
+      registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'categoría de equipo', entidad_id: data.id, detalle: { nombre: form.nombre } })
       showToast('Categoría creada')
     }
     setSaving(false); setModal(null)
@@ -369,6 +375,7 @@ export default function ConfiguracionClient({
     const supabase = await getSupabase()
     const { error } = await supabase.from('categorias_equipo').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
+    registrarBitacora({ modulo: 'configuracion', accion: 'eliminar', entidad: 'categoría de equipo', entidad_id: id })
     setCats(prev => prev.filter(c => c.id !== id))
     showToast('Categoría eliminada')
   }
@@ -438,6 +445,7 @@ export default function ConfiguracionClient({
         categoria: cats.find(c => c.id === form.categoria_id) || t.categoria,
         lista: listas.find(l => l.id === form.lista_mantenimiento_id) || t.lista,
       } : t))
+      registrarBitacora({ modulo: 'configuracion', accion: 'editar', entidad: 'tipo de equipo', entidad_id: form.id, detalle: { nombre: nombreTipo } })
       showToast('Tipo actualizado')
     } else {
       const { data, error } = await supabase.from('tipos_equipo')
@@ -445,6 +453,7 @@ export default function ConfiguracionClient({
         .select('*, categoria:categorias_equipo(id, nombre, atributos_extra), lista:listas_mantenimiento(id, nombre)').single()
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setTipos(prev => [...prev, data])
+      registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'tipo de equipo', entidad_id: data.id, detalle: { nombre: nombreTipo } })
       showToast('Tipo creado')
     }
     setSaving(false); setModal(null)
@@ -455,6 +464,7 @@ export default function ConfiguracionClient({
     const supabase = await getSupabase()
     const { error } = await supabase.from('tipos_equipo').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
+    registrarBitacora({ modulo: 'configuracion', accion: 'eliminar', entidad: 'tipo de equipo', entidad_id: id })
     setTipos(prev => prev.filter(t => t.id !== id))
     showToast('Tipo eliminado')
   }
@@ -468,11 +478,13 @@ export default function ConfiguracionClient({
       const { error } = await supabase.from('listas_mantenimiento').update({ nombre: form.nombre, descripcion: form.descripcion }).eq('id', form.id)
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setListas(prev => prev.map(l => l.id === form.id ? { ...l, ...form } : l))
+      registrarBitacora({ modulo: 'configuracion', accion: 'editar', entidad: 'lista de mantenimiento', entidad_id: form.id, detalle: { nombre: form.nombre } })
       showToast('Lista actualizada')
     } else {
       const { data, error } = await supabase.from('listas_mantenimiento').insert({ nombre: form.nombre, descripcion: form.descripcion, activo: true }).select().single()
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
       setListas(prev => [...prev, data]); setListaExpandida(data.id)
+      registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'lista de mantenimiento', entidad_id: data.id, detalle: { nombre: form.nombre } })
       showToast('Lista creada')
     }
     setSaving(false); setModal(null)
@@ -483,6 +495,7 @@ export default function ConfiguracionClient({
     const supabase = await getSupabase()
     const { error } = await supabase.from('listas_mantenimiento').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
+    registrarBitacora({ modulo: 'configuracion', accion: 'eliminar', entidad: 'lista de mantenimiento', entidad_id: id })
     setListas(prev => prev.filter(l => l.id !== id))
     setActividades(prev => prev.filter(a => a.lista_id !== id))
     showToast('Lista eliminada')
@@ -528,6 +541,7 @@ export default function ConfiguracionClient({
       fecha_actualizacion: new Date().toISOString(),
     }).eq('id', empresa.id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
+    registrarBitacora({ modulo: 'configuracion', accion: 'editar', entidad: 'configuración de empresa', entidad_id: empresa.id, detalle: { razon_social: empresa.razon_social } })
     showToast('Datos guardados')
   }
 

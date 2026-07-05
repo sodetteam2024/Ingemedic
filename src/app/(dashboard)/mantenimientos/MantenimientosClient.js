@@ -1,4 +1,5 @@
 'use client'
+import { registrarBitacora } from '@/lib/bitacora'
 import { useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -145,6 +146,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     .single()
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+    registrarBitacora({ modulo: 'mantenimientos', accion: 'crear', entidad: 'mantenimiento', entidad_id: data.id, detalle: { codigo } })
 
     // Cambiar estado del equipo a "En mantenimiento"
     await supabase.from('equipos').update({ estado_id: ESTADO_EQUIPO.EnMantenimiento }).eq('id', form.equipo_id)
@@ -268,6 +270,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     }).eq('id', modalCierre.id)
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+    registrarBitacora({ modulo: 'mantenimientos', accion: 'cerrar', entidad: 'mantenimiento', entidad_id: modalCierre.id, detalle: { codigo: modalCierre.codigo } })
 
     await supabase.from('equipos').update({ estado_id: estadoEquipoId }).eq('id', modalCierre.equipo_id)
 
@@ -481,36 +484,63 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Topbar */}
-      <div className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
+      <div className="h-14 md:h-16 md:bg-white md:border-b md:border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
           <div className="text-[18px] font-bold text-slate-800">Mantenimientos</div>
           <div className="text-[12px] text-slate-400 mt-0.5">{(mantenimientos || []).length} registros</div>
         </div>
         <button onClick={() => { setForm({ equipo_id: '', tipo_mantenimiento_id: '', tecnico: '', observaciones_cliente: '', lista_id: '' }); setModal(true) }}
-          className="ml-auto flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F]">
+          className="ml-auto hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F]">
           <Plus size={14} strokeWidth={2.5} /> Nuevo mantenimiento
         </button>
       </div>
 
+      {/* FAB móvil */}
+      <button onClick={() => { setForm({ equipo_id: '', tipo_mantenimiento_id: '', tecnico: '', observaciones_cliente: '', lista_id: '' }); setModal(true) }}
+        className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
+        <Plus size={22} strokeWidth={2.5} />
+      </button>
+
       <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6 gap-4">
-        {/* Stats */}
-        <div className="grid grid-cols-3 md:grid-cols-5 gap-3 flex-shrink-0">
-          {[
-            { label: 'Total',       value: stats.total,       color: '#1E293B', f: '',           t: '' },
-            { label: 'Abiertos',    value: stats.abiertos,    color: '#B45309', f: 'Abierto',    t: '' },
-            { label: 'En proceso',  value: stats.enProceso,   color: '#1D4ED8', f: 'En proceso', t: '' },
-            { label: 'Cerrados',    value: stats.cerrados,    color: '#0F7B55', f: 'Cerrado',    t: '' },
-            { label: 'Correctivos', value: stats.correctivos, color: '#D81B43', f: '',           t: 'Correctivo' },
-          ].map(s => (
-            <div key={s.label}
-              onClick={() => s.t ? setFiltroTipo(p => p === s.t ? '' : s.t) : setFiltroEstado(p => p === s.f ? '' : s.f)}
-              className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${
-                (filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43]' : 'border-slate-200'
-              }`}>
-              <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
-            </div>
-          ))}
+        {/* Stats — en móvil, chips compactos con scroll horizontal (siguen filtrando); en desktop, cards */}
+        <div className="flex-shrink-0">
+          {/* Móvil: chips */}
+          <div className="flex md:hidden gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {[
+              { label: 'Total',      value: stats.total,     color: '#1E293B', f: '',           t: '' },
+              { label: 'Abiertos',   value: stats.abiertos,  color: '#B45309', f: 'Abierto',    t: '' },
+              { label: 'En proceso', value: stats.enProceso, color: '#1D4ED8', f: 'En proceso', t: '' },
+            ].map(s => (
+              <button key={s.label}
+                onClick={() => s.t ? setFiltroTipo(p => p === s.t ? '' : s.t) : setFiltroEstado(p => p === s.f ? '' : s.f)}
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium whitespace-nowrap transition-all ${
+                  (filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 bg-white'
+                }`}>
+                <span className="font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</span>
+                <span className="text-slate-500">{s.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Desktop: cards (igual que antes) */}
+          <div className="hidden md:grid md:grid-cols-5 gap-3">
+            {[
+              { label: 'Total',       value: stats.total,       color: '#1E293B', f: '',           t: '' },
+              { label: 'Abiertos',    value: stats.abiertos,    color: '#B45309', f: 'Abierto',    t: '' },
+              { label: 'En proceso',  value: stats.enProceso,   color: '#1D4ED8', f: 'En proceso', t: '' },
+              { label: 'Cerrados',    value: stats.cerrados,    color: '#0F7B55', f: 'Cerrado',    t: '' },
+              { label: 'Correctivos', value: stats.correctivos, color: '#D81B43', f: '',           t: 'Correctivo' },
+            ].map(s => (
+              <div key={s.label}
+                onClick={() => s.t ? setFiltroTipo(p => p === s.t ? '' : s.t) : setFiltroEstado(p => p === s.f ? '' : s.f)}
+                className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${
+                  (filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43]' : 'border-slate-200'
+                }`}>
+                <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
+                <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Filtros */}
@@ -521,7 +551,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
               placeholder="Buscar por código, equipo o técnico..."
               className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
           </div>
-          <div className="flex gap-2">
+          <div className="hidden md:flex gap-2">
             {tipos.map(t => (
               <button key={t.id} onClick={() => setFiltroTipo(p => p === t.nombre ? '' : t.nombre)}
                 className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all ${

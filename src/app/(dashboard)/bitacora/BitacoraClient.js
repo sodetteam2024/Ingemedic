@@ -139,7 +139,7 @@ export default function BitacoraClient({ registrosIniciales }) {
         </div>
 
         {/* Stats rápidas */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
+        <div className="hidden md:grid md:grid-cols-4 gap-3 flex-shrink-0">
           {[
             { label: 'Total registros', value: filtrados.length,                                             color: '#1B3A6B' },
             { label: 'Creaciones',      value: filtrados.filter(r => r.accion === 'crear').length,           color: '#0F7B55' },
