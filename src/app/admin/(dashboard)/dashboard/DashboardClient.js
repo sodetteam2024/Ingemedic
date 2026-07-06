@@ -86,7 +86,7 @@ export default function DashboardClient({
                 <div className="fixed inset-0 z-30" onClick={() => setAlertaAbierta(false)} />
                 <div className="absolute right-0 top-[calc(100%+8px)] z-40 w-64 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden">
                   {ordenesRetrasadas.length > 0 && (
-                    <button onClick={() => { setAlertaAbierta(false); router.push('/ordenes') }}
+                    <button onClick={() => { setAlertaAbierta(false); router.push('/admin/ordenes') }}
                       className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-slate-50 border-b border-slate-100 text-left">
                       <span className="text-[12.5px] text-slate-600 flex items-center gap-2">
                         <AlertTriangle size={13} className="text-[#D81B43]" /> Entregas retrasadas
@@ -95,7 +95,7 @@ export default function DashboardClient({
                     </button>
                   )}
                   {vigenciasProximas.length > 0 && (
-                    <button onClick={() => { setAlertaAbierta(false); router.push('/ordenes') }}
+                    <button onClick={() => { setAlertaAbierta(false); router.push('/admin/ordenes') }}
                       className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-slate-50 border-b border-slate-100 text-left">
                       <span className="text-[12.5px] text-slate-600 flex items-center gap-2">
                         <Clock size={13} className="text-[#B45309]" /> Vigencias por vencer
@@ -104,7 +104,7 @@ export default function DashboardClient({
                     </button>
                   )}
                   {conNovedad > 0 && (
-                    <button onClick={() => { setAlertaAbierta(false); router.push('/inventario') }}
+                    <button onClick={() => { setAlertaAbierta(false); router.push('/admin/inventario') }}
                       className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-slate-50 text-left">
                       <span className="text-[12.5px] text-slate-600 flex items-center gap-2">
                         <Package size={13} className="text-[#D81B43]" /> Equipos con novedad
@@ -179,7 +179,7 @@ export default function DashboardClient({
                 {entregasCompletadas} completadas · {entregasPendientes} en curso
               </div>
             </div>
-            <button onClick={() => router.push('/entregas')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
+            <button onClick={() => router.push('/admin/entregas')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
               Ver todas <ChevronRight size={13} />
             </button>
           </div>
@@ -191,7 +191,7 @@ export default function DashboardClient({
           ) : (
             <div className="divide-y divide-slate-50 max-h-[280px] overflow-y-auto">
               {entregasHoy.map(e => (
-                <div key={e.id} onClick={() => router.push('/entregas')}
+                <div key={e.id} onClick={() => router.push('/admin/entregas')}
                   className="px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-[12px] font-bold text-slate-600">{e.codigo}</span>
@@ -225,7 +225,7 @@ export default function DashboardClient({
                 </div>
                 <div className="divide-y divide-slate-50">
                   {ordenesRetrasadas.map(o => (
-                    <div key={o.id} onClick={() => router.push('/ordenes')}
+                    <div key={o.id} onClick={() => router.push('/admin/ordenes')}
                       className="px-5 py-3 hover:bg-red-50/50 cursor-pointer transition-colors">
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-[12px] font-bold text-[#D81B43]">{o.codigo}</span>
@@ -251,7 +251,7 @@ export default function DashboardClient({
                   {vigenciasProximas.map(o => {
                     const dias = diasRestantes(o.fecha_vigencia)
                     return (
-                      <div key={o.id} onClick={() => router.push('/ordenes')}
+                      <div key={o.id} onClick={() => router.push('/admin/ordenes')}
                         className="px-5 py-3 hover:bg-amber-50/50 cursor-pointer transition-colors">
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-[12px] font-bold text-slate-600">{o.codigo}</span>
@@ -277,7 +277,7 @@ export default function DashboardClient({
                 <div className="px-5 py-5 text-center">
                   <div className="text-3xl font-extrabold text-[#D81B43] mb-1">{conNovedad}</div>
                   <div className="text-[12.5px] text-slate-500">equipo{conNovedad !== 1 ? 's' : ''} requieren atención</div>
-                  <button onClick={() => router.push('/inventario')}
+                  <button onClick={() => router.push('/admin/inventario')}
                     className="mt-3 text-[12px] text-[#D81B43] font-semibold hover:underline">
                     Ver en inventario →
                   </button>
@@ -294,7 +294,7 @@ export default function DashboardClient({
               <div className="text-[14px] font-bold text-slate-800">Órdenes activas</div>
               <div className="text-[11.5px] text-slate-400 mt-0.5">{ordenesActivas.length} en curso</div>
             </div>
-            <button onClick={() => router.push('/ordenes')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
+            <button onClick={() => router.push('/admin/ordenes')} className="text-[12px] text-[#D81B43] font-semibold hover:underline flex items-center gap-1">
               Ver todas <ChevronRight size={13} />
             </button>
           </div>
@@ -306,7 +306,7 @@ export default function DashboardClient({
               const retrasada = o.fecha_entrega && new Date(o.fecha_entrega) < new Date() && o.estado?.nombre === 'Programada'
               const s = ESTADO_OS_STYLES[o.estado?.nombre] || ESTADO_OS_STYLES['Borrador']
               return (
-                <div key={o.id} onClick={() => router.push('/ordenes')}
+                <div key={o.id} onClick={() => router.push('/admin/ordenes')}
                   className="px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-[12px] font-bold text-slate-600">{o.codigo}</span>
@@ -344,7 +344,7 @@ export default function DashboardClient({
               {actividadReciente.map((o, i) => {
                 const s = ESTADO_OS_STYLES[o.estado?.nombre] || ESTADO_OS_STYLES['Borrador']
                 return (
-                  <div key={o.id} onClick={() => router.push('/ordenes')}
+                  <div key={o.id} onClick={() => router.push('/admin/ordenes')}
                     className="flex items-start gap-4 px-5 py-3.5 hover:bg-slate-50 cursor-pointer transition-colors">
                     <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 z-10 mt-0.5"
                       style={{ background: s.bg }}>

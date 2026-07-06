@@ -6,7 +6,7 @@ export default async function DashboardLayout({ children }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) redirect('/login')
+  if (!user) redirect('/admin/login')
 
   const { data: usuario } = await supabase
     .from('usuarios')

@@ -2,7 +2,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { registrarBitacora } from '@/lib/bitacora'
 
@@ -10,30 +10,30 @@ const NAV = [
   {
     label: 'Principal',
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: 'grid' },
+      { href: '/admin/dashboard', label: 'Dashboard', icon: 'grid' },
     ]
   },
   {
     label: 'Operaciones',
     items: [
-      { href: '/entregas',       label: 'Entregas',            icon: 'truck',  tour: 'nav-entregas'       },
-      { href: '/inventario',     label: 'Inventario',          icon: 'pulse',  tour: 'nav-inventario'     },
-      { href: '/ordenes',        label: 'Órdenes de servicio', icon: 'file',   tour: 'nav-ordenes'        },
-      { href: '/clientes',       label: 'Clientes',            icon: 'users'                              },
-      { href: '/mantenimientos', label: 'Mantenimientos',      icon: 'tool',   tour: 'nav-mantenimientos' },
-      { href: '/servicios',      label: 'Servicios prestados', icon: 'pulse'                              },
+      { href: '/admin/entregas',       label: 'Entregas',            icon: 'truck',  tour: 'nav-entregas'       },
+      { href: '/admin/inventario',     label: 'Inventario',          icon: 'pulse',  tour: 'nav-inventario'     },
+      { href: '/admin/ordenes',        label: 'Órdenes de servicio', icon: 'file',   tour: 'nav-ordenes'        },
+      { href: '/admin/clientes',       label: 'Clientes',            icon: 'users'                              },
+      { href: '/admin/mantenimientos', label: 'Mantenimientos',      icon: 'tool',   tour: 'nav-mantenimientos' },
+      { href: '/admin/servicios',      label: 'Servicios prestados', icon: 'pulse'                              },
     ]
   },
   {
     label: 'Sistema',
     items: [
-      { href: '/bitacora',      label: 'Bitácora',      icon: 'book'     },
-      { href: '/configuracion', label: 'Configuración', icon: 'settings' },
+      { href: '/admin/bitacora',      label: 'Bitácora',      icon: 'book'     },
+      { href: '/admin/configuracion', label: 'Configuración', icon: 'settings' },
     ]
   },
 ]
 
-const MOBILE_CRITICOS = ['/dashboard', '/entregas', '/ordenes', '/inventario']
+const MOBILE_CRITICOS = ['/admin/dashboard', '/admin/entregas', '/admin/ordenes', '/admin/inventario']
 const MOBILE_NAV_MODE_KEY = 'ingemedic_mobile_nav_mode'
 const FAB_POS_KEY = 'ingemedic_fab_pos'
 const FAB_SIZE = 56
@@ -104,7 +104,7 @@ export default function Sidebar({ usuario, empresa }) {
     await registrarBitacora({ modulo: 'auth', accion: 'logout', entidad: 'sesión', entidad_id: user?.id })
     await supabase.auth.signOut()
     // Recarga completa para limpiar cualquier caché de navegación de la sesión anterior
-    window.location.href = '/login'
+    window.location.href = '/admin/login'
   }
 
   // ── ARRASTRE con Pointer Events (unifica mouse y touch, sin warnings de listeners pasivos) ──
@@ -150,8 +150,8 @@ export default function Sidebar({ usuario, empresa }) {
   const resto    = mobileItems.filter(i => !MOBILE_CRITICOS.includes(i.href))
 
   // Panel flotante: Dashboard + Operaciones en la vista principal, Bitácora + Configuración en "Más"
-  const itemsOperacion = mobileItems.filter(i => i.href !== '/bitacora' && i.href !== '/configuracion')
-  const itemsSistema   = mobileItems.filter(i => i.href === '/bitacora' || i.href === '/configuracion')
+  const itemsOperacion = mobileItems.filter(i => i.href !== '/admin/bitacora' && i.href !== '/admin/configuracion')
+  const itemsSistema   = mobileItems.filter(i => i.href === '/admin/bitacora' || i.href === '/admin/configuracion')
 
   const PAGE_SIZE = 4
   const paginasResto = []
@@ -160,6 +160,36 @@ export default function Sidebar({ usuario, empresa }) {
   const itemsPaginaActual = paginaBarra === 0 ? criticos : paginasResto[paginaBarra - 1] || []
 
   const panelAbreHaciaIzquierda = pos.right > 100
+  // El panel (248px de ancho) nunca debe salirse de la pantalla — se acota el
+  // offset "right" para que su borde izquierdo nunca quede en una posición
+  // negativa cuando la bolita está cerca del borde izquierdo del viewport.
+  const PANEL_W = 248
+  const panelRightClamped = (() => {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 375
+    const deseado = Math.max(8, pos.right - 96)
+    return Math.min(deseado, Math.max(8, vw - PANEL_W - 8))
+  })()
+
+  // Igual que con el ancho, la altura del panel varía según la página (principal
+  // vs "más") y no se puede asumir un valor fijo — se mide con un ref después de
+  // pintarse, y con eso se acota "bottom" para que nunca se salga por arriba
+  // (ni se meta debajo del header fijo móvil, ~56px).
+  const panelRef = useRef(null)
+  const [panelH, setPanelH] = useState(280) // estimado inicial, se corrige tras medir
+  useLayoutEffect(() => {
+    if (panelAbierto && panelRef.current) {
+      setPanelH(panelRef.current.getBoundingClientRect().height)
+    }
+  }, [panelAbierto, panelPage])
+
+  const panelBottomClamped = (() => {
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 667
+    const TOP_SAFE = 64 // deja espacio bajo el header fijo móvil
+    const deseado = pos.bottom
+    // El borde superior del panel queda en: vh - bottom - panelH. Debe ser >= TOP_SAFE.
+    const maxBottom = vh - TOP_SAFE - panelH
+    return Math.min(deseado, Math.max(8, maxBottom))
+  })()
 
   return (
     <>
@@ -183,7 +213,7 @@ export default function Sidebar({ usuario, empresa }) {
               </div>
               {group.items.map(item => {
                 const active = pathname === item.href ||
-                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                  (item.href !== '/admin/dashboard' && pathname.startsWith(item.href))
                 return (
                   <Link key={item.href} href={item.href}
                     data-tour={item.tour}
@@ -259,7 +289,7 @@ export default function Sidebar({ usuario, empresa }) {
             )}
             <div className="flex-1 flex items-center justify-around">
               {itemsPaginaActual.map(item => {
-                const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                const active = pathname === item.href || (item.href !== '/admin/dashboard' && pathname.startsWith(item.href))
                 return (
                   <Link key={item.href} href={item.href}
                     data-tour={item.tour}
@@ -304,19 +334,19 @@ export default function Sidebar({ usuario, empresa }) {
 
           {/* Panel de módulos — reemplaza al botón en su misma posición aproximada */}
           {panelAbierto && (
-            <div className="fixed z-50 md:hidden w-[248px] rounded-[24px] shadow-2xl"
+            <div ref={panelRef} className="fixed z-50 md:hidden w-[248px] rounded-[24px] shadow-2xl"
               style={{
                 background: 'rgba(255,255,255,0.96)',
                 backdropFilter: 'blur(16px)',
                 border: '1px solid rgba(0,0,0,0.07)',
-                right:  panelAbreHaciaIzquierda ? Math.max(8, pos.right - 96) : undefined,
+                right:  panelAbreHaciaIzquierda ? panelRightClamped : undefined,
                 left:   !panelAbreHaciaIzquierda ? 8 : undefined,
-                bottom: pos.bottom,
+                bottom: panelBottomClamped,
               }}>
               {panelPage === 'main' ? (
                 <div className="grid grid-cols-3 gap-1 p-3">
                   {itemsOperacion.map(item => {
-                    const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                    const active = pathname === item.href || (item.href !== '/admin/dashboard' && pathname.startsWith(item.href))
                     return (
                       <Link key={item.href} href={item.href}
                         onClick={() => { setPanelAbierto(false); setPanelPage('main') }}

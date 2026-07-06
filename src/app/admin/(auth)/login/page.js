@@ -77,7 +77,7 @@ export default function LoginPage() {
 
     // Recarga completa (no client-side navigation) para evitar que el Router Cache
     // de Next.js muestre datos de la sesión anterior al cambiar de usuario.
-    window.location.href = '/dashboard'
+    window.location.href = '/admin/dashboard'
   }
 
   return (
