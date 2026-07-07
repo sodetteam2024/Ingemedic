@@ -62,18 +62,19 @@ const FAQS = [
   { q: '¿Cómo se garantiza la calidad del oxígeno durante el transporte?', a: 'El transporte se realiza bajo protocolos estrictos de manipulación y seguridad, cumpliendo con las Buenas Prácticas de Manufactura y la normativa de transporte de gases medicinales vigente en Colombia.' },
 ]
 
-function Logo({ light = false }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-        style={{ background: light ? 'rgba(255,255,255,0.15)' : '#FEF2F2' }}>
-        <span style={{ fontSize: 16 }}>🫀</span>
-      </div>
-      <span className={`font-extrabold tracking-tight text-[17px] ${light ? 'text-white' : 'text-slate-800'}`}>
-        INGEMEDIC
-      </span>
-    </div>
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
+
+function Logo({ light = false, className = 'h-14' }) {
+  const img = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={LOGO_URL} alt="Ingemedic de Colombia" className={`${className} w-auto flex-shrink-0`} />
   )
+  if (!light) return img
+  // Sobre fondo oscuro (footer): respaldo blanco por si el logo tiene texto/detalles
+  // oscuros o transparencia que no se vean bien sobre azul — quita este wrapper si
+  // confirmas que el logo ya funciona bien sobre fondo oscuro tal cual.
+  return <div className="bg-white rounded-lg px-3 py-2 inline-flex">{img}</div>
 }
 
 export default function LandingPage() {
@@ -128,8 +129,8 @@ export default function LandingPage() {
       </header>
 
       {/* ── HERO ── */}
-      <section className="relative overflow-hidden"
-        style={{ background: `linear-gradient(115deg, ${AZUL_OSCURO} 0%, ${AZUL_BRILLANTE} 100%)` }}>
+      <section className="relative overflow-hidden bg-cover bg-center"
+        style={{ backgroundImage: 'url(/images/ingemedic-hero-bg.jpg)' }}>
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-24 grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
           <div>
             <h1 className="text-[32px] md:text-[44px] font-extrabold text-white leading-[1.15] mb-5">
@@ -157,7 +158,11 @@ export default function LandingPage() {
               className="max-w-[420px] w-full h-auto drop-shadow-2xl" />
           </div>
         </div>
-        <div className="h-2 w-full" style={{ background: 'repeating-linear-gradient(90deg, transparent 0 24px, rgba(255,255,255,0.35) 24px 48px)' }} />
+        <div className="relative z-10 space-y-[3px] pb-1">
+          <div className="h-[7px] bg-white" />
+          <div className="h-[3px]" style={{ background: AZUL_OSCURO }} />
+          <div className="h-[3px] bg-white/70" />
+        </div>
       </section>
 
       {/* ── QUIÉNES SOMOS ── */}
@@ -234,44 +239,66 @@ export default function LandingPage() {
             Contamos con una amplia gama de equipos para diferentes necesidades, con asesoría y soporte especializados
           </p>
 
-          <div className="flex items-center gap-3">
-            <button onClick={() => setProductoActivo(p => (p - 1 + PRODUCTOS.length) % PRODUCTOS.length)}
-              className="hidden md:flex flex-shrink-0 w-9 h-9 rounded-full bg-white/10 text-white items-center justify-center hover:bg-white/20 transition-colors">
-              <ChevronLeft size={18} />
-            </button>
+          <div className="relative">
+            <div className="flex flex-col md:flex-row items-stretch gap-4">
+              {/* Card grande destacada */}
+              <div className="md:w-[52%] flex-shrink-0 rounded-2xl bg-white/10 p-6 md:p-8 flex items-center gap-5 md:gap-6">
+                <div className="w-28 h-28 md:w-36 md:h-36 rounded-xl bg-white/90 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={PRODUCTOS[productoActivo].img} alt={PRODUCTOS[productoActivo].nombre} className="w-full h-full object-contain p-2" />
+                </div>
+                <div className="min-w-0">
+                  <span className="inline-block text-[10.5px] font-bold text-white px-2.5 py-0.5 rounded-full mb-1.5" style={{ background: AZUL_BRILLANTE }}>
+                    Modelo
+                  </span>
+                  <div className="text-[18px] md:text-[20px] font-extrabold text-white">{PRODUCTOS[productoActivo].nombre}</div>
+                  <div className="text-[12.5px] text-blue-100/70 mt-1">{PRODUCTOS[productoActivo].desc}</div>
+                  <button className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[12.5px] font-semibold text-slate-800 hover:scale-[1.03] transition-transform">
+                    Ver servicio <ChevronRight size={13} />
+                  </button>
+                </div>
+              </div>
 
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[0, 1, 2].map(offset => {
-                const p = PRODUCTOS[(productoActivo + offset) % PRODUCTOS.length]
-                const destacado = offset === 0
-                return (
-                  <div key={offset}
-                    className={`rounded-2xl p-6 flex items-center gap-4 transition-all ${destacado ? 'bg-white/10' : 'bg-white/5 hidden md:flex'}`}>
-                    <div className="w-20 h-20 rounded-xl bg-white/90 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.img} alt={p.nombre} className="w-full h-full object-contain p-1.5" />
+              {/* Flecha flotante — entre la card grande y las de "vista previa" */}
+              <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
+                className="hidden md:flex absolute z-20 w-10 h-10 rounded-full bg-white text-slate-700 items-center justify-center shadow-lg hover:scale-105 transition-transform"
+                style={{ left: 'calc(52% - 20px)', top: '50%', transform: 'translateY(-50%)' }}>
+                <ChevronRight size={18} />
+              </button>
+
+              {/* Peek de los siguientes 2 productos — recortados, más tenues, dan la idea de "hay más" */}
+              <div className="hidden md:flex flex-1 gap-3 overflow-hidden">
+                {[1, 2].map(offset => {
+                  const p = PRODUCTOS[(productoActivo + offset) % PRODUCTOS.length]
+                  return (
+                    <div key={offset} className="flex-1 rounded-2xl bg-white/5 p-4 flex flex-col items-start justify-between min-w-[120px]">
+                      <div className="w-14 h-14 rounded-lg bg-white/80 flex items-center justify-center overflow-hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.img} alt={p.nombre} className="w-full h-full object-contain p-1" />
+                      </div>
+                      <div>
+                        <span className="inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-full mb-1" style={{ background: `${AZUL_BRILLANTE}bb` }}>
+                          Modelo
+                        </span>
+                        <div className="text-[11.5px] font-bold text-white leading-tight">{p.nombre}</div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <span className="inline-block text-[10.5px] font-bold text-white px-2.5 py-0.5 rounded-full mb-1.5" style={{ background: AZUL_BRILLANTE }}>
-                        Modelo
-                      </span>
-                      <div className="text-[16px] font-extrabold text-white">{p.nombre}</div>
-                      <div className="text-[12px] text-blue-100/70 mt-0.5">{p.desc}</div>
-                      {destacado && (
-                        <button className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[12.5px] font-semibold text-slate-800 hover:scale-[1.03] transition-transform">
-                          Ver servicio <ChevronRight size={13} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
 
-            <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
-              className="hidden md:flex flex-shrink-0 w-9 h-9 rounded-full bg-white/10 text-white items-center justify-center hover:bg-white/20 transition-colors">
-              <ChevronRight size={18} />
-            </button>
+            {/* Móvil: flechas debajo, card grande a ancho completo arriba */}
+            <div className="flex md:hidden items-center justify-center gap-3 mt-4">
+              <button onClick={() => setProductoActivo(p => (p - 1 + PRODUCTOS.length) % PRODUCTOS.length)}
+                className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center">
+                <ChevronLeft size={16} />
+              </button>
+              <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
+                className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center">
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-center gap-1.5 mt-8">
@@ -312,8 +339,11 @@ export default function LandingPage() {
             )
           })}
         </div>
+      </section>
 
-        <div className="rounded-2xl px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-white" style={{ background: AZUL_OSCURO }}>
+      {/* Banner de cifras — a todo el ancho de la pantalla, no contenido */}
+      <div className="w-full text-white" style={{ background: AZUL_OSCURO }}>
+        <div className="max-w-7xl mx-auto px-4 md:px-8 py-7 grid grid-cols-2 md:grid-cols-4 divide-y-2 md:divide-y-0 md:divide-x-2 divide-white/15">
           {[
             { icon: Users, n: '+20.000', l: 'Pacientes atendidos' },
             { icon: Award, n: '+13', l: 'Años de experiencia' },
@@ -322,7 +352,7 @@ export default function LandingPage() {
           ].map((s, i) => {
             const Icon = s.icon
             return (
-              <div key={i} className="flex items-center gap-3">
+              <div key={i} className="flex items-center gap-3 px-0 md:px-6 py-3 md:py-0 justify-center md:justify-start">
                 <Icon size={22} className="flex-shrink-0 opacity-90" />
                 <div>
                   {s.n && <div className="text-[18px] font-extrabold leading-none">{s.n}</div>}
@@ -332,7 +362,7 @@ export default function LandingPage() {
             )
           })}
         </div>
-      </section>
+      </div>
 
       {/* ── CÓMO FUNCIONA ── */}
       <section className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">
@@ -343,19 +373,39 @@ export default function LandingPage() {
           hasta la entrega y seguimiento del servicio. Nuestro proceso es <strong>simple, ágil y seguro</strong>.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
-          {PASOS.map((p, i) => (
-            <div key={p.n} className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-extrabold text-white"
-                style={{ background: AZUL_BRILLANTE }}>
-                {p.n}
+        <div className="relative grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-8 md:gap-y-14">
+          {PASOS.map((p, i) => {
+            const derecha = i % 2 === 1
+            return (
+              <div key={p.n} className={`relative ${derecha ? 'md:mt-20' : ''}`}>
+                {/* Línea punteada hacia el siguiente paso (diagonal, solo desktop) */}
+                {i < PASOS.length - 1 && (
+                  <div className="hidden md:block absolute w-20 h-20 pointer-events-none"
+                    style={{
+                      top: derecha ? '100%' : '50%',
+                      [derecha ? 'left' : 'right']: 'calc(100% - 10px)',
+                      borderBottom: `2px dashed ${AZUL_BRILLANTE}80`,
+                      transform: derecha ? 'rotate(-38deg)' : 'rotate(38deg)',
+                      transformOrigin: 'top left',
+                    }} />
+                )}
+
+                <div className={`relative rounded-2xl border border-slate-200 p-5 ${derecha ? 'md:pl-9' : 'md:pr-9'}`}>
+                  {/* Círculo numerado — en el borde exterior de la card, hacia el centro */}
+                  <div className={`hidden md:flex absolute top-5 w-9 h-9 rounded-full items-center justify-center text-white text-[12px] font-extrabold z-10 shadow-md ${derecha ? '-left-[18px]' : '-right-[18px]'}`}
+                    style={{ background: AZUL_BRILLANTE }}>
+                    {p.n}
+                  </div>
+                  <div className="md:hidden inline-flex w-8 h-8 rounded-full items-center justify-center text-white text-[11.5px] font-extrabold mb-2"
+                    style={{ background: AZUL_BRILLANTE }}>
+                    {p.n}
+                  </div>
+                  <h3 className="text-[14.5px] font-extrabold mb-1" style={{ color: AZUL }}>{p.t}</h3>
+                  <p className="text-[12.5px] text-slate-500 leading-relaxed">{p.d}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-[14.5px] font-extrabold mb-1" style={{ color: AZUL }}>{p.t}</h3>
-                <p className="text-[12.5px] text-slate-500 leading-relaxed">{p.d}</p>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </section>
 

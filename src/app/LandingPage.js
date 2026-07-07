@@ -4,11 +4,11 @@ import Link from 'next/link'
 import {
   Menu, X, Phone, Mail, MapPin, Clock, ChevronRight, ChevronLeft,
   Target, Eye, ShieldCheck, UserCog, Users, Award, Truck, Headphones,
-  MessageCircle, ChevronDown, PhoneCall,
+  MessageCircle, ChevronDown, PhoneCall, UserRound, ClipboardCheck,
+  FileText, GraduationCap,
 } from 'lucide-react'
 
 const AZUL_OSCURO = '#14315C'
-const AZUL = '#1B3A6B'
 const AZUL_BRILLANTE = '#1D4ED8'
 const ROJO = '#D81B43'
 
@@ -53,6 +53,8 @@ const PASOS = [
   { n: '06', t: 'Seguimiento y soporte continuo', d: 'Realizamos acompañamiento periódico para verificar el estado de los equipos, la evolución del servicio y la satisfacción del paciente. Ante cualquier eventualidad, nuestro equipo técnico responde de manera oportuna, con disponibilidad las 24 horas del día.' },
 ]
 
+const PASO_ICONS = [UserRound, ClipboardCheck, FileText, Truck, GraduationCap, Clock]
+
 const FAQS = [
   { q: '¿Qué tipos de equipos puedo alquilar o comprar?', a: 'Contamos con un portafolio de equipos médicos para hospitalización domiciliaria, incluyendo concentradores de oxígeno, entre otros dispositivos de apoyo terapéutico. Nuestro equipo te asesora para elegir el más adecuado según la condición del paciente.' },
   { q: '¿Los equipos entregados están en buen estado y certificados?', a: 'Sí. Todos los equipos son revisados, verificados y entregados en óptimas condiciones de funcionamiento antes de cada instalación, cumpliendo con los estándares de tecnovigilancia aplicables.' },
@@ -65,16 +67,16 @@ const FAQS = [
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
 
-function Logo({ light = false }) {
+function Logo({ light = false, size = 100 }) {
   const img = (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={LOGO_URL} alt="Ingemedic de Colombia" className="h-25 w-auto flex-shrink-0" />
+    <img src={LOGO_URL} alt="Ingemedic de Colombia" style={{ height: size, width: 'auto' }} className="flex-shrink-0" />
   )
   if (!light) return img
   // Sobre fondo oscuro (footer): respaldo blanco por si el logo tiene texto/detalles
   // oscuros o transparencia que no se vean bien sobre azul — quita este wrapper si
   // confirmas que el logo ya funciona bien sobre fondo oscuro tal cual.
-  return <div className="bg-white rounded-lg px-3 py-1.5 inline-flex">{img}</div>
+  return <div className="bg-white rounded-lg px-3 py-2 inline-flex">{img}</div>
 }
 
 export default function LandingPage() {
@@ -86,7 +88,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-white text-slate-800">
       {/* ── NAVBAR ── */}
       <header className="sticky top-0 z-50 bg-white border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 py-2 min-h-[88px] flex items-center justify-between">
           <Logo />
 
           <nav className="hidden md:flex items-center gap-8">
@@ -129,9 +131,9 @@ export default function LandingPage() {
       </header>
 
       {/* ── HERO ── */}
-      <section className="relative overflow-hidden"
-        style={{ background: `linear-gradient(115deg, ${AZUL_OSCURO} 0%, ${AZUL_BRILLANTE} 100%)` }}>
-        <div className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-24 grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+      <section className="relative bg-cover bg-center"
+        style={{ backgroundImage: 'url(/images/ingemedic-hero-bg.jpg)' }}>
+        <div className="max-w-7xl mx-auto px-4 md:px-8 pt-12 md:pt-16 pb-4 md:pb-5 grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
           <div>
             <h1 className="text-[32px] md:text-[44px] font-extrabold text-white leading-[1.15] mb-5">
               Equipos médicos y oxígeno para tu cuidado diario
@@ -140,46 +142,50 @@ export default function LandingPage() {
               Acompañamos tu recuperación y bienestar con equipos médicos de calidad, oxígeno medicinal
               y un servicio pensado para darte tranquilidad en cada momento.
             </p>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col md:flex-row gap-3">
               <a href="#contacto"
-                className="px-6 py-3 rounded-full text-[14px] font-semibold text-white transition-transform hover:scale-[1.03]"
+                className="text-center w-full md:w-auto px-6 py-3 rounded-full text-[14px] font-semibold text-white transition-transform hover:scale-[1.03]"
                 style={{ background: AZUL_OSCURO }}>
                 Contáctanos
               </a>
               <a href="#servicios"
-                className="px-6 py-3 rounded-full text-[14px] font-semibold text-slate-800 bg-white transition-transform hover:scale-[1.03]">
+                className="text-center w-full md:w-auto px-6 py-3 rounded-full text-[14px] font-semibold text-slate-800 bg-white transition-transform hover:scale-[1.03]">
                 Nuestros servicios
               </a>
             </div>
           </div>
-          <div className="hidden md:flex justify-center">
+          <div className="relative flex justify-center md:justify-end mt-8 md:mt-0 z-20">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/images/ingemedic-concentrador-oxigeno.png" alt="Concentrador de oxígeno"
-              className="max-w-[420px] w-full h-auto drop-shadow-2xl" />
+              className="max-w-[280px] md:max-w-[560px] w-full h-auto drop-shadow-2xl -mb-10 md:-mb-16" />
           </div>
         </div>
-        <div className="h-2 w-full" style={{ background: 'repeating-linear-gradient(90deg, transparent 0 24px, rgba(255,255,255,0.35) 24px 48px)' }} />
+        {/* Franjas — ambas blancas; la imagen (z-20) las pisa por encima para dar profundidad */}
+        <div className="relative z-10 space-y-1.5 pb-2.5">
+          <div className="h-[12px] bg-white shadow-sm" />
+          <div className="h-[9px] bg-white/80" />
+        </div>
       </section>
 
       {/* ── QUIÉNES SOMOS ── */}
       <section id="quienes-somos" className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start mb-14">
           <div>
-            <h2 className="text-[26px] md:text-[30px] font-extrabold mb-1" style={{ color: AZUL }}>¿QUIÉNES SOMOS?</h2>
+            <h2 className="text-[26px] md:text-[30px] font-extrabold mb-1" style={{ color: AZUL_OSCURO }}>¿QUIÉNES SOMOS?</h2>
             <div className="w-14 h-1 rounded-full mb-5" style={{ background: AZUL_BRILLANTE }} />
-            <p className="text-[13.5px] leading-relaxed text-slate-600">
+            <p className="text-[13.5px] leading-relaxed text-slate-600 text-justify">
               INGEMEDIC DE COLOMBIA S.A.S. es una empresa dedicada a la producción y suministro de
               oxígeno medicinal, así como al alquiler y venta de equipos médicos para la hospitalización
               domiciliaria. Con atención disponible las 24 horas del día, garantizando continuidad y
               respaldo en cada etapa del tratamiento del paciente.
             </p>
-            <p className="text-[13.5px] leading-relaxed text-slate-600 mt-3">
+            <p className="text-[13.5px] leading-relaxed text-slate-600 mt-3 text-justify">
               Contamos con un amplio portafolio de equipos médicos que permiten acondicionar el entorno
               del hogar para brindar al paciente una recuperación digna, segura y confortable junto a su
               familia, contribuyendo además a la reducción significativa de los costos asociados a una
               hospitalización prolongada.
             </p>
-            <p className="text-[13.5px] leading-relaxed text-slate-600 mt-3">
+            <p className="text-[13.5px] leading-relaxed text-slate-600 mt-3 text-justify">
               En Ingemedic de Colombia S.A.S. hemos implementado un Sistema Integrado de Gestión de
               Calidad fundamentado en un enfoque por procesos, mediante el cual identificamos,
               documentamos y controlamos cada actividad que incide directamente en la calidad de nuestros
@@ -201,8 +207,8 @@ export default function LandingPage() {
             <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: `${AZUL_BRILLANTE}15` }}>
               <Target size={22} style={{ color: AZUL_BRILLANTE }} />
             </div>
-            <h3 className="text-[16px] font-extrabold mb-2" style={{ color: AZUL }}>MISIÓN</h3>
-            <p className="text-[13px] text-slate-500 leading-relaxed">
+            <h3 className="text-[16px] font-extrabold mb-2" style={{ color: AZUL_OSCURO }}>MISIÓN</h3>
+            <p className="text-[13px] text-slate-500 leading-relaxed text-justify">
               Somos una empresa especializada en el suministro y comercialización de oxígeno medicinal
               y en el alquiler, mantenimiento y calibración de equipos Biomédicos para la hospitalización
               domiciliaria, enfocada en mejorar la calidad de vida de las personas que requieran nuestros
@@ -214,8 +220,8 @@ export default function LandingPage() {
             <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: `${AZUL_BRILLANTE}15` }}>
               <Eye size={22} style={{ color: AZUL_BRILLANTE }} />
             </div>
-            <h3 className="text-[16px] font-extrabold mb-2" style={{ color: AZUL }}>VISIÓN</h3>
-            <p className="text-[13px] text-slate-500 leading-relaxed">
+            <h3 className="text-[16px] font-extrabold mb-2" style={{ color: AZUL_OSCURO }}>VISIÓN</h3>
+            <p className="text-[13px] text-slate-500 leading-relaxed text-justify">
               Para el año 2027 Ingemedic planea ser la empresa líder en el departamento del Cesar en el
               suministro y comercialización de oxígeno medicinal, alquiler, venta, mantenimiento y
               calibración de equipos Biomédicos para la hospitalización domiciliaria, con servicio las
@@ -235,44 +241,66 @@ export default function LandingPage() {
             Contamos con una amplia gama de equipos para diferentes necesidades, con asesoría y soporte especializados
           </p>
 
-          <div className="flex items-center gap-3">
-            <button onClick={() => setProductoActivo(p => (p - 1 + PRODUCTOS.length) % PRODUCTOS.length)}
-              className="hidden md:flex flex-shrink-0 w-9 h-9 rounded-full bg-white/10 text-white items-center justify-center hover:bg-white/20 transition-colors">
-              <ChevronLeft size={18} />
-            </button>
+          <div className="relative">
+            <div className="flex flex-col md:flex-row items-stretch gap-4">
+              {/* Card grande destacada */}
+              <div className="md:w-[52%] flex-shrink-0 rounded-2xl bg-white/10 p-6 md:p-8 flex items-center gap-5 md:gap-6">
+                <div className="w-28 h-28 md:w-36 md:h-36 rounded-xl bg-white/90 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={PRODUCTOS[productoActivo].img} alt={PRODUCTOS[productoActivo].nombre} className="w-full h-full object-contain p-2" />
+                </div>
+                <div className="min-w-0">
+                  <span className="inline-block text-[10.5px] font-bold text-white px-2.5 py-0.5 rounded-full mb-1.5" style={{ background: AZUL_BRILLANTE }}>
+                    Modelo
+                  </span>
+                  <div className="text-[18px] md:text-[20px] font-extrabold text-white">{PRODUCTOS[productoActivo].nombre}</div>
+                  <div className="text-[12.5px] text-blue-100/70 mt-1">{PRODUCTOS[productoActivo].desc}</div>
+                  <button className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[12.5px] font-semibold text-slate-800 hover:scale-[1.03] transition-transform">
+                    Ver servicio <ChevronRight size={13} />
+                  </button>
+                </div>
+              </div>
 
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[0, 1, 2].map(offset => {
-                const p = PRODUCTOS[(productoActivo + offset) % PRODUCTOS.length]
-                const destacado = offset === 0
-                return (
-                  <div key={offset}
-                    className={`rounded-2xl p-6 flex items-center gap-4 transition-all ${destacado ? 'bg-white/10' : 'bg-white/5 hidden md:flex'}`}>
-                    <div className="w-20 h-20 rounded-xl bg-white/90 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.img} alt={p.nombre} className="w-full h-full object-contain p-1.5" />
+              {/* Flecha flotante — entre la card grande y las de "vista previa" */}
+              <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
+                className="hidden md:flex absolute z-20 w-10 h-10 rounded-full bg-white text-slate-700 items-center justify-center shadow-lg hover:scale-105 transition-transform"
+                style={{ left: 'calc(52% - 20px)', top: '50%', transform: 'translateY(-50%)' }}>
+                <ChevronRight size={18} />
+              </button>
+
+              {/* Peek de los siguientes 2 productos — recortados, más tenues, dan la idea de "hay más" */}
+              <div className="hidden md:flex flex-1 gap-3 overflow-hidden">
+                {[1, 2].map(offset => {
+                  const p = PRODUCTOS[(productoActivo + offset) % PRODUCTOS.length]
+                  return (
+                    <div key={offset} className="flex-1 rounded-2xl bg-white/5 p-4 flex flex-col items-start justify-between min-w-[120px]">
+                      <div className="w-14 h-14 rounded-lg bg-white/80 flex items-center justify-center overflow-hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.img} alt={p.nombre} className="w-full h-full object-contain p-1" />
+                      </div>
+                      <div>
+                        <span className="inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-full mb-1" style={{ background: `${AZUL_BRILLANTE}bb` }}>
+                          Modelo
+                        </span>
+                        <div className="text-[11.5px] font-bold text-white leading-tight">{p.nombre}</div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <span className="inline-block text-[10.5px] font-bold text-white px-2.5 py-0.5 rounded-full mb-1.5" style={{ background: AZUL_BRILLANTE }}>
-                        Modelo
-                      </span>
-                      <div className="text-[16px] font-extrabold text-white">{p.nombre}</div>
-                      <div className="text-[12px] text-blue-100/70 mt-0.5">{p.desc}</div>
-                      {destacado && (
-                        <button className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[12.5px] font-semibold text-slate-800 hover:scale-[1.03] transition-transform">
-                          Ver servicio <ChevronRight size={13} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
 
-            <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
-              className="hidden md:flex flex-shrink-0 w-9 h-9 rounded-full bg-white/10 text-white items-center justify-center hover:bg-white/20 transition-colors">
-              <ChevronRight size={18} />
-            </button>
+            {/* Móvil: flechas debajo, card grande a ancho completo arriba */}
+            <div className="flex md:hidden items-center justify-center gap-3 mt-4">
+              <button onClick={() => setProductoActivo(p => (p - 1 + PRODUCTOS.length) % PRODUCTOS.length)}
+                className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center">
+                <ChevronLeft size={16} />
+              </button>
+              <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
+                className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center">
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-center gap-1.5 mt-8">
@@ -287,9 +315,9 @@ export default function LandingPage() {
 
       {/* ── POR QUÉ ELEGIRNOS ── */}
       <section className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">
-        <h2 className="text-[24px] md:text-[28px] font-extrabold mb-1" style={{ color: AZUL }}>¿POR QUÉ ELEGIRNOS?</h2>
+        <h2 className="text-[24px] md:text-[28px] font-extrabold mb-1" style={{ color: AZUL_OSCURO }}>¿POR QUÉ ELEGIRNOS?</h2>
         <div className="w-14 h-1 rounded-full mb-5" style={{ background: AZUL_BRILLANTE }} />
-        <p className="text-[13.5px] text-slate-600 leading-relaxed max-w-3xl mb-10">
+        <p className="text-[13.5px] text-slate-600 leading-relaxed max-w-3xl mb-10 text-justify">
           En Ingemedic de Colombia S.A.S. nos diferenciamos por ofrecer un servicio responsable,
           técnicamente respaldado y orientado al bienestar del paciente. Estas son las razones por
           las que clientes, instituciones de salud y familias colombianas confían en nosotros:
@@ -307,14 +335,17 @@ export default function LandingPage() {
                 <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: `${AZUL_BRILLANTE}12` }}>
                   <Icon size={22} style={{ color: AZUL_BRILLANTE }} />
                 </div>
-                <h3 className="text-[14.5px] font-extrabold text-center mb-2" style={{ color: AZUL }}>{f.t}</h3>
-                <p className="text-[12.5px] text-slate-500 text-center leading-relaxed">{f.d}</p>
+                <h3 className="text-[14.5px] font-extrabold text-center mb-2" style={{ color: AZUL_OSCURO }}>{f.t}</h3>
+                <p className="text-[12.5px] text-slate-500 text-center leading-relaxed text-justify">{f.d}</p>
               </div>
             )
           })}
         </div>
+      </section>
 
-        <div className="rounded-2xl px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-white" style={{ background: AZUL_OSCURO }}>
+      {/* Banner de cifras — a todo el ancho de la pantalla, no contenido */}
+      <div className="w-full text-white" style={{ background: AZUL_OSCURO }}>
+        <div className="max-w-7xl mx-auto px-4 md:px-8 py-7 grid grid-cols-1 md:grid-cols-4 divide-y-2 md:divide-y-0 md:divide-x-2 divide-white/15">
           {[
             { icon: Users, n: '+20.000', l: 'Pacientes atendidos' },
             { icon: Award, n: '+13', l: 'Años de experiencia' },
@@ -323,7 +354,7 @@ export default function LandingPage() {
           ].map((s, i) => {
             const Icon = s.icon
             return (
-              <div key={i} className="flex items-center gap-3">
+              <div key={i} className="flex items-center gap-3 px-0 md:px-6 py-3 md:py-0 justify-center md:justify-start">
                 <Icon size={22} className="flex-shrink-0 opacity-90" />
                 <div>
                   {s.n && <div className="text-[18px] font-extrabold leading-none">{s.n}</div>}
@@ -333,27 +364,44 @@ export default function LandingPage() {
             )
           })}
         </div>
-      </section>
+      </div>
 
       {/* ── CÓMO FUNCIONA ── */}
       <section className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">
-        <h2 className="text-[24px] md:text-[28px] font-extrabold mb-1" style={{ color: AZUL }}>¿CÓMO FUNCIONA?</h2>
+        <h2 className="text-[24px] md:text-[28px] font-extrabold mb-1" style={{ color: AZUL_OSCURO }}>¿CÓMO FUNCIONA?</h2>
         <div className="w-14 h-1 rounded-full mb-5" style={{ background: AZUL_BRILLANTE }} />
-        <p className="text-[13.5px] text-slate-600 leading-relaxed max-w-3xl mb-10">
+        <p className="text-[13.5px] text-slate-600 leading-relaxed max-w-3xl mb-10 text-justify">
           En Ingemedic de Colombia S.A.S. acompañamos al paciente y su familia desde el primer contacto
           hasta la entrega y seguimiento del servicio. Nuestro proceso es <strong>simple, ágil y seguro</strong>.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
-          {PASOS.map((p, i) => (
-            <div key={p.n} className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-extrabold text-white"
-                style={{ background: AZUL_BRILLANTE }}>
-                {p.n}
-              </div>
-              <div>
-                <h3 className="text-[14.5px] font-extrabold mb-1" style={{ color: AZUL }}>{p.t}</h3>
-                <p className="text-[12.5px] text-slate-500 leading-relaxed">{p.d}</p>
+        {/* Línea de tiempo — misma estructura en móvil y desktop (2 columnas independientes
+            en desktop, cada una con su propia línea recta; en móvil colapsa a 1 columna).
+            Nada de líneas calculadas entre columnas — así nunca se desalinea. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-10">
+          {[PASOS.slice(0, 3), PASOS.slice(3, 6)].map((columna, colIdx) => (
+            <div key={colIdx} className="relative pl-1 mb-8 md:mb-0 last:mb-0">
+              <div className="absolute left-[27px] top-1 bottom-1 w-0.5" style={{ background: `${AZUL_BRILLANTE}35` }} />
+              <div className="space-y-5">
+                {columna.map((p, idx) => {
+                  const i = colIdx * 3 + idx
+                  const Icon = PASO_ICONS[i]
+                  return (
+                    <div key={p.n} className="relative flex items-start gap-3.5">
+                      <div className="relative z-10 flex-shrink-0 w-14 h-14 rounded-full flex items-center justify-center text-white text-[13px] font-extrabold shadow-md"
+                        style={{ background: AZUL_BRILLANTE }}>
+                        {p.n}
+                      </div>
+                      <div className="flex-1 rounded-2xl border border-slate-200 p-4">
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center mb-2" style={{ background: `${AZUL_BRILLANTE}12` }}>
+                          <Icon size={16} style={{ color: AZUL_BRILLANTE }} />
+                        </div>
+                        <h3 className="text-[13.5px] font-extrabold mb-1" style={{ color: AZUL_OSCURO }}>{p.t}</h3>
+                        <p className="text-[12px] text-slate-500 leading-relaxed text-justify">{p.d}</p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -364,10 +412,10 @@ export default function LandingPage() {
       <section id="contacto" className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
           <div>
-            <h2 className="text-[26px] md:text-[30px] font-extrabold mb-1" style={{ color: AZUL }}>Contáctenos</h2>
+            <h2 className="text-[26px] md:text-[30px] font-extrabold mb-1" style={{ color: AZUL_OSCURO }}>Contáctenos</h2>
             <div className="w-14 h-1 rounded-full mb-5" style={{ background: AZUL_BRILLANTE }} />
             <h3 className="text-[15px] font-bold text-slate-700 mb-2">Estamos para ayudarte</h3>
-            <p className="text-[13px] text-slate-500 leading-relaxed mb-6">
+            <p className="text-[13px] text-slate-500 leading-relaxed mb-6 text-justify">
               ¿Necesitas oxígeno medicinal, equipos médicos o asesoría especializada? Nuestro equipo está
               listo para brindarte la mejor atención y soluciones confiables para tu cuidado.
             </p>
@@ -387,18 +435,18 @@ export default function LandingPage() {
                     </div>
                     <div className="min-w-0">
                       <div className="text-[10.5px] text-slate-400 uppercase tracking-wide">{c.label}</div>
-                      <div className="text-[13px] font-semibold" style={{ color: AZUL }}>{c.value}</div>
+                      <div className="text-[13px] font-semibold" style={{ color: AZUL_OSCURO }}>{c.value}</div>
                     </div>
                   </div>
                 )
               })}
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <a href="#contacto" className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-semibold text-white" style={{ background: AZUL_OSCURO }}>
+            <div className="flex flex-col md:flex-row gap-3">
+              <a href="#contacto" className="flex items-center justify-center gap-2 w-full md:w-auto px-5 py-3 md:py-2.5 rounded-full text-[13px] font-semibold text-white" style={{ background: AZUL_OSCURO }}>
                 <MessageCircle size={14} /> Solicitar cotización
               </a>
-              <a href="tel:3103636481" className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-semibold border border-slate-300 text-slate-700">
+              <a href="tel:3103636481" className="flex items-center justify-center gap-2 w-full md:w-auto px-5 py-3 md:py-2.5 rounded-full text-[13px] font-semibold border border-slate-300 text-slate-700">
                 <PhoneCall size={14} /> Llamar ahora
               </a>
             </div>
@@ -423,7 +471,7 @@ export default function LandingPage() {
 
       {/* ── FAQ ── */}
       <section className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">
-        <h2 className="text-[24px] md:text-[28px] font-extrabold mb-1" style={{ color: AZUL }}>PREGUNTAS FRECUENTES</h2>
+        <h2 className="text-[24px] md:text-[28px] font-extrabold mb-1" style={{ color: AZUL_OSCURO }}>PREGUNTAS FRECUENTES</h2>
         <div className="w-14 h-1 rounded-full mb-2" style={{ background: AZUL_BRILLANTE }} />
         <p className="text-[13.5px] text-slate-500 mb-8">Resolvemos las dudas más comunes sobre nuestros servicios y equipos médicos</p>
 
@@ -434,11 +482,11 @@ export default function LandingPage() {
               <div key={i} className="rounded-2xl border border-slate-200 overflow-hidden">
                 <button onClick={() => setFaqAbierta(abierta ? -1 : i)}
                   className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left">
-                  <span className="text-[14px] font-bold" style={{ color: AZUL }}>{f.q}</span>
+                  <span className="text-[14px] font-bold" style={{ color: AZUL_OSCURO }}>{f.q}</span>
                   <ChevronDown size={18} className={`flex-shrink-0 text-slate-400 transition-transform ${abierta ? 'rotate-180' : ''}`} />
                 </button>
                 {abierta && (
-                  <div className="px-5 pb-4 text-[13px] text-slate-500 leading-relaxed">{f.a}</div>
+                  <div className="px-5 pb-4 text-[13px] text-slate-500 leading-relaxed text-justify">{f.a}</div>
                 )}
               </div>
             )
@@ -449,7 +497,7 @@ export default function LandingPage() {
       {/* ── FOOTER ── */}
       <footer className="text-white py-10" style={{ background: AZUL_OSCURO }}>
         <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <Logo light />
+          <Logo light size={40} />
           <p className="text-[12px] text-blue-100/60 text-center">
             © {new Date().getFullYear()} Ingemedic de Colombia S.A.S. · Todos los derechos reservados
           </p>
