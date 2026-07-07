@@ -83,7 +83,7 @@ export default function LoginPage() {
   const logoSrc = empresa?.logo_url || '/logo.png'
 
   return (
-    <div className="relative h-screen w-full overflow-hidden" style={{ background: '#1B3A6B' }}>
+    <div className="relative h-screen w-full overflow-hidden bg-white md:bg-[#1B3A6B]">
       {/* Mitad derecha — ahora más angosta (35%). Foto atenuada con un tinte NEUTRO
           (gris oscuro, no azul) para que no se vea "tan azul" */}
       <div className="hidden md:block absolute inset-y-0 right-0 w-[45%] bg-cover bg-center"
@@ -107,13 +107,13 @@ export default function LoginPage() {
       </div>
 
       {/* Mitad izquierda — ahora más ancha (65%), donde vive el login */}
-      <div className="absolute inset-y-0 left-0 w-full md:w-[55%]"
+      <div className="hidden md:block absolute inset-y-0 left-0 w-full md:w-[55%]"
         style={{ background: 'linear-gradient(160deg, #1B3A6B 0%, #14315C 100%)' }} />
 
       {/* Card flotante — centrada verticalmente, superpuesta cerca del borde entre
           las 2 mitades (en móvil, centrada sobre el color sólido nada más) */}
-      <div className="absolute inset-y-0 left-0 w-full md:w-[55%] flex items-center justify-center px-4 md:px-0">
-        <div className="w-full max-w-[400px] bg-white rounded-[24px] shadow-2xl p-8 md:p-11">
+      <div className="absolute inset-y-0 left-0 w-full md:w-[55%] flex items-center justify-center px-6 md:px-0">
+        <div className="w-full max-w-[400px] md:bg-white md:rounded-[24px] md:shadow-2xl p-0 md:p-11">
           <h2 className="text-[25px] font-extrabold text-[#1B3A6B] mb-1 text-center">¡Hola de nuevo!</h2>
           <p className="text-[15px] text-slate-400 mb-7 text-center">Ingresa con tu correo o nombre de usuario.</p>
 
