@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -15,16 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
   const [showPass, setShowPass]     = useState(false)
-  const [empresa, setEmpresa]       = useState(null)
   const router = useRouter()
-
-  useEffect(() => {
-    createClient()
-      .from('configuracion_empresa')
-      .select('logo_url, razon_social')
-      .single()
-      .then(({ data }) => { if (data) setEmpresa(data) })
-  }, [])
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -80,7 +71,7 @@ export default function LoginPage() {
     window.location.href = '/admin/dashboard'
   }
 
-  const logoSrc = empresa?.logo_url || '/logo.png'
+  const logoSrc = '/images/logo.png'
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-white md:bg-[#1B3A6B]">
@@ -95,9 +86,9 @@ export default function LoginPage() {
           <div className="w-64 h-64 rounded-full flex items-center justify-center overflow-hidden bg-white shadow-lg">
             <Image
               src={logoSrc}
-              alt={empresa?.razon_social || 'Logo'}
-              width={56}
-              height={56}
+              alt="Logo"
+              width={400}
+              height={400}
               className="object-contain"
               style={{ width: 'auto', height: '200px', maxWidth: '200px' }}
               priority
