@@ -235,14 +235,14 @@ export default function Sidebar({ usuario, empresa }) {
             <div key={id} data-tour={id} className="hidden" />
           ))}
         </nav>
-
+        {/*
         <div className="px-3 pb-2">
           <button onClick={() => window.dispatchEvent(new Event('reiniciar-tour'))}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-[9px] text-[12px] font-medium text-slate-500 hover:bg-slate-50 hover:text-[#D81B43] transition-all border border-dashed border-slate-200 hover:border-[#D81B43]/30">
             <span className="w-[18px] flex items-center justify-center text-slate-400">{ICONS.map}</span>
             Tour del sistema
           </button>
-        </div>
+        </div>*/}
 
         <div className="px-4 py-3 border-t border-slate-100 flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-full bg-[#E53935] flex items-center justify-center text-[12px] font-bold text-white flex-shrink-0">
