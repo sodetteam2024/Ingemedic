@@ -15,14 +15,14 @@ export default async function Page() {
     '@type': 'LocalBusiness',
     name: 'Ingemedic de Colombia S.A.S.',
     description:
-      'Alquiler de equipos biomédicos y suministro de oxígeno medicinal en Valledupar y el departamento del César, Colombia.',
+      'Alquiler de equipos biomédicos y suministro de oxígeno medicinal en Valledupar y el departamento del Cesar, Colombia.',
     url: 'https://ingemedic.com.co',
-    areaServed: ['Valledupar', 'César'],
+    areaServed: ['Valledupar', 'Cesar'],
     address: {
       '@type': 'PostalAddress',
       ...(empresa?.dir && { streetAddress: empresa.dir }),
       addressLocality: 'Valledupar',
-      addressRegion: 'César',
+      addressRegion: 'Cesar',
       addressCountry: 'CO',
     },
     ...(empresa?.tel && { telephone: empresa.tel }),

@@ -16,25 +16,25 @@ const geistMono = Geist_Mono({
 export const metadata = {
   metadataBase: new URL("https://ingemedic.com.co"),
   title: {
-    default: "Ingemedic de Colombia S.A.S. — Alquiler de equipos biomédicos en Valledupar y César",
+    default: "Ingemedic de Colombia S.A.S. — Alquiler de equipos biomédicos en Valledupar y Cesar",
     template: "%s | Ingemedic",
   },
   description:
-    "Ingemedic de Colombia S.A.S. ofrece alquiler de equipos biomédicos y suministro de oxígeno medicinal en Valledupar y municipios del departamento del César, Colombia.",
+    "Ingemedic de Colombia S.A.S. ofrece alquiler de equipos biomédicos y suministro de oxígeno medicinal en Valledupar y municipios del departamento del Cesar, Colombia.",
   keywords: [
     "alquiler equipos biomédicos Valledupar",
     "oxígeno medicinal Valledupar",
-    "equipos médicos César",
+    "equipos médicos Cesar",
     "alquiler camas hospitalarias Valledupar",
-    "oxígeno medicinal César",
+    "oxígeno medicinal Cesar",
     "equipos biomédicos Cesar Colombia",
     "Ingemedic Colombia",
     "homecare Valledupar",
   ],
   openGraph: {
-    title: "Ingemedic de Colombia S.A.S. — Alquiler de equipos biomédicos en Valledupar y César",
+    title: "Ingemedic de Colombia S.A.S. — Alquiler de equipos biomédicos en Valledupar y Cesar",
     description:
-      "Ingemedic de Colombia S.A.S. ofrece alquiler de equipos biomédicos y suministro de oxígeno medicinal en Valledupar y municipios del departamento del César, Colombia.",
+      "Ingemedic de Colombia S.A.S. ofrece alquiler de equipos biomédicos y suministro de oxígeno medicinal en Valledupar y municipios del departamento del Cesar, Colombia.",
     url: "https://ingemedic.com.co",
     siteName: "Ingemedic",
     locale: "es_CO",
