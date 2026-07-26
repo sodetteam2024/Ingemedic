@@ -98,7 +98,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     if (search) result = result.filter(e => {
       const atrs = e.atributos || {}
       return Object.values(atrs).some(v => v?.toString().toLowerCase().includes(search.toLowerCase())) ||
-        e.serial?.toLowerCase().includes(search.toLowerCase()) ||
         e.codigo?.toLowerCase().includes(search.toLowerCase())
     })
     if (filtroEstado) result = result.filter(e => e.estado?.nombre === filtroEstado)
@@ -211,12 +210,12 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
   function abrirModalNueva() {
     const estadoDisponible = estados.find(e => e.nombre === 'Disponible')
-    setFormUnidad({ serial: '', codigo: '', estado_id: estadoDisponible?.id || '', atributos: {} })
+    setFormUnidad({ codigo: '', estado_id: estadoDisponible?.id || '', atributos: {} })
     setModalNueva(true)
   }
 
   async function guardarUnidad() {
-    for (const campo of camposUnidad.filter(c => c.clave !== 'serial' && c.clave !== 'codigo')) {
+    for (const campo of camposUnidad.filter(c => c.clave !== 'codigo')) {
       if (campo.obligatorio && !formUnidad.atributos[campo.clave]?.toString().trim()) {
         showToast(`El campo "${campo.nombre}" es obligatorio`, 'error'); return
       }
@@ -224,13 +223,12 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     setSaving(true)
     const { data: newUnit, error } = await supabase.from('equipos').insert({
       tipo_equipo_id: tipoActual.id,
-      serial:         formUnidad.serial?.trim() || null,
       codigo:         formUnidad.codigo?.trim() || null,
       estado_id:      formUnidad.estado_id || null,
       atributos:      Object.keys(formUnidad.atributos).length > 0 ? formUnidad.atributos : null,
     }).select('id').single()
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
-    registrarBitacora({ modulo: 'inventario', accion: 'crear', entidad: 'equipo', entidad_id: newUnit?.id, detalle: { codigo: formUnidad.codigo?.trim() || null, serial: formUnidad.serial?.trim() || null } })
+    registrarBitacora({ modulo: 'inventario', accion: 'crear', entidad: 'equipo', entidad_id: newUnit?.id, detalle: { codigo: formUnidad.codigo?.trim() || null } })
     showToast('Equipo registrado')
     setSaving(false)
     setModalNueva(false)
@@ -515,7 +513,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                             onClick={() => setDrawer(eq)}>
                             {camposUnidad.map(c => (
                               <td key={c.clave} className="px-4 py-3 text-[13px] text-slate-600">
-                                {c.clave === 'serial' || c.clave === 'codigo'
+                                {c.clave === 'codigo'
                                   ? <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
                                       {eq.atributos?.[c.clave] || eq[c.clave] || '—'}
                                     </span>
@@ -595,7 +593,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
             <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
               <div>
                 <div className="text-[16px] font-bold text-slate-800">
-                  {drawer.atributos?.codigo || drawer.codigo || drawer.atributos?.serial || drawer.serial || 'Equipo'}
+                  {drawer.atributos?.codigo || drawer.codigo || 'Equipo'}
                   {tipoActual && <span className="text-slate-400 font-normal ml-2">— {nombreTipo(tipoActual)}</span>}
                 </div>
                 <div className="text-[12px] text-slate-400 mt-0.5">{catActual?.nombre}</div>
@@ -631,7 +629,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                         {drawer.estado?.nombre || '—'}
                       </span>
                     </div>
-                    {camposUnidad.filter(c => c.clave !== 'serial' && c.clave !== 'codigo').map(c => (
+                    {camposUnidad.filter(c => c.clave !== 'codigo').map(c => (
                       <div key={c.clave} className="flex justify-between text-[12.5px]">
                         <span className="text-slate-400">{c.nombre}</span>
                         <span className="font-medium text-slate-700 text-right ml-4">{formatearValor(drawer.atributos?.[c.clave], c.tipo)}</span>
@@ -839,17 +837,10 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                     </div>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Serial</label>
-                    <input value={formUnidad.serial || ''} onChange={e => setFormUnidad(f => ({ ...f, serial: e.target.value }))}
-                      placeholder="ej. SN-001234" className={inputCls} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Código interno</label>
-                    <input value={formUnidad.codigo || ''} onChange={e => setFormUnidad(f => ({ ...f, codigo: e.target.value }))}
-                      placeholder="ej. EQ-001" className={inputCls} />
-                  </div>
+                <div>
+                  <label className={labelCls}>Código interno</label>
+                  <input value={formUnidad.codigo || ''} onChange={e => setFormUnidad(f => ({ ...f, codigo: e.target.value }))}
+                    placeholder="ej. EQ-001" className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Estado</label>
@@ -857,10 +848,10 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                     {estados.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
                   </select>
                 </div>
-                {camposUnidad.filter(c => c.clave !== 'serial' && c.clave !== 'codigo').length > 0 && (
+                {camposUnidad.filter(c => c.clave !== 'codigo').length > 0 && (
                   <div className="border-t border-slate-100 pt-4 space-y-3">
                     <div className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-400">Columnas de la unidad</div>
-                    {camposUnidad.filter(c => c.clave !== 'serial' && c.clave !== 'codigo').map(campo => (
+                    {camposUnidad.filter(c => c.clave !== 'codigo').map(campo => (
                       <div key={campo.clave}>
                         <label className={labelCls}>{campo.nombre}{campo.obligatorio && <span className="text-[#D81B43] ml-1">*</span>}</label>
                         {renderCampo(campo, formUnidad.atributos, atrs => setFormUnidad(f => ({ ...f, atributos: atrs })))}

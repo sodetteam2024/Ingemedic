@@ -96,7 +96,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
 
   const filtrados = useMemo(() => {
     return (mantenimientos || []).filter(m => {
-      const mq = !search || [m.codigo, nombreEquipo(m.equipo), m.equipo?.serial, m.tecnico]
+      const mq = !search || [m.codigo, nombreEquipo(m.equipo), m.tecnico]
         .some(v => v?.toLowerCase().includes(search.toLowerCase()))
       const me = !filtroEstado || m.estado?.nombre === filtroEstado
       const mt = !filtroTipo   || m.tipo?.nombre   === filtroTipo
@@ -135,7 +135,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     })
     .select(`
       *,
-      equipo:equipos(id, codigo, serial,
+      equipo:equipos(id, codigo,
         tipo_equipo:tipos_equipo(id, nombre, atributos, categoria:categorias_equipo(id, nombre)),
         estado:estados_equipo(id, nombre)
       ),
@@ -293,7 +293,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     // Traer datos frescos de BD incluyendo actividades y adjuntos
     const { data: mantFresh } = await supabase.from('mantenimientos').select(`
       *,
-      equipo:equipos(id, codigo, serial,
+      equipo:equipos(id, codigo,
         tipo_equipo:tipos_equipo(id, nombre, atributos, categoria:categorias_equipo(id, nombre)),
         estado:estados_equipo(id, nombre)
       ),
@@ -360,7 +360,6 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     // Datos equipo
     y = seccion('DATOS DEL EQUIPO', [
       ['Equipo',      nombreEquipo(m.equipo)],
-      ['Serial',      m.equipo?.serial],
       ['Código',      m.equipo?.codigo],
       ['Categoría',   m.equipo?.tipo_equipo?.categoria?.nombre],
     ], y)
@@ -592,7 +591,6 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
               </div>
               <div className="mb-2">
                 <div className="text-[13px] font-semibold text-slate-700">{nombreEquipo(m.equipo)}</div>
-                <div className="text-[11px] font-mono text-slate-400">{m.equipo?.serial}</div>
               </div>
               <div className="flex items-center gap-3 text-[11px] text-slate-400 mb-3 flex-wrap">
                 {m.tecnico && <span>Técnico: {m.tecnico}</span>}
@@ -651,7 +649,6 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                     </td>
                     <td className="px-4 py-3">
                       <div className="text-[13px] font-semibold text-slate-700 truncate max-w-[160px]">{nombreEquipo(m.equipo)}</div>
-                      <div className="text-[11px] font-mono text-slate-400">{m.equipo?.serial}</div>
                     </td>
                     <td className="px-4 py-3"><TipoBadge nombre={m.tipo?.nombre} /></td>
                     <td className="px-4 py-3 text-[12.5px] text-slate-500">{m.tecnico || '—'}</td>
@@ -691,7 +688,6 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
               <div>
                 <div className="text-[11px] text-white/60">{drawer.tipo?.nombre} · {drawer.codigo}</div>
                 <div className="text-[15px] font-bold text-white">{nombreEquipo(drawer.equipo)}</div>
-                <div className="text-[12px] text-white/70 font-mono">{drawer.equipo?.serial}</div>
               </div>
               <div className="flex items-center gap-2">
                 {drawer.estado?.nombre === 'Cerrado' && (
@@ -847,7 +843,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                     <option value="">Seleccionar equipo...</option>
                     {equipos.map(eq => (
                       <option key={eq.id} value={eq.id}>
-                        {nombreEquipo(eq)} — {eq.serial} ({eq.estado?.nombre})
+                        {nombreEquipo(eq)} — {eq.codigo} ({eq.estado?.nombre})
                       </option>
                     ))}
                   </select>

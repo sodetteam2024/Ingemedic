@@ -332,7 +332,7 @@ export default function OrdenesClient({
         repartidor:usuarios!ordenes_servicio_repartidor_id_fkey(id, nombre),
         equipos:orden_equipos(
           id, equipo_id, fecha_entrega, fecha_devolucion,
-          equipo:equipos(id, codigo, serial,
+          equipo:equipos(id, codigo,
             tipo_equipo:tipos_equipo(id, nombre, atributos,
               categoria:categorias_equipo(id, nombre)
             )
@@ -806,7 +806,7 @@ export default function OrdenesClient({
                           <Package size={14} className="text-slate-400 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(oe.equipo)}</div>
-                            <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.serial} · {oe.equipo?.codigo}</div>
+                            <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.codigo}</div>
                           </div>
                         </div>
                       ))}
@@ -910,7 +910,7 @@ export default function OrdenesClient({
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
-                                <div className="text-[11px] font-mono text-slate-400">{eq.serial} · {eq.codigo}</div>
+                                <div className="text-[11px] font-mono text-slate-400">{eq.codigo}</div>
                               </div>
                               <div className="text-[11px] text-slate-400 flex-shrink-0">{eq.tipo_equipo?.categoria?.nombre}</div>
                             </button>

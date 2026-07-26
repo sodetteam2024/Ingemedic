@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import Papa from 'papaparse'
+import { randomUUID } from 'crypto'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,8 +10,10 @@ const supabaseAdmin = createClient(
 )
 
 function limpiar(val) {
-  if (!val || val.trim() === '' || val.trim().toUpperCase() === 'N/A') return null
-  return val.trim()
+  if (val === undefined || val === null) return null
+  const s = String(val).trim()
+  if (s === '' || s.toUpperCase() === 'N/A') return null
+  return s
 }
 
 function parsearFecha(str) {
@@ -28,26 +31,53 @@ function parsearFecha(str) {
   return null
 }
 
+function leerAtributos(fila, campos) {
+  const atributos = {}
+  for (const campo of campos) {
+    const val = fila[campo.clave]
+    if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim().toUpperCase() !== 'N/A') {
+      atributos[campo.clave] = campo.tipo === 'fecha'
+        ? (parsearFecha(val) ?? String(val).trim())
+        : String(val).trim()
+    }
+  }
+  return atributos
+}
+
+// Genera un código interno único para equipos.codigo (NOT NULL UNIQUE en la BD).
+// El usuario no lo ve ni lo llena — si en el futuro quieren un código legible,
+// se agrega como campo dinámico normal de la categoría, no aquí.
+function generarCodigoInterno() {
+  return `EQ-${randomUUID().slice(0, 8).toUpperCase()}`
+}
+
 export async function POST(request) {
   try {
-    const formData = await request.formData()
-    const tipo    = formData.get('tipo')
-    const archivo = formData.get('archivo')
-    const texto   = await archivo.text()
+    const formData    = await request.formData()
+    const tipoCarga   = formData.get('tipo')
+    const categoriaId = formData.get('categoria_id')
+    const archivo     = formData.get('archivo')
+    const texto       = await archivo.text()
+
+    if (tipoCarga !== 'equipos') {
+      return NextResponse.json({ error: 'Tipo no soportado' }, { status: 400 })
+    }
+    if (!categoriaId) {
+      return NextResponse.json({ error: 'Debes seleccionar una categoría antes de cargar' }, { status: 400 })
+    }
 
     const { data: filas, errors: parseErrors } = Papa.parse(texto, {
       header:          true,
       skipEmptyLines:  true,
       delimiter:       '',
-      transformHeader: h => h.trim().replace(/^\uFEFF/, '').replace(/;$/, ''),
-      transform:       v => v.trim(),
+      transformHeader: h => h.trim().replace(/^﻿/, '').replace(/;$/, ''),
+      transform:       v => (typeof v === 'string' ? v.trim() : v),
     })
 
     if (parseErrors.length > 0) {
       return NextResponse.json({ error: 'Error parseando CSV: ' + parseErrors[0].message }, { status: 400 })
     }
 
-    // Filtrar filas realmente vacías
     const filasFinales = filas.filter(f =>
       Object.values(f).some(v => v && v.trim() !== '' && v.trim().toUpperCase() !== 'N/A')
     )
@@ -56,168 +86,97 @@ export async function POST(request) {
       return NextResponse.json({ error: 'El archivo está vacío o mal formateado' }, { status: 400 })
     }
 
-    const resultados = { exitosos: 0, errores: [] }
+    const { data: cat } = await supabaseAdmin
+      .from('categorias_equipo')
+      .select('id, nombre, atributos_extra')
+      .eq('id', categoriaId)
+      .single()
 
-    // ── EQUIPOS ──────────────────────────────────────────────
-    if (tipo === 'equipos') {
-      const { data: categorias }       = await supabaseAdmin.from('categorias_equipo').select('id, nombre, atributos_extra').eq('activo', true)
-      const { data: tiposEquipo }      = await supabaseAdmin.from('tipos_equipo').select('id, marca, modelo, categoria_id').eq('activo', true)
-      const { data: estadoDisponible } = await supabaseAdmin.from('estados_equipo').select('id').eq('nombre', 'Disponible').single()
-
-      for (let i = 0; i < filasFinales.length; i++) {
-        const fila  = filasFinales[i]
-        const nFila = i + 2
-
-        if (!limpiar(fila.serial)) {
-          resultados.errores.push(`Fila ${nFila}: el serial es obligatorio`)
-          continue
-        }
-        if (!limpiar(fila.marca) || !limpiar(fila.modelo)) {
-          resultados.errores.push(`Fila ${nFila}: marca y modelo son obligatorios`)
-          continue
-        }
-        if (!limpiar(fila.categoria)) {
-          resultados.errores.push(`Fila ${nFila}: la categoría es obligatoria`)
-          continue
-        }
-
-        // Resolver categoría
-        const cat = categorias?.find(c => c.nombre.toLowerCase() === fila.categoria.toLowerCase())
-        if (!cat) {
-          resultados.errores.push(`Fila ${nFila}: categoría "${fila.categoria}" no existe en el sistema`)
-          continue
-        }
-
-        // Resolver tipo de equipo — si no existe lo crea
-        let tipoObj = tiposEquipo?.find(t =>
-          t.marca.toLowerCase()  === fila.marca.toLowerCase() &&
-          t.modelo.toLowerCase() === fila.modelo.toLowerCase() &&
-          t.categoria_id         === cat.id
-        )
-
-        if (!tipoObj) {
-          const { data: nuevoTipo, error: errTipo } = await supabaseAdmin
-            .from('tipos_equipo')
-            .insert({
-              categoria_id: cat.id,
-              marca:        fila.marca.trim(),
-              modelo:       fila.modelo.trim(),
-              invima:       limpiar(fila.invima),
-              activo:       true,
-            })
-            .select('id').single()
-
-          if (errTipo) {
-            resultados.errores.push(`Fila ${nFila}: error creando tipo de equipo — ${errTipo.message}`)
-            continue
-          }
-          tipoObj = nuevoTipo
-        }
-
-        // Verificar serial duplicado
-        const { data: existente } = await supabaseAdmin
-          .from('equipos').select('id').eq('serial', fila.serial.trim()).maybeSingle()
-        if (existente) {
-          resultados.errores.push(`Fila ${nFila}: serial "${fila.serial}" ya existe en inventario`)
-          continue
-        }
-
-        // Construir atributos extras de la categoría
-        const camposExtra = [
-          ...(cat.atributos_extra?.campos_tipo   || []),
-          ...(cat.atributos_extra?.campos_unidad || []),
-        ]
-        const atributos = {}
-        for (const campo of camposExtra) {
-          if (fila[campo.clave] !== undefined && fila[campo.clave] !== '') {
-            atributos[campo.clave] = fila[campo.clave]
-          }
-        }
-
-        // Insertar equipo
-        const { error } = await supabaseAdmin.from('equipos').insert({
-          tipo_equipo_id: tipoObj.id,
-          categoria_id:   cat.id,
-          marca:          fila.marca.trim(),
-          modelo:         fila.modelo.trim(),
-          serial:         fila.serial.trim(),
-          codigo:         limpiar(fila.codigo),
-          invima:         limpiar(fila.invima),
-          estado_id:      estadoDisponible?.id,
-          atributos:      Object.keys(atributos).length > 0 ? atributos : null,
-        })
-
-        if (error) {
-          resultados.errores.push(`Fila ${nFila}: ${error.message}`)
-        } else {
-          resultados.exitosos++
-        }
-      }
+    if (!cat) {
+      return NextResponse.json({ error: 'Categoría no encontrada' }, { status: 404 })
     }
 
-    // ── CLIENTES ──────────────────────────────────────────────
-    if (tipo === 'clientes') {
-      const { data: departamentos } = await supabaseAdmin.from('departamentos').select('id, nombre')
-      const { data: municipios }    = await supabaseAdmin.from('municipios').select('id, nombre, departamento_id')
+    const camposTipo   = cat.atributos_extra?.campos_tipo   || []
+    const camposUnidad = cat.atributos_extra?.campos_unidad || []
 
-      for (let i = 0; i < filasFinales.length; i++) {
-        const fila  = filasFinales[i]
-        const nFila = i + 2
+    const { data: tiposExistentes } = await supabaseAdmin
+      .from('tipos_equipo')
+      .select('id, nombre, atributos')
+      .eq('categoria_id', categoriaId)
+      .eq('activo', true)
 
-        if (!limpiar(fila.nombre)) {
-          resultados.errores.push(`Fila ${nFila}: el nombre es obligatorio`)
+    const tiposCache = [...(tiposExistentes || [])]
+
+    const { data: estadoDisponible } = await supabaseAdmin
+      .from('estados_equipo').select('id').eq('nombre', 'Disponible').single()
+
+    const resultados = { exitosos: 0, errores: [], tiposCreados: 0, tiposReutilizados: 0 }
+
+    for (let i = 0; i < filasFinales.length; i++) {
+      const fila  = filasFinales[i]
+      const nFila = i + 2
+
+      const nombreTipo = limpiar(fila.tipo)
+      if (!nombreTipo) {
+        resultados.errores.push(`Fila ${nFila}: el campo "tipo" es obligatorio`)
+        continue
+      }
+
+      const atributosTipo   = leerAtributos(fila, camposTipo)
+      const atributosUnidad = leerAtributos(fila, camposUnidad)
+
+      let tipoObj = tiposCache.find(t => t.nombre?.toLowerCase() === nombreTipo.toLowerCase())
+
+      if (tipoObj) {
+        resultados.tiposReutilizados++
+      } else {
+        const { data: nuevoTipo, error: errTipo } = await supabaseAdmin
+          .from('tipos_equipo')
+          .insert({
+            categoria_id: cat.id,
+            nombre:       nombreTipo,
+            atributos:    Object.keys(atributosTipo).length > 0 ? atributosTipo : null,
+            activo:       true,
+          })
+          .select('id, nombre, atributos').single()
+
+        if (errTipo) {
+          resultados.errores.push(`Fila ${nFila}: error creando tipo "${nombreTipo}" — ${errTipo.message}`)
           continue
         }
-        if (!limpiar(fila.nit_cc)) {
-          resultados.errores.push(`Fila ${nFila}: el documento es obligatorio`)
-          continue
-        }
-const tipoPersonaRaw = fila.tipo_persona?.toLowerCase().trim()
-if (!['natural', 'juridica', 'jurídica'].includes(tipoPersonaRaw)) {
-  resultados.errores.push(`Fila ${nFila}: tipo_persona debe ser "natural" o "juridica" (recibido: "${fila.tipo_persona}")`)
-  continue
-}
-const tipoPersona = tipoPersonaRaw === 'natural' ? 'Natural' : 'Jurídica'
-        // Resolver departamento y municipio
-        const dep = departamentos?.find(d => d.nombre.toLowerCase() === fila.departamento?.toLowerCase().trim())
-        const mun = municipios?.find(m =>
-          m.nombre.toLowerCase() === fila.municipio?.toLowerCase().trim() &&
-          (!dep || m.departamento_id === dep.id)
-        )
+        tipoObj = nuevoTipo
+        tiposCache.push(tipoObj)
+        resultados.tiposCreados++
+      }
 
-        // Verificar documento duplicado
-        const { data: existente } = await supabaseAdmin
-          .from('clientes').select('id').eq('nit_cc', fila.nit_cc.trim()).maybeSingle()
-        if (existente) {
-          resultados.errores.push(`Fila ${nFila}: documento "${fila.nit_cc}" ya existe`)
-          continue
-        }
+      // codigo se genera internamente, con reintento simple por si hay colisión (muy improbable)
+      let codigo = generarCodigoInterno()
+      for (let intento = 0; intento < 3; intento++) {
+        const { data: choque } = await supabaseAdmin.from('equipos').select('id').eq('codigo', codigo).maybeSingle()
+        if (!choque) break
+        codigo = generarCodigoInterno()
+      }
 
-        const { error } = await supabaseAdmin.from('clientes').insert({
-          tipo_persona:        tipoPersona,
-          nombre:              fila.nombre.trim(),
-          nit_cc:              fila.nit_cc.trim(),
-          digito_verificacion: limpiar(fila.digito_verificacion),
-          departamento_id:     dep?.id || null,
-          municipio_id:        mun?.id || null,
-          direccion:           limpiar(fila.direccion),
-          telefono:            limpiar(fila.telefono),
-          email:               limpiar(fila.email),
-          activo:              true,
-        })
+      const { error } = await supabaseAdmin.from('equipos').insert({
+        tipo_equipo_id: tipoObj.id,
+        codigo,
+        estado_id: estadoDisponible?.id,
+        atributos: Object.keys(atributosUnidad).length > 0 ? atributosUnidad : null,
+      })
 
-        if (error) {
-          resultados.errores.push(`Fila ${nFila}: ${error.message}`)
-        } else {
-          resultados.exitosos++
-        }
+      if (error) {
+        resultados.errores.push(`Fila ${nFila}: ${error.message}`)
+      } else {
+        resultados.exitosos++
       }
     }
 
     return NextResponse.json({
-      total:    filasFinales.length,
-      exitosos: resultados.exitosos,
-      errores:  resultados.errores,
+      total:             filasFinales.length,
+      exitosos:          resultados.exitosos,
+      errores:           resultados.errores,
+      tiposCreados:      resultados.tiposCreados,
+      tiposReutilizados: resultados.tiposReutilizados,
     })
 
   } catch (error) {

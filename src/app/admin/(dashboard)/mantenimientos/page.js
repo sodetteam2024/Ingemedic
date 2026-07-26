@@ -16,7 +16,7 @@ export default async function MantenimientosPage() {
     supabase.from('mantenimientos').select(`
       *,
       equipo:equipos(
-        id, codigo, serial,
+        id, codigo,
         tipo_equipo:tipos_equipo(id, nombre, atributos,
           categoria:categorias_equipo(id, nombre)
         ),
@@ -31,7 +31,7 @@ export default async function MantenimientosPage() {
     `).order('fecha_creacion', { ascending: false }),
     supabase.from('tipos_mantenimiento').select('*').eq('activo', true).order('nombre'),
     supabase.from('equipos').select(`
-      id, codigo, serial,
+      id, codigo,
       tipo_equipo:tipos_equipo(id, nombre, atributos,
         categoria:categorias_equipo(id, nombre)
       ),

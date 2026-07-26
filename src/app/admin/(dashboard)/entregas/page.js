@@ -23,7 +23,7 @@ export default async function EntregasPage() {
         cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
         equipos:orden_equipos(
           id, equipo_id,
-          equipo:equipos(id, codigo, serial,
+          equipo:equipos(id, codigo,
             tipo_equipo:tipos_equipo(id, nombre, atributos)
           )
         ),
@@ -44,7 +44,7 @@ export default async function EntregasPage() {
       estado:estados_orden(id, nombre),
       equipos:orden_equipos(
         id, equipo_id,
-        equipo:equipos(id, codigo, serial,
+        equipo:equipos(id, codigo,
           tipo_equipo:tipos_equipo(id, nombre, atributos)
         )
       ),

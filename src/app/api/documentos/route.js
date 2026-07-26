@@ -76,7 +76,7 @@ export async function POST(request) {
           repartidor:usuarios(nombre),
           equipos:orden_equipos(
             fecha_entrega, fecha_devolucion,
-            equipo:equipos(codigo, serial,
+            equipo:equipos(codigo,
               tipo_equipo:tipos_equipo(marca, modelo, invima,
                 categoria:categorias_equipo(nombre)
               )
@@ -103,7 +103,6 @@ export async function POST(request) {
         equipo_nombre:   eq?.equipo?.tipo_equipo?.categoria?.nombre || '',
         equipo_marca:    eq?.equipo?.tipo_equipo?.marca || '',
         equipo_modelo:   eq?.equipo?.tipo_equipo?.modelo || '',
-        equipo_serial:   eq?.equipo?.serial || '',
         equipo_codigo:   eq?.equipo?.codigo || '',
         equipo_invima:   eq?.equipo?.tipo_equipo?.invima || '',
       }
@@ -114,7 +113,7 @@ export async function POST(request) {
         .from('mantenimientos')
         .select(`
           *,
-          equipo:equipos(codigo, serial,
+          equipo:equipos(codigo,
             tipo_equipo:tipos_equipo(marca, modelo, invima,
               categoria:categorias_equipo(nombre)
             )
@@ -138,7 +137,6 @@ export async function POST(request) {
         equipo_nombre:   mant.equipo?.tipo_equipo?.categoria?.nombre || '',
         equipo_marca:    mant.equipo?.tipo_equipo?.marca || '',
         equipo_modelo:   mant.equipo?.tipo_equipo?.modelo || '',
-        equipo_serial:   mant.equipo?.serial || '',
         equipo_codigo:   mant.equipo?.codigo || '',
         equipo_invima:   mant.equipo?.tipo_equipo?.invima || '',
         cliente_nombre:  '',

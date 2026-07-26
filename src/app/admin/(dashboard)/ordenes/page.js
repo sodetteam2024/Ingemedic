@@ -24,7 +24,7 @@ export default async function OrdenesPage() {
       equipos:orden_equipos(
         id, equipo_id, fecha_entrega, fecha_devolucion,
         equipo:equipos(
-          id, codigo, serial,
+          id, codigo,
           tipo_equipo:tipos_equipo(id, nombre, atributos,
             categoria:categorias_equipo(id, nombre)
           )
@@ -39,7 +39,7 @@ export default async function OrdenesPage() {
     supabase.from('estados_orden').select('*').order('nombre'),
     supabase.from('plantillas_orden').select('id, nombre, descripcion').eq('activo', true).order('nombre'),
     supabase.from('equipos').select(`
-      id, codigo, serial, tipo_equipo_id,
+      id, codigo, tipo_equipo_id,
       tipo_equipo:tipos_equipo(id, nombre, atributos,
         categoria:categorias_equipo(id, nombre)
       ),

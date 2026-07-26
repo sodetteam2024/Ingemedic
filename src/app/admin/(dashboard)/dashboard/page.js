@@ -34,7 +34,7 @@ export default async function DashboardPage() {
 
     supabase.from('mantenimientos').select(`
       id, codigo, fecha_apertura,
-      equipo:equipos(id, serial, codigo, tipo_equipo:tipos_equipo(id, nombre, atributos)),
+      equipo:equipos(id, codigo, tipo_equipo:tipos_equipo(id, nombre, atributos)),
       estado:estados_mantenimiento(id, nombre),
       tipo:tipos_mantenimiento(id, nombre)
     `)

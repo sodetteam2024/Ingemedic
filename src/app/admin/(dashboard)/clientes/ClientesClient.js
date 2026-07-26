@@ -78,7 +78,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
         estado:estados_orden(id, nombre),
         equipos:orden_equipos(
           id, fecha_entrega, fecha_devolucion,
-          equipo:equipos(id, codigo, serial, tipo_equipo:tipos_equipo(id, nombre, atributos))
+          equipo:equipos(id, codigo, tipo_equipo:tipos_equipo(id, nombre, atributos))
         )
       `).eq('cliente_id', cliente.id).order('fecha_creacion', { ascending: false }),
       supabase.from('entregas').select(`
@@ -154,10 +154,10 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
     filas.push([])
 
     filas.push(['EQUIPOS ACTUALMENTE EN PRÉSTAMO'])
-    filas.push(['Equipo', 'Serial', 'Código', 'Orden', 'Desde'])
+    filas.push(['Equipo', 'Código', 'Orden', 'Desde'])
     equiposEnPrestamo.forEach(oe => filas.push([
       oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || '',
-      oe.equipo?.serial || '', oe.equipo?.codigo || '', oe.orden?.codigo || '',
+      oe.equipo?.codigo || '', oe.orden?.codigo || '',
       oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '',
     ]))
     filas.push([])
@@ -516,7 +516,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                                   {oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || 'Equipo'}
                                 </div>
                                 <div className="text-[11px] text-slate-400 mt-0.5">
-                                  Serial: {oe.equipo?.serial || '—'} · Código: {oe.equipo?.codigo || '—'}
+                                  Código: {oe.equipo?.codigo || '—'}
                                 </div>
                                 <div className="text-[11px] text-slate-400 mt-0.5">
                                   OS {oe.orden?.codigo} · desde {oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '—'}

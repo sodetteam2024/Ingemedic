@@ -325,7 +325,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       orden:ordenes_servicio(
         id, codigo, fecha_vigencia, fecha_entrega, observaciones,
         cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
-        equipos:orden_equipos(id, equipo_id, equipo:equipos(id, codigo, serial, tipo_equipo:tipos_equipo(id, nombre, atributos))),
+        equipos:orden_equipos(id, equipo_id, equipo:equipos(id, codigo, tipo_equipo:tipos_equipo(id, nombre, atributos))),
         plantillas:orden_plantillas(id, plantilla_id, firmado, firmado_por, firma_iniciales, fecha_firma, plantilla:plantillas_orden(id, nombre))
       ),
       cliente:clientes(id, nombre),
@@ -428,7 +428,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       orden:ordenes_servicio(
         id, codigo, fecha_vigencia, observaciones,
         cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
-        equipos:orden_equipos(id, equipo:equipos(id, codigo, serial, tipo_equipo:tipos_equipo(id, nombre, atributos))),
+        equipos:orden_equipos(id, equipo:equipos(id, codigo, tipo_equipo:tipos_equipo(id, nombre, atributos))),
         plantillas:orden_plantillas(id, firmado, firmado_por, firma_iniciales, fecha_firma, plantilla:plantillas_orden(id, nombre, contenido))
       ),
       cliente:clientes(id, nombre),
@@ -513,7 +513,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         doc.setTextColor(30, 30, 30)
         doc.text(`• ${nombre}`, M + 2, y)
         doc.setTextColor(120, 120, 120)
-        doc.text(`Serial: ${oe.equipo?.serial || '—'} · Código: ${oe.equipo?.codigo || '—'}`, M + 8, y + 4.5)
+        doc.text(`Código: ${oe.equipo?.codigo || '—'}`, M + 8, y + 4.5)
         y += 10
       })
       y += 2
@@ -599,7 +599,6 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         orden_fecha:  e.fecha_completada ? new Date(e.fecha_completada).toLocaleDateString('es-CO') : '',
         cliente_nombre: e.orden?.cliente?.nombre || '',
         equipo_nombre: primerEquipo?.tipo_equipo?.atributos?.nombre || primerEquipo?.tipo_equipo?.nombre || '',
-        equipo_serial: primerEquipo?.serial || '',
         equipo_codigo: primerEquipo?.codigo || '',
       }
 
@@ -1032,7 +1031,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                         <Package size={13} className="text-slate-400 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(oe.equipo)}</div>
-                          <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.serial} · {oe.equipo?.codigo}</div>
+                          <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.codigo}</div>
                         </div>
                       </div>
                     ))}
@@ -1156,7 +1155,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                       <Package size={13} className="text-slate-400 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(oe.equipo)}</div>
-                        <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.serial} · {oe.equipo?.codigo}</div>
+                        <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.codigo}</div>
                       </div>
                     </div>
                   ))}
