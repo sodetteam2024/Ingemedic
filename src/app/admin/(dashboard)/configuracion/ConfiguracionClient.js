@@ -779,7 +779,7 @@ export default function ConfiguracionClient({
                     const cat = cats.find(c => c.id === (t.categoria_id ?? t.categoria?.id))
                     const camposTipo = cat?.atributos_extra?.campos_tipo || []
                     const expanded = tipoExpandido === t.id
-                    const nombre = t.atributos?.nombre || t.nombre || '—'
+                    const nombre = t.nombre || t.atributos?.nombre || '—'
                     const tieneIcono   = t.imagen_url?.startsWith('icono:')
                     const tieneImagen  = t.imagen_url && !tieneIcono
                     const iconoClave   = tieneIcono ? t.imagen_url.replace('icono:', '') : null
