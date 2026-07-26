@@ -82,7 +82,15 @@ export default function HistorialCargas() {
   }
 
   useEffect(() => {
-    cargarHistorial()
+    ;(async () => {
+      const { data } = await supabase
+        .from('cargas_masivas')
+        .select('*, categoria:categorias_equipo(id, nombre)')
+        .order('fecha_inicio', { ascending: false })
+        .limit(20)
+      setCargas(data || [])
+      setCargando(false)
+    })()
     const canal = supabase
       .channel('historial-cargas')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cargas_masivas' }, cargarHistorial)
