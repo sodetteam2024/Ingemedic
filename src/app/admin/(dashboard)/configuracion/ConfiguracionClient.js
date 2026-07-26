@@ -8,6 +8,7 @@ import {
   Check, Save, ClipboardList, Download, CheckCircle2, Smartphone
 } from 'lucide-react'
 import { GaleriaIconos, IconoEquipo } from '@/components/inventario/IconosEquipo'
+import HistorialCargas from '@/components/inventario/HistorialCargas'
 
 const NAV = [
   { id: 'usuarios',   label: 'Usuarios',               icon: Users,         grupo: 'Acceso' },
@@ -1017,6 +1018,10 @@ export default function ConfiguracionClient({
                 <CargueEquipos cats={cats} />
                 <CargueCard titulo="Clientes" tipo="clientes" sub="Importa clientes desde CSV"
                   cols="tipo_persona, nombre, nit_cc, departamento, municipio, direccion, telefono, email" />
+                <div className="mt-6">
+                  <div className="text-[14px] font-bold text-slate-700 mb-3">Historial de cargas</div>
+                  <HistorialCargas />
+                </div>
               </div>
             )}
 

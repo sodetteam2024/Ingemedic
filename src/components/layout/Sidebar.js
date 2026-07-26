@@ -63,6 +63,7 @@ export default function Sidebar({ usuario, empresa }) {
 
   // Estado inicial SIEMPRE igual en servidor y cliente (evita hydration mismatch).
   // Las preferencias guardadas se cargan después del montaje, no durante el render inicial.
+  const [cargasProcesando, setCargasProcesando] = useState(0)
   const [mobileMode, setMobileMode] = useState('barra')
   const [paginaBarra, setPaginaBarra]   = useState(0)
   const [panelAbierto, setPanelAbierto] = useState(false)
@@ -98,6 +99,23 @@ export default function Sidebar({ usuario, empresa }) {
       mobileMode === 'barra' ? '78px' : '0px'
     )
   }, [mobileMode])
+
+  useEffect(() => {
+    async function fetchProcesando() {
+      const { count } = await supabase
+        .from('cargas_masivas')
+        .select('id', { count: 'exact', head: true })
+        .eq('estado', 'procesando')
+      setCargasProcesando(count || 0)
+    }
+    fetchProcesando()
+    const canal = supabase
+      .channel('sidebar-cargas')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cargas_masivas' }, fetchProcesando)
+      .subscribe()
+    return () => supabase.removeChannel(canal)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function logout() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -226,6 +244,9 @@ export default function Sidebar({ usuario, empresa }) {
                       {ICONS[item.icon]}
                     </span>
                     {item.label}
+                    {item.href === '/admin/inventario' && cargasProcesando > 0 && (
+                      <span className="ml-auto w-2 h-2 rounded-full bg-[#B45309] animate-pulse flex-shrink-0" title="Carga masiva en proceso" />
+                    )}
                   </Link>
                 )
               })}

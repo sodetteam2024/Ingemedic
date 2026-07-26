@@ -99,6 +99,14 @@ export async function POST(request) {
     const camposTipo   = cat.atributos_extra?.campos_tipo   || []
     const camposUnidad = cat.atributos_extra?.campos_unidad || []
 
+    const { data: carga } = await supabaseAdmin.from('cargas_masivas').insert({
+      categoria_id: categoriaId,
+      tipo_carga: 'equipos',
+      nombre_archivo: archivo.name,
+      total_filas: filasFinales.length,
+      estado: 'procesando',
+    }).select('id').single()
+
     const { data: tiposExistentes } = await supabaseAdmin
       .from('tipos_equipo')
       .select('id, nombre, atributos')
@@ -171,7 +179,19 @@ export async function POST(request) {
       }
     }
 
+    if (carga?.id) {
+      await supabaseAdmin.from('cargas_masivas').update({
+        exitosos:          resultados.exitosos,
+        tipos_creados:     resultados.tiposCreados,
+        tipos_reutilizados: resultados.tiposReutilizados,
+        errores:           resultados.errores.length > 0 ? resultados.errores : null,
+        estado:            resultados.errores.length > 0 ? 'con_errores' : 'completado',
+        fecha_fin:         new Date().toISOString(),
+      }).eq('id', carga.id)
+    }
+
     return NextResponse.json({
+      carga_id:          carga?.id || null,
       total:             filasFinales.length,
       exitosos:          resultados.exitosos,
       errores:           resultados.errores,

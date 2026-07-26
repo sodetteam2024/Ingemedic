@@ -425,6 +425,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     // Traer datos frescos incluyendo firmas actualizadas y contenido de plantillas
     const { data: entFresh } = await supabase.from('entregas').select(`
       *,
+      detalle_entrega(equipo_id, observaciones_equipo),
       orden:ordenes_servicio(
         id, codigo, fecha_vigencia, observaciones,
         cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
@@ -507,14 +508,23 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       doc.text(`EQUIPOS ${e.tipo === 'retiro' ? 'RETIRADOS' : 'ENTREGADOS'} (${equipos.length})`, M + 2, y + 4)
       y += 10
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
+      const detalleEntrega = e.detalle_entrega || []
       equipos.forEach(oe => {
         if (y > 250) { doc.addPage(); y = M }
         const nombre = oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || '—'
+        const detalle = detalleEntrega.find(d => d.equipo_id === oe.equipo?.id)
         doc.setTextColor(30, 30, 30)
         doc.text(`• ${nombre}`, M + 2, y)
         doc.setTextColor(120, 120, 120)
         doc.text(`Código: ${oe.equipo?.codigo || '—'}`, M + 8, y + 4.5)
-        y += 10
+        if (detalle?.observaciones_equipo) {
+          doc.setTextColor(100, 100, 100)
+          const obsLines = doc.splitTextToSize(`Obs: ${detalle.observaciones_equipo}`, CW - 14)
+          doc.text(obsLines, M + 8, y + 9)
+          y += obsLines.length * 3.8 + 7
+        } else {
+          y += 10
+        }
       })
       y += 2
     }

@@ -4,8 +4,22 @@ import Image from 'next/image'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriangle, Clock } from 'lucide-react'
+import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriangle, Clock, CheckCircle2, Box, Hash, Tag, Layers, SlidersHorizontal } from 'lucide-react'
 import { IconoEquipo, GaleriaIconos } from '@/components/inventario/IconosEquipo'
+
+const CAMPO_FILTRO_STYLES = {
+  modelo:  { color: '#2EB5D4', Icon: Box },
+  serie:   { color: '#D81B43', Icon: Hash },
+  codigo:  { color: '#D81B43', Icon: Hash },
+  marca:   { color: '#6D28D9', Icon: Tag },
+  tipo:    { color: '#B45309', Icon: Layers },
+}
+const FILTRO_PALETTE = [
+  { color: '#2EB5D4', Icon: Box },
+  { color: '#6D28D9', Icon: Tag },
+  { color: '#B45309', Icon: Layers },
+  { color: '#0E7490', Icon: SlidersHorizontal },
+]
 
 const ESTADO_STYLES = {
   'Disponible':        { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
@@ -40,6 +54,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   const [tipoActual, setTipoActual] = useState(null)
   const [search, setSearch]         = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
+  const [filtrosCampos, setFiltrosCampos] = useState({})
   const [drawer, setDrawer]         = useState(null)
   const [modalNueva, setModalNueva] = useState(false)
   const [modalTipo, setModalTipo]   = useState(false)
@@ -101,8 +116,13 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         e.codigo?.toLowerCase().includes(search.toLowerCase())
     })
     if (filtroEstado) result = result.filter(e => e.estado?.nombre === filtroEstado)
+    Object.entries(filtrosCampos).forEach(([clave, valor]) => {
+      if (valor) result = result.filter(e =>
+        e.atributos?.[clave]?.toString().toLowerCase().includes(valor.toLowerCase())
+      )
+    })
     return result
-  }, [equipos, tipoActual, search, filtroEstado])
+  }, [equipos, tipoActual, search, filtroEstado, filtrosCampos])
 
   const camposTipo   = catActual?.atributos_extra?.campos_tipo   || []
   const camposUnidad = catActual?.atributos_extra?.campos_unidad || []
@@ -117,6 +137,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     setTipoActual(tipo)
     setSearch('')
     setFiltroEstado('')
+    setFiltrosCampos({})
     setVista('unidades')
   }
 
@@ -467,19 +488,48 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         {/* VISTA UNIDADES */}
         {vista === 'unidades' && (
           <div>
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <div className="flex items-center gap-2 mb-3">
               <div className="relative flex-1 min-w-[160px] max-w-[300px]">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar..."
                   className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
               </div>
-              <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white text-slate-600">
-                <option value="">Todos los estados</option>
-                {estados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
-              </select>
               <div className="text-[12px] text-slate-400 ml-auto">
                 {unidadesDeTipo.length} unidad{unidadesDeTipo.length !== 1 ? 'es' : ''}
+              </div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-3 md:p-4 mb-4 shadow-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <CheckCircle2 size={13} color="#0F7B55" />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.03em] text-slate-500">Estado</span>
+                  </div>
+                  <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white text-slate-600 h-[38px]">
+                    <option value="">Todos</option>
+                    {estados.map(e => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                  </select>
+                </div>
+                {camposUnidad.map((campo, idx) => {
+                  const style = CAMPO_FILTRO_STYLES[campo.clave] || FILTRO_PALETTE[idx % FILTRO_PALETTE.length]
+                  const Icon = style.Icon
+                  return (
+                    <div key={campo.clave}>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <Icon size={13} color={style.color} />
+                        <span className="text-[11px] font-bold uppercase tracking-[0.03em] text-slate-500">{campo.nombre}</span>
+                      </div>
+                      <input
+                        type="text"
+                        value={filtrosCampos[campo.clave] || ''}
+                        onChange={e => setFiltrosCampos(f => ({ ...f, [campo.clave]: e.target.value }))}
+                        placeholder="Filtrar…"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white h-[38px] placeholder:text-slate-400"
+                      />
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
