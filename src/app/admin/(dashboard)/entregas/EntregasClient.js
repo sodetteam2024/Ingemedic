@@ -8,6 +8,7 @@ import {
   MapPin, Phone, FileText, User, AlertTriangle,
   ArrowUpRight, ArrowDownLeft, Filter, Calendar
 } from 'lucide-react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const ESTADOS_ENTREGA = {
   NoIniciada: '14b43a74-439d-4647-855e-4693339db133',
@@ -221,11 +222,16 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
   const [tab, setTab]                     = useState('activas') // 'activas' | 'historial'
   const [modalExito, setModalExito]       = useState(null)
   const [modalOrden, setModalOrden]       = useState(null)
-  const [modalRegistro, setModalRegistro] = useState(null)
-  const [paso, setPaso]                   = useState(0) // 0=nombre, 1..n=docs
-  const [saving, setSaving]               = useState(false)
-  const [toast, setToast]                 = useState(null)
-  const [regForm, setRegForm]             = useState({ recibido_por: '', observaciones: '', firmas: {} })
+  const [modalRegistro, setModalRegistro]       = useState(null)
+  const [paso, setPaso]                         = useState(0) // 0=nombre, 1..n=docs
+  const [saving, setSaving]                     = useState(false)
+  const [toast, setToast]                       = useState(null)
+  const [regForm, setRegForm]                   = useState({ recibido_por: '', observaciones: '', firmas: {} })
+  const [formDirty, setFormDirty]               = useState(false)
+  const [confirmarSalirRegistro, setConfirmarSalirRegistro] = useState(false)
+
+  function cerrarRegistro() { setModalRegistro(null); setFormDirty(false) }
+  function intentarCerrarRegistro() { if (formDirty) setConfirmarSalirRegistro(true); else cerrarRegistro() }
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
@@ -349,6 +355,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     setModalRegistro(entrega)
     setPaso(0)
     setRegForm({ recibido_por: entrega.recibido_por || '', observaciones: '', firmas: {} })
+    setFormDirty(false)
   }
 
   // ── COMPLETAR ENTREGA ────────────────────────────────────
@@ -416,7 +423,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       duracion,
       fecha: ahora,
     })
-    setModalRegistro(null)
+    cerrarRegistro()
     router.refresh()
   }
 
@@ -1212,7 +1219,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       {/* ── MODAL WIZARD FIRMA ── */}
       {modalRegistro && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => !esPasoFirma && setModalRegistro(null)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => !esPasoFirma && intentarCerrarRegistro()} />
           <div className={`fixed z-50 flex ${esPasoFirma ? 'inset-0 md:items-center md:justify-center md:p-4' : 'inset-0 items-center justify-center p-4'}`}>
             <div className={`bg-white flex flex-col shadow-2xl overflow-hidden transition-all ${
               esPasoFirma
@@ -1239,13 +1246,13 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
                   ))}
                 </div>
                 {!esPasoFirma && (
-                  <button onClick={() => setModalRegistro(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                  <button onClick={() => intentarCerrarRegistro()} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
                     <X size={16} />
                   </button>
                 )}
               </div>
 
-              <div className={`flex-1 overflow-y-auto px-6 py-5 ${esPasoFirma ? 'flex flex-col' : ''}`}>
+              <div className={`flex-1 overflow-y-auto px-6 py-5 ${esPasoFirma ? 'flex flex-col' : ''}`} onChange={() => setFormDirty(true)}>
                 {/* PASO 0 — Nombre receptor */}
                 {paso === 0 && (
                   <div className="space-y-4">
@@ -1320,7 +1327,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
               </div>
 
               <div className="px-6 py-4 border-t border-slate-200 flex justify-between flex-shrink-0 bg-white">
-                <button onClick={() => paso > 0 ? setPaso(p => p - 1) : setModalRegistro(null)}
+                <button onClick={() => paso > 0 ? setPaso(p => p - 1) : intentarCerrarRegistro()}
                   className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
                   {paso === 0 ? 'Cancelar' : '← Anterior'}
                 </button>
@@ -1407,6 +1414,17 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
           {toast.msg}
         </div>
       )}
+
+      <ConfirmDialog
+        abierto={confirmarSalirRegistro}
+        titulo="¿Descartar cambios?"
+        mensaje="Tienes cambios sin guardar. ¿Deseas salir sin guardar?"
+        textoConfirmar="Sí, salir"
+        textoCancelar="Seguir editando"
+        tipo="default"
+        onConfirmar={() => { setConfirmarSalirRegistro(false); cerrarRegistro() }}
+        onCancelar={() => setConfirmarSalirRegistro(false)}
+      />
     </div>
   )
 }

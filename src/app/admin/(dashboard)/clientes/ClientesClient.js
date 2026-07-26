@@ -7,6 +7,7 @@ import {
   Phone, Mail, MapPin, FileText, AlertTriangle, ChevronRight,
   Package, Truck, Clock, ArrowDownLeft, ArrowUpRight, Download, UserPlus
 } from 'lucide-react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#D81B43] bg-white transition-colors placeholder:text-slate-400'
 const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5'
@@ -28,6 +29,8 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   const [saving, setSaving]               = useState(false)
   const [toast, setToast]                 = useState(null)
   const [form, setForm]                   = useState({})
+  const [formDirty, setFormDirty]         = useState(false)
+  const [confirmarSalir, setConfirmarSalir] = useState(false)
   const [municipiosFiltrados, setMunicipiosFiltrados] = useState([])
   const [historial, setHistorial]         = useState({ loading: false, ordenes: [], entregas: [] })
   const [tabHoja, setTabHoja]             = useState('prestamo') // 'prestamo' | 'ordenes' | 'linea'
@@ -37,7 +40,11 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
     setTimeout(() => setToast(null), 3000)
   }
 
+  function cerrarModal() { setModal(false); setFormDirty(false) }
+  function intentarCerrarModal() { if (formDirty) setConfirmarSalir(true); else cerrarModal() }
+
   function abrirModal(cliente = null) {
+    setFormDirty(false)
     if (cliente) {
       setForm({
         id:                  cliente.id,
@@ -233,7 +240,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       showToast('Cliente creado')
       registrarBitacora({ modulo: 'clientes', accion: 'crear', entidad: 'cliente', entidad_id: data.id, detalle: { nombre: data.nombre } })
     }
-    setSaving(false); setModal(false)
+    setSaving(false); cerrarModal()
   }
 
   async function eliminarCliente(id) {
@@ -614,16 +621,16 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       {/* ── MODAL CREAR / EDITAR ── */}
       {modal && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(false)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => intentarCerrarModal()} />
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
             <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[560px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
                 <h3 className="text-[16px] font-bold text-slate-800">{form.id ? 'Editar cliente' : 'Nuevo cliente'}</h3>
-                <button onClick={() => setModal(false)} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
+                <button onClick={() => intentarCerrarModal()} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4" onChange={() => setFormDirty(true)}>
                 {/* Tipo persona */}
                 <div>
                   <label className={labelCls}>Tipo de persona <span className="text-[#D81B43]">*</span></label>
@@ -706,7 +713,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
               </div>
 
               <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
-                <button onClick={() => setModal(false)} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
+                <button onClick={() => intentarCerrarModal()} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
                 <button onClick={guardarCliente} disabled={saving}
                   className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
                   {saving ? 'Guardando...' : form.id ? 'Guardar cambios' : 'Crear cliente'}
@@ -717,32 +724,27 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
         </>
       )}
 
-      {/* ── MODAL ELIMINAR ── */}
-      {modalEliminar && (
-        <>
-          <div className="fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm" />
-          <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center p-0 md:p-4">
-            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[360px] p-6 shadow-2xl text-center">
-              <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-                <AlertTriangle size={22} className="text-[#D81B43]" />
-              </div>
-              <h3 className="text-[16px] font-bold text-slate-800 mb-2">¿Eliminar cliente?</h3>
-              <p className="text-[13px] text-slate-400 mb-1"><span className="font-semibold text-slate-600">{modalEliminar.nombre}</span></p>
-              <p className="text-[12px] text-slate-400 mb-6">Esta acción no se puede deshacer</p>
-              <div className="flex gap-2">
-                <button onClick={() => eliminarCliente(modalEliminar.id)}
-                  className="flex-1 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F]">
-                  Sí, eliminar
-                </button>
-                <button onClick={() => setModalEliminar(null)}
-                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-[9px] text-[13px] font-semibold hover:bg-slate-200">
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      <ConfirmDialog
+        abierto={!!modalEliminar}
+        titulo="¿Eliminar cliente?"
+        mensaje={modalEliminar ? `"${modalEliminar.nombre}" quedará desactivado. Esta acción no se puede deshacer.` : ''}
+        textoConfirmar="Sí, eliminar"
+        textoCancelar="Cancelar"
+        tipo="peligro"
+        onConfirmar={() => eliminarCliente(modalEliminar.id)}
+        onCancelar={() => setModalEliminar(null)}
+      />
+
+      <ConfirmDialog
+        abierto={confirmarSalir}
+        titulo="¿Descartar cambios?"
+        mensaje="Tienes cambios sin guardar. ¿Deseas salir sin guardar?"
+        textoConfirmar="Sí, salir"
+        textoCancelar="Seguir editando"
+        tipo="default"
+        onConfirmar={() => { setConfirmarSalir(false); cerrarModal() }}
+        onCancelar={() => setConfirmarSalir(false)}
+      />
 
       {toast && (
         <div className={`fixed bottom-28 md:bottom-6 right-4 md:right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>

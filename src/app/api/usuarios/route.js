@@ -56,7 +56,7 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    const { id, nombre, email, username, rol_id, password } = await request.json()
+    const { id, nombre, email, username, rol_id, password, activo } = await request.json()
 
     if (!id) return NextResponse.json({ error: 'ID requerido' }, { status: 400 })
 
@@ -70,10 +70,17 @@ export async function PUT(request) {
       if (authError) return NextResponse.json({ error: authError.message }, { status: 400 })
     }
 
-    // Actualizar en tabla usuarios
+    // Construir payload solo con campos definidos
+    const payload = {}
+    if (nombre    !== undefined) payload.nombre    = nombre
+    if (email     !== undefined) payload.email     = email
+    if (username  !== undefined) payload.username  = username
+    if (rol_id    !== undefined) payload.rol_id    = rol_id
+    if (activo    !== undefined) payload.activo    = activo
+
     const { data: usuario, error: dbError } = await supabaseAdmin
       .from('usuarios')
-      .update({ nombre, email, username, rol_id })
+      .update(payload)
       .eq('id', id)
       .select('*, rol:roles(id, nombre)')
       .single()

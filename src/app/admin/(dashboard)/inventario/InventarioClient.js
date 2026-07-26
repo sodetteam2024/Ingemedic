@@ -285,12 +285,22 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   function renderIconoTipo(tipo, size = 48) {
     if (tipo?.imagen_url && !tipo.imagen_url.startsWith('icono:')) {
       return <img src={tipo.imagen_url} alt={nombreTipo(tipo)}
-        style={{ width: size, height: size, objectFit: 'contain', padding: 4 }} />
+        style={{ width: size, height: size, objectFit: 'contain', padding: 0 }} />
+    }
+    if (tipo?.imagen_url?.startsWith('icono:')) {
+      return <IconoEquipo clave={tipo.imagen_url.replace('icono:', '')} size={size} color="#D81B43" />
     }
     const cat = categorias.find(c => c.id === tipo?.categoria_id || c.id === tipo?.categoria?.id)
     const iconoCat = cat?.imagen_url?.startsWith('icono:') ? cat.imagen_url.replace('icono:', '') : null
     if (iconoCat) return <IconoEquipo clave={iconoCat} size={size} color="#D81B43" />
-    return <Package className="text-slate-200" style={{ width: size, height: size }} />
+    return (
+      <div style={{ width: size * 0.88, height: size * 0.88 }}
+        className="rounded-2xl bg-[#D81B43]/10 flex items-center justify-center flex-shrink-0">
+        <span style={{ fontSize: size * 0.44 }} className="font-black text-[#D81B43]/35 leading-none select-none">
+          {nombreTipo(tipo).charAt(0).toUpperCase()}
+        </span>
+      </div>
+    )
   }
 
   return (
@@ -325,15 +335,10 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
             </button>
           )}
           <button
-            onClick={() => vista === 'categorias'
-              ? exportar('categorias')
-              : vista === 'tipos'
-              ? exportar('tipos', { categoria_id: catActual?.id })
-              : exportar('unidades', { tipo_id: tipoActual?.id })
-            }
+            onClick={() => exportar('completo')}
             disabled={exportando}
             className="hidden md:flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium text-slate-600 border border-slate-200 rounded-[9px] hover:border-slate-300 transition-all disabled:opacity-50">
-            <Download size={13} /> {exportando ? 'Exportando...' : 'Exportar Excel'}
+            <Download size={13} /> {exportando ? 'Exportando…' : 'Exportar Excel'}
           </button>
           {vista === 'tipos' && (
             <button onClick={abrirModalTipo}
@@ -449,32 +454,33 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   const campos = camposTipo.filter(c => c.clave !== 'nombre').slice(0, 2)
                   return (
                     <div key={tipo.id} onClick={() => irATipo(tipo)}
-                      className="bg-white rounded-xl border border-slate-200 overflow-hidden cursor-pointer hover:border-[#D81B43]/50 hover:shadow-md transition-all group">
-                      <div className="h-[70px] bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
-                        {renderIconoTipo(tipo, 44)}
+                      className="bg-white rounded-xl border border-slate-200 overflow-hidden cursor-pointer hover:border-[#D81B43]/50 hover:shadow-sm transition-all group flex">
+                      {/* Imagen — izquierda */}
+                      <div className="w-[100px] h-[100px] flex-shrink-0 bg-[#F8FAFC] flex items-center justify-center p-4 border-r border-slate-100">
+                        {renderIconoTipo(tipo, 60)}
                       </div>
-                      <div className="p-3">
-                        <div className="flex items-start justify-between gap-1 mb-1.5">
-                          <div className="text-[13px] font-bold text-slate-800 leading-tight">{nombreTipo(tipo)}</div>
-                          <div className="text-right flex-shrink-0 ml-1">
-                            <div className="text-[16px] font-extrabold text-slate-800 tabular-nums leading-none">{stock.total}</div>
-                            <div className="text-[9.5px] text-slate-400 leading-none mt-0.5">uds.</div>
-                          </div>
-                        </div>
+                      {/* Contenido — derecha */}
+                      <div className="p-3 flex-1 min-w-0 flex flex-col justify-center relative">
+                        <div className="text-[13px] font-bold text-slate-800 leading-snug mb-1 pr-12 truncate">{nombreTipo(tipo)}</div>
                         {campos.map(c => (
                           <div key={c.clave} className="text-[11px] text-slate-500 truncate">
                             <span className="text-slate-400">{c.nombre}:</span> {formatearValor(tipo.atributos?.[c.clave], c.tipo)}
                           </div>
                         ))}
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-[11px] text-[#0F7B55] font-semibold">
+                        <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100">
+                          <span className="text-[11px] font-bold text-[#0F7B55]">
                             {stock.disponibles} disp.
                           </span>
                           {stock.total - stock.disponibles > 0 && (
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[10.5px] text-slate-400">
                               {stock.total - stock.disponibles} en uso
                             </span>
                           )}
+                        </div>
+                        {/* Badge unidades */}
+                        <div className="absolute top-2 right-2 bg-white border border-slate-100 rounded-full px-2 py-0.5 shadow-sm">
+                          <span className="text-[13px] font-extrabold text-slate-800 tabular-nums">{stock.total}</span>
+                          <span className="text-[9px] text-slate-400 ml-0.5">uds.</span>
                         </div>
                       </div>
                     </div>

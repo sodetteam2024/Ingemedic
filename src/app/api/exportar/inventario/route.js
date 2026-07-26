@@ -46,13 +46,19 @@ function agregarTitulo(ws, titulo, nCols) {
   cell.alignment = { horizontal: 'center', vertical: 'middle' }
   ws.getRow(1).height = 30
 
-  // Subtítulo con fecha
   ws.mergeCells(2, 1, 2, nCols)
   const sub = ws.getCell(2, 1)
   sub.value     = `Generado: ${new Date().toLocaleString('es-CO')}`
   sub.font      = { italic: true, color: { argb: '94A3B8' }, name: 'Arial', size: 9 }
   sub.alignment = { horizontal: 'right', vertical: 'middle' }
   ws.getRow(2).height = 16
+}
+
+function colorEstado(cell, estadoNombre) {
+  if (estadoNombre === 'Disponible')       cell.font = { ...cell.font, color: { argb: '0F7B55' }, bold: true }
+  if (estadoNombre === 'En préstamo')      cell.font = { ...cell.font, color: { argb: '0E86A0' }, bold: true }
+  if (estadoNombre === 'En mantenimiento') cell.font = { ...cell.font, color: { argb: 'B45309' }, bold: true }
+  if (estadoNombre === 'Baja')             cell.font = { ...cell.font, color: { argb: '64748B' }, bold: true }
 }
 
 export async function POST(request) {
@@ -64,8 +70,100 @@ export async function POST(request) {
     wb.created  = new Date()
     wb.modified = new Date()
 
-    if (nivel === 'categorias') {
-      // ── Hoja 1: resumen por categoría ──────────────────
+    // ══════════════════════════════════════════════════════════════
+    // COMPLETO: 2 hojas en un solo Excel
+    //   Hoja 1 — Inventario General: todas las categorías, todas las
+    //            unidades, campos dinámicos unificados, con autofiltro.
+    //   Hoja 2 — Resumen: totales por categoría.
+    // ══════════════════════════════════════════════════════════════
+    if (nivel === 'completo') {
+      const { data: cats }   = await supabase.from('categorias_equipo').select('id, nombre, descripcion, atributos_extra').eq('activo', true).order('nombre')
+      const { data: tipos }  = await supabase.from('tipos_equipo').select('*').eq('activo', true)
+      const { data: equipos } = await supabase.from('equipos')
+        .select('*, tipo_equipo:tipos_equipo(*, categoria:categorias_equipo(id, nombre)), estado:estados_equipo(nombre)')
+        .order('fecha_creacion', { ascending: false })
+
+      // ── Hoja 1: Resumen por categoría ───────────────────────
+      const ws2 = wb.addWorksheet('Resumen categorías')
+      const headers2 = ['Categoría', 'Descripción', 'Tipos', 'Total', 'Disponibles', 'En préstamo', 'En mantenimiento']
+      const nCols2 = headers2.length
+      ws2.columns = [
+        { key: 'cat', width: 28 }, { key: 'desc', width: 30 },
+        { key: 'tipos', width: 10 }, { key: 'total', width: 12 },
+        { key: 'disp', width: 14 }, { key: 'prest', width: 14 }, { key: 'mant', width: 18 },
+      ]
+      agregarTitulo(ws2, 'Resumen por Categoría — Ingemedic de Colombia S.A.S.', nCols2)
+      ws2.addRow(headers2)
+      estiloHeader(ws2, 3, nCols2)
+      cats.forEach((cat, i) => {
+        const tiposCat   = tipos.filter(t => t.categoria_id === cat.id)
+        const equiposCat = equipos.filter(e => tiposCat.some(t => t.id === e.tipo_equipo_id))
+        ws2.addRow([
+          cat.nombre, cat.descripcion || '', tiposCat.length, equiposCat.length,
+          equiposCat.filter(e => e.estado?.nombre === 'Disponible').length,
+          equiposCat.filter(e => e.estado?.nombre === 'En préstamo').length,
+          equiposCat.filter(e => e.estado?.nombre === 'En mantenimiento').length,
+        ])
+        estiloFila(ws2, i + 4, nCols2, i % 2 === 1)
+      })
+      const totRow2 = ws2.addRow([
+        'TOTAL', '', tipos.length, equipos.length,
+        equipos.filter(e => e.estado?.nombre === 'Disponible').length,
+        equipos.filter(e => e.estado?.nombre === 'En préstamo').length,
+        equipos.filter(e => e.estado?.nombre === 'En mantenimiento').length,
+      ])
+      totRow2.eachCell(cell => {
+        cell.font = { bold: true, name: 'Arial', size: 10, color: { argb: BLANCO } }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CELESTE } }
+      })
+      ws2.getRow(cats.length + 4).height = 20
+
+      // ── Hoja 2: Inventario General ──────────────────────────
+      const camposUnicos = new Map()
+      cats.forEach(cat => {
+        ;[...(cat.atributos_extra?.campos_tipo || []), ...(cat.atributos_extra?.campos_unidad || [])].forEach(c => {
+          if (!camposUnicos.has(c.clave)) camposUnicos.set(c.clave, c.nombre)
+        })
+      })
+      const clavesUnicas = [...camposUnicos.keys()]
+
+      const ws1 = wb.addWorksheet('Inventario General')
+      const headers1 = ['Categoría', 'Tipo', 'Código', 'Estado', ...clavesUnicas.map(cl => camposUnicos.get(cl)), 'Fecha registro']
+      const nCols1 = headers1.length
+      ws1.columns = [
+        { key: 'categoria', width: 22 }, { key: 'tipo', width: 26 },
+        { key: 'codigo', width: 14 },    { key: 'estado', width: 16 },
+        ...clavesUnicas.map(() => ({ width: 20 })),
+        { key: 'fecha', width: 16 },
+      ]
+      agregarTitulo(ws1, 'Inventario General — Ingemedic de Colombia S.A.S.', nCols1)
+      ws1.addRow(headers1)
+      estiloHeader(ws1, 3, nCols1)
+      equipos.forEach((eq, i) => {
+        const tipo = eq.tipo_equipo
+        ws1.addRow([
+          tipo?.categoria?.nombre || '—',
+          tipo?.nombre || '—',
+          eq.codigo || '',
+          eq.estado?.nombre || '',
+          ...clavesUnicas.map(cl => eq.atributos?.[cl] ?? tipo?.atributos?.[cl] ?? ''),
+          eq.fecha_creacion ? new Date(eq.fecha_creacion).toLocaleDateString('es-CO') : '',
+        ])
+        const fila = i + 4
+        estiloFila(ws1, fila, nCols1, i % 2 === 1)
+        colorEstado(ws1.getCell(fila, 4), eq.estado?.nombre || '')
+      })
+      ws1.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: nCols1 } }
+      ws1.views = [{ state: 'frozen', ySplit: 3 }]
+      const filaRes1 = equipos.length + 5
+      ws1.mergeCells(filaRes1, 1, filaRes1, nCols1)
+      const rc1 = ws1.getCell(filaRes1, 1)
+      rc1.value = `Total: ${equipos.length} unidades · ${cats.length} categorías · ${tipos.length} tipos de equipo`
+      rc1.font  = { bold: true, color: { argb: ROJO }, name: 'Arial', size: 10 }
+    }
+
+    else if (nivel === 'categorias') {
+      // ── Hoja: resumen por categoría ──────────────────
       const { data: cats }   = await supabase.from('categorias_equipo').select('*').eq('activo', true).order('nombre')
       const { data: tipos }  = await supabase.from('tipos_equipo').select('id, categoria_id, nombre, atributos').eq('activo', true)
       const { data: equipos } = await supabase.from('equipos').select('*, tipo_equipo:tipos_equipo(categoria_id), estado:estados_equipo(nombre)')
@@ -103,7 +201,6 @@ export async function POST(request) {
         estiloFila(ws, i + 4, nCols, i % 2 === 1)
       })
 
-      // Totales
       const totRow = ws.addRow([
         'TOTAL', '',
         tipos.length,
@@ -119,8 +216,94 @@ export async function POST(request) {
       ws.getRow(cats.length + 4).height = 20
     }
 
+    // ══════════════════════════════════════════════════════════════
+    // NUEVO: Inventario general — TODAS las categorías, TODAS las
+    // unidades, una sola hoja filtrable. Campos dinámicos con la misma
+    // clave (sin importar si vienen de campos_tipo o campos_unidad, o
+    // de categorías distintas) se combinan en una sola columna.
+    // ══════════════════════════════════════════════════════════════
+    else if (nivel === 'general') {
+      const { data: cats }    = await supabase.from('categorias_equipo').select('id, nombre, atributos_extra').eq('activo', true)
+      const { data: tipos }   = await supabase.from('tipos_equipo').select('*').eq('activo', true)
+      const { data: equipos } = await supabase.from('equipos')
+        .select('*, tipo_equipo:tipos_equipo(*, categoria:categorias_equipo(id, nombre)), estado:estados_equipo(nombre)')
+        .order('fecha_creacion', { ascending: false })
+
+      // 1. Construir el mapa de columnas dinámicas únicas por clave,
+      //    recorriendo campos_tipo + campos_unidad de TODAS las categorías.
+      //    Primera vez que aparece una clave define su etiqueta (nombre visible).
+      const camposUnicos = new Map() // clave -> nombre
+      cats.forEach(cat => {
+        const camposTipo   = cat.atributos_extra?.campos_tipo   || []
+        const camposUnidad = cat.atributos_extra?.campos_unidad || []
+        ;[...camposTipo, ...camposUnidad].forEach(c => {
+          if (!camposUnicos.has(c.clave)) camposUnicos.set(c.clave, c.nombre)
+        })
+      })
+      const clavesUnicas = [...camposUnicos.keys()]
+
+      const ws = wb.addWorksheet('Inventario General')
+      const headers = [
+        'Categoría', 'Tipo', 'Código', 'Estado',
+        ...clavesUnicas.map(clave => camposUnicos.get(clave)),
+        'Fecha registro',
+      ]
+      const nCols = headers.length
+
+      ws.columns = [
+        { key: 'categoria', width: 22 },
+        { key: 'tipo',      width: 26 },
+        { key: 'codigo',    width: 14 },
+        { key: 'estado',    width: 16 },
+        ...clavesUnicas.map(() => ({ width: 20 })),
+        { key: 'fecha',     width: 16 },
+      ]
+
+      agregarTitulo(ws, 'Inventario General — Ingemedic de Colombia S.A.S. (todas las categorías)', nCols)
+      ws.addRow(headers)
+      estiloHeader(ws, 3, nCols)
+
+      equipos.forEach((eq, i) => {
+        const tipo       = eq.tipo_equipo
+        const nombreTipo = tipo?.nombre || '—'
+        const nombreCat  = tipo?.categoria?.nombre || '—'
+        const fecha      = eq.fecha_creacion ? new Date(eq.fecha_creacion).toLocaleDateString('es-CO') : ''
+
+        // Para cada clave única, buscar el valor primero en el atributo
+        // de la UNIDAD y, si no está ahí, en el atributo del TIPO —
+        // así se combinan sin importar en qué nivel quedó configurado
+        // originalmente para esa categoría en particular.
+        const valoresCampos = clavesUnicas.map(clave =>
+          eq.atributos?.[clave] ?? tipo?.atributos?.[clave] ?? ''
+        )
+
+        ws.addRow([
+          nombreCat,
+          nombreTipo,
+          eq.codigo || '',
+          eq.estado?.nombre || '',
+          ...valoresCampos,
+          fecha,
+        ])
+
+        const filaActual = i + 4
+        estiloFila(ws, filaActual, nCols, i % 2 === 1)
+        colorEstado(ws.getCell(filaActual, 4), eq.estado?.nombre || '')
+      })
+
+      // Autofiltro sobre encabezados + congelar hasta la fila de headers
+      ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: nCols } }
+      ws.views = [{ state: 'frozen', ySplit: 3 }]
+
+      // Resumen al final
+      const filaResumen = equipos.length + 5
+      ws.mergeCells(filaResumen, 1, filaResumen, nCols)
+      const resumenCell = ws.getCell(filaResumen, 1)
+      resumenCell.value = `Total: ${equipos.length} unidades en ${cats.length} categorías (${tipos.length} tipos de equipo)`
+      resumenCell.font  = { bold: true, color: { argb: ROJO }, name: 'Arial', size: 10 }
+    }
+
     else if (nivel === 'tipos' && categoria_id) {
-      // ── Hoja 1: tipos de la categoría ──────────────────
       const { data: cat }    = await supabase.from('categorias_equipo').select('*').eq('id', categoria_id).single()
       const { data: tipos }  = await supabase.from('tipos_equipo').select('*').eq('categoria_id', categoria_id).eq('activo', true).order('nombre')
       const { data: equipos } = await supabase.from('equipos').select('*, estado:estados_equipo(nombre)')
@@ -147,7 +330,7 @@ export async function POST(request) {
       tipos.forEach((tipo, i) => {
         const eqs = equipos.filter(e => e.tipo_equipo_id === tipo.id)
         ws.addRow([
-          tipo.atributos?.nombre || tipo.nombre || '',
+          tipo.nombre || '',
           eqs.length,
           eqs.filter(e => e.estado?.nombre === 'Disponible').length,
           eqs.filter(e => e.estado?.nombre === 'En préstamo').length,
@@ -159,7 +342,6 @@ export async function POST(request) {
     }
 
     else if (nivel === 'unidades' && tipo_id) {
-      // ── Hoja 1: unidades del tipo ──────────────────────
       const { data: tipo }   = await supabase.from('tipos_equipo')
         .select('*, categoria:categorias_equipo(nombre, atributos_extra)').eq('id', tipo_id).single()
       const { data: equipos } = await supabase.from('equipos')
@@ -167,7 +349,7 @@ export async function POST(request) {
 
       const camposUnidad = tipo?.categoria?.atributos_extra?.campos_unidad || []
       const camposTipo   = tipo?.categoria?.atributos_extra?.campos_tipo   || []
-      const nombreTipo   = tipo?.atributos?.nombre || tipo?.nombre || 'Tipo'
+      const nombreTipo   = tipo?.nombre || 'Tipo'
 
       const ws = wb.addWorksheet(nombreTipo.slice(0, 31))
       const headers = ['Estado', ...camposUnidad.map(c => c.nombre), 'Fecha registro']
@@ -179,10 +361,8 @@ export async function POST(request) {
         { key: 'fecha', width: 18 },
       ]
 
-      // Info del tipo arriba
       agregarTitulo(ws, `${nombreTipo} — Unidades`, nCols)
 
-      // Bloque info tipo
       let filaActual = 3
       if (camposTipo.length > 0 && tipo?.atributos) {
         ws.mergeCells(filaActual, 1, filaActual, nCols)
@@ -194,7 +374,6 @@ export async function POST(request) {
         ws.getRow(filaActual).height = 16
         filaActual++
 
-        // Una fila con los campos del tipo
         const tipoRow = ws.addRow(camposTipo.map(c => `${c.nombre}: ${tipo.atributos?.[c.clave] || '—'}`))
         tipoRow.eachCell(cell => {
           cell.font      = { italic: true, color: { argb: '475569' }, name: 'Arial', size: 9 }
@@ -204,13 +383,11 @@ export async function POST(request) {
         ws.getRow(filaActual).height = 16
         filaActual++
 
-        // Separador
         ws.mergeCells(filaActual, 1, filaActual, nCols)
         ws.getRow(filaActual).height = 6
         filaActual++
       }
 
-      // Headers unidades
       ws.addRow(headers)
       estiloHeader(ws, filaActual, nCols)
       filaActual++
@@ -229,23 +406,14 @@ export async function POST(request) {
           fecha,
         ])
         estiloFila(ws, filaActual + i, nCols, i % 2 === 1)
-
-        // Color en celda de estado
-        const estadoCell = ws.getCell(filaActual + i, 1)
-        const estadoNombre = eq.estado?.nombre || ''
-        if (estadoNombre === 'Disponible')       estadoCell.font = { ...estadoCell.font, color: { argb: '0F7B55' }, bold: true }
-        if (estadoNombre === 'En préstamo')      estadoCell.font = { ...estadoCell.font, color: { argb: '0E86A0' }, bold: true }
-        if (estadoNombre === 'En mantenimiento') estadoCell.font = { ...estadoCell.font, color: { argb: 'B45309' }, bold: true }
-        if (estadoNombre === 'Baja')             estadoCell.font = { ...estadoCell.font, color: { argb: '64748B' }, bold: true }
+        colorEstado(ws.getCell(filaActual + i, 1), eq.estado?.nombre || '')
       })
 
-      // Resumen al final
       const resumenFila = filaActual + equipos.length + 1
       ws.getCell(resumenFila, 1).value = `Total: ${equipos.length} unidades`
       ws.getCell(resumenFila, 1).font  = { bold: true, color: { argb: ROJO }, name: 'Arial', size: 10 }
     }
 
-    // Generar buffer
     const buffer = await wb.xlsx.writeBuffer()
     const fecha  = new Date().toISOString().slice(0, 10)
 

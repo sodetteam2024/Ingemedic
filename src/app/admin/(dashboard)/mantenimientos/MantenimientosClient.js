@@ -8,6 +8,7 @@ import {
   Package, AlertTriangle, Edit3, Upload,
   FileText, Download, Paperclip, Eye
 } from 'lucide-react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const ESTADOS = {
   Abierto:   '9c71ba4d-e82d-4714-b2fb-4cc242cd47be',
@@ -71,6 +72,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
   const [modal, setModal]                   = useState(false)
   const [modalCierre, setModalCierre]       = useState(null)
   const [saving, setSaving]                 = useState(false)
+  const [formDirty, setFormDirty]           = useState(false)
+  const [confirmarSalir, setConfirmarSalir] = useState(false)
   const [toast, setToast]                   = useState(null)
   const [uploading, setUploading]           = useState({})
   const [form, setForm] = useState({
@@ -85,6 +88,14 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     setToast({ msg, tipo })
     setTimeout(() => setToast(null), 3200)
   }
+
+  function abrirModal() {
+    setForm({ equipo_id: '', tipo_mantenimiento_id: '', tecnico: '', observaciones_cliente: '', lista_id: '' })
+    setFormDirty(false)
+    setModal(true)
+  }
+  function cerrarModal() { setModal(false); setFormDirty(false) }
+  function intentarCerrarModal() { if (formDirty) setConfirmarSalir(true); else cerrarModal() }
 
   const stats = useMemo(() => ({
     total:       (mantenimientos || []).length,
@@ -170,7 +181,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
 
     setMantenimientos(prev => [data, ...prev])
     setSaving(false)
-    setModal(false)
+    cerrarModal()
     setDrawer(data)
     showToast('Mantenimiento abierto — equipo en mantenimiento')
   }
@@ -488,14 +499,14 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           <div className="text-[18px] font-bold text-slate-800">Mantenimientos</div>
           <div className="text-[12px] text-slate-400 mt-0.5">{(mantenimientos || []).length} registros</div>
         </div>
-        <button onClick={() => { setForm({ equipo_id: '', tipo_mantenimiento_id: '', tecnico: '', observaciones_cliente: '', lista_id: '' }); setModal(true) }}
+        <button onClick={() => { abrirModal() }}
           className="ml-auto hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F]">
           <Plus size={14} strokeWidth={2.5} /> Nuevo mantenimiento
         </button>
       </div>
 
       {/* FAB móvil */}
-      <button onClick={() => { setForm({ equipo_id: '', tipo_mantenimiento_id: '', tecnico: '', observaciones_cliente: '', lista_id: '' }); setModal(true) }}
+      <button onClick={() => { abrirModal() }}
         className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
         <Plus size={22} strokeWidth={2.5} />
       </button>
@@ -807,17 +818,17 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       {/* ── MODAL NUEVO MANTENIMIENTO ── */}
       {modal && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(false)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => intentarCerrarModal()} />
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4">
             <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-[560px] max-h-[92vh] md:max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0 bg-[#D81B43]">
                 <div className="text-[15px] font-bold text-white">Nuevo mantenimiento</div>
-                <button onClick={() => setModal(false)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                <button onClick={() => intentarCerrarModal()} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
                   <X size={16} />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4" onChange={() => setFormDirty(true)}>
                 {/* Tipo */}
                 <div>
                   <label className={labelCls}>Tipo de mantenimiento <span className="text-[#D81B43]">*</span></label>
@@ -889,7 +900,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                 </div>
               </div>
               <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
-                <button onClick={() => setModal(false)} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
+                <button onClick={() => intentarCerrarModal()} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
                 <button onClick={crearMantenimiento} disabled={saving}
                   className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
                   {saving ? 'Creando...' : 'Abrir mantenimiento'}
@@ -1027,6 +1038,17 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           {toast.msg}
         </div>
       )}
+
+      <ConfirmDialog
+        abierto={confirmarSalir}
+        titulo="¿Descartar cambios?"
+        mensaje="Tienes cambios sin guardar. ¿Deseas salir sin guardar?"
+        textoConfirmar="Sí, salir"
+        textoCancelar="Seguir editando"
+        tipo="default"
+        onConfirmar={() => { setConfirmarSalir(false); cerrarModal() }}
+        onCancelar={() => setConfirmarSalir(false)}
+      />
     </div>
   )
 }

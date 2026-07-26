@@ -5,10 +5,12 @@ import { useState, useEffect } from 'react'
 import {
   Users, Lock, Tag, Cpu, Building2,
   FileText, Upload, Plus, X, Edit3, Trash2,
-  Check, Save, ClipboardList, Download, CheckCircle2, Smartphone
+  Check, Save, ClipboardList, Download, CheckCircle2, Smartphone,
+  UserX, UserCheck
 } from 'lucide-react'
 import { GaleriaIconos, IconoEquipo } from '@/components/inventario/IconosEquipo'
 import HistorialCargas from '@/components/inventario/HistorialCargas'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const NAV = [
   { id: 'usuarios',   label: 'Usuarios',               icon: Users,         grupo: 'Acceso' },
@@ -256,6 +258,9 @@ export default function ConfiguracionClient({
   const [saving, setSaving]           = useState(false)
   const [toast, setToast]             = useState(null)
   const [form, setForm]               = useState({})
+  const [formDirty, setFormDirty]     = useState(false)
+  const [confirmarSalir, setConfirmarSalir] = useState(false)
+  const [confirmElim, setConfirmElim] = useState(null)
   const [listaExpandida, setListaExpandida] = useState(null)
   const [tipoExpandido, setTipoExpandido]   = useState(null)
   const [nuevaActividad, setNuevaActividad] = useState('')
@@ -271,6 +276,16 @@ export default function ConfiguracionClient({
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
     setTimeout(() => setToast(null), 3000)
+  }
+
+  function cerrarModal() {
+    setModal(null)
+    setFormDirty(false)
+  }
+
+  function intentarCerrarModal() {
+    if (formDirty) setConfirmarSalir(true)
+    else cerrarModal()
   }
 
   async function getSupabase() {
@@ -298,7 +313,14 @@ export default function ConfiguracionClient({
       setImagenTipo(null)
       setImagenTipoUrl(urlActual)
     }
-    setForm({ ...data, password: '', atributos: data.atributos || {} })
+    setForm({
+      ...data,
+      password: '',
+      atributos: tipo === 'tipo'
+        ? { ...(data.atributos || {}), nombre: data.nombre || '' }
+        : (data.atributos || {}),
+    })
+    setFormDirty(false)
     setModal(tipo)
   }
 
@@ -330,7 +352,7 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'usuario', entidad_id: data.usuario?.id, detalle: { nombre: form.nombre, email: form.email } })
       showToast('Usuario creado')
     }
-    setSaving(false); setModal(null); setForm({})
+    setSaving(false); cerrarModal(); setForm({})
   }
 
   async function toggleUsuario(u) {
@@ -368,11 +390,10 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'categoría de equipo', entidad_id: data.id, detalle: { nombre: form.nombre } })
       showToast('Categoría creada')
     }
-    setSaving(false); setModal(null)
+    setSaving(false); cerrarModal()
   }
 
   async function eliminarCat(id) {
-    if (!confirm('¿Eliminar esta categoría?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('categorias_equipo').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -457,11 +478,10 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'tipo de equipo', entidad_id: data.id, detalle: { nombre: nombreTipo } })
       showToast('Tipo creado')
     }
-    setSaving(false); setModal(null)
+    setSaving(false); cerrarModal()
   }
 
   async function eliminarTipo(id) {
-    if (!confirm('¿Eliminar este tipo de equipo?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('tipos_equipo').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -488,11 +508,10 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'lista de mantenimiento', entidad_id: data.id, detalle: { nombre: form.nombre } })
       showToast('Lista creada')
     }
-    setSaving(false); setModal(null)
+    setSaving(false); cerrarModal()
   }
 
   async function eliminarLista(id) {
-    if (!confirm('¿Eliminar esta lista?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('listas_mantenimiento').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -514,7 +533,6 @@ export default function ConfiguracionClient({
   }
 
   async function eliminarActividad(id) {
-    if (!confirm('¿Eliminar esta actividad?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('actividades_lista_mantenimiento').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -686,8 +704,14 @@ export default function ConfiguracionClient({
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
                               <button onClick={() => abrirModal('usuario', { ...u, rol_id: u.rol_id })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
-                              <button onClick={() => toggleUsuario(u)} className={`p-1.5 rounded-[6px] transition-all ${u.activo ? 'text-slate-400 hover:text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`}>
-                                {u.activo ? <X size={13} /> : <Check size={13} />}
+                              <button
+                                title={u.activo ? 'Desactivar usuario' : 'Activar usuario'}
+                                onClick={() => u.activo
+                                  ? setConfirmElim({ fn: () => toggleUsuario(u), titulo: '¿Desactivar usuario?', mensaje: `"${u.nombre}" no podrá iniciar sesión hasta que vuelvas a activarlo.` })
+                                  : toggleUsuario(u)
+                                }
+                                className={`p-1.5 rounded-[6px] transition-all ${u.activo ? 'text-slate-400 hover:text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`}>
+                                {u.activo ? <UserX size={13} /> : <UserCheck size={13} />}
                               </button>
                             </div>
                           </td>
@@ -751,7 +775,7 @@ export default function ConfiguracionClient({
                         </div>
                         <div className="flex items-center gap-1.5">
                           <button onClick={() => abrirModal('categoria', { ...c })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
-                          <button onClick={() => eliminarCat(c.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
+                          <button onClick={() => setConfirmElim({ fn: () => eliminarCat(c.id), titulo: '¿Eliminar categoría?', mensaje: `"${c.nombre}" y todos sus tipos quedarán desactivados. Esta acción no se puede deshacer.` })} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
                         </div>
                       </div>
                     )
@@ -819,7 +843,7 @@ export default function ConfiguracionClient({
                           <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
                             <button onClick={() => abrirModal('tipo', { ...t, categoria_id: t.categoria_id ?? t.categoria?.id, lista_mantenimiento_id: t.lista_mantenimiento_id ?? t.lista?.id })}
                               className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
-                            <button onClick={() => eliminarTipo(t.id)}
+                            <button onClick={() => setConfirmElim({ fn: () => eliminarTipo(t.id), titulo: '¿Eliminar tipo de equipo?', mensaje: `"${t.nombre}" quedará desactivado. Esta acción no se puede deshacer.` })}
                               className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
                           </div>
                           <div className="text-slate-400 ml-1">
@@ -893,7 +917,7 @@ export default function ConfiguracionClient({
                           </div>
                           <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                             <button onClick={() => abrirModal('lista', { ...l })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px]"><Edit3 size={13} /></button>
-                            <button onClick={() => eliminarLista(l.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px]"><Trash2 size={13} /></button>
+                            <button onClick={() => setConfirmElim({ fn: () => eliminarLista(l.id), titulo: '¿Eliminar lista?', mensaje: `"${l.nombre}" y todas sus actividades quedarán desactivadas. Esta acción no se puede deshacer.` })} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px]"><Trash2 size={13} /></button>
                           </div>
                           <div className="text-slate-400 ml-1">
                             {expanded
@@ -908,7 +932,7 @@ export default function ConfiguracionClient({
                                 <div key={a.id} className="flex items-center gap-2.5 p-2.5 bg-slate-50 rounded-[8px] border border-slate-200">
                                   <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500 flex-shrink-0">{i + 1}</div>
                                   <span className="flex-1 text-[13px] text-slate-700">{a.nombre}</span>
-                                  <button onClick={() => eliminarActividad(a.id)} className="p-1 text-slate-400 hover:text-red-500"><X size={12} /></button>
+                                  <button onClick={() => setConfirmElim({ fn: () => eliminarActividad(a.id), titulo: '¿Eliminar actividad?', mensaje: `"${a.nombre}" quedará desactivada.` })} className="p-1 text-slate-400 hover:text-red-500"><X size={12} /></button>
                                 </div>
                               ))}
                               {acts.length === 0 && <div className="text-[12.5px] text-slate-400 text-center py-2">Sin actividades</div>}
@@ -1092,7 +1116,7 @@ export default function ConfiguracionClient({
       {/* ── MODALES — sin scroll interno, tamaño adaptativo ── */}
       {modal && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => intentarCerrarModal()} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className={`bg-white rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden
               ${modal === 'categoria' ? 'max-w-[640px]' : modal === 'tipo' ? 'max-w-[600px]' : 'max-w-[480px]'}
@@ -1107,11 +1131,11 @@ export default function ConfiguracionClient({
                    modal === 'tipo'      ? (form.id ? 'Editar tipo de equipo': 'Nuevo tipo de equipo') :
                    modal === 'lista'     ? (form.id ? 'Editar lista'         : 'Nueva lista')          : ''}
                 </h3>
-                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
+                <button onClick={() => intentarCerrarModal()} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
               </div>
 
               {/* Modal body — scroll solo si no cabe en pantalla */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4" onChange={() => setFormDirty(true)}>
 
                 {/* USUARIO */}
                 {modal === 'usuario' && <>
@@ -1341,7 +1365,7 @@ export default function ConfiguracionClient({
 
               {/* Modal footer */}
               <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
-                <button onClick={() => setModal(null)} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
+                <button onClick={() => intentarCerrarModal()} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
                 <button onClick={
                   modal === 'usuario'   ? guardarUsuario :
                   modal === 'categoria' ? guardarCat     :
@@ -1356,6 +1380,28 @@ export default function ConfiguracionClient({
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        abierto={!!confirmElim}
+        titulo={confirmElim?.titulo || ''}
+        mensaje={confirmElim?.mensaje}
+        textoConfirmar="Sí, eliminar"
+        textoCancelar="Cancelar"
+        tipo="peligro"
+        onConfirmar={() => { confirmElim?.fn(); setConfirmElim(null) }}
+        onCancelar={() => setConfirmElim(null)}
+      />
+
+      <ConfirmDialog
+        abierto={confirmarSalir}
+        titulo="¿Descartar cambios?"
+        mensaje="Tienes cambios sin guardar. ¿Deseas salir sin guardar?"
+        textoConfirmar="Sí, salir"
+        textoCancelar="Seguir editando"
+        tipo="default"
+        onConfirmar={() => { setConfirmarSalir(false); cerrarModal() }}
+        onCancelar={() => setConfirmarSalir(false)}
+      />
 
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>

@@ -6,6 +6,7 @@ import {
   Plus, X, Search, FileText, CheckCircle2, Package,
   AlertTriangle, Calendar, Clock, User, Edit3, Truck
 } from 'lucide-react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const E = {
   Borrador:   'c0b30011-e902-437d-ab1b-b33f753a04d7',
@@ -166,11 +167,13 @@ export default function OrdenesClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ordenes])
 
-  const [wizardOpen, setWizardOpen]     = useState(false)
-  const [wizardPaso, setWizardPaso]     = useState(1)
-  const [saving, setSaving]             = useState(false)
-  const [toast, setToast]               = useState(null)
-  const [modalConfirm, setModalConfirm] = useState(null)
+  const [wizardOpen, setWizardOpen]         = useState(false)
+  const [wizardPaso, setWizardPaso]         = useState(1)
+  const [saving, setSaving]                 = useState(false)
+  const [toast, setToast]                   = useState(null)
+  const [modalConfirm, setModalConfirm]     = useState(null)
+  const [formDirty, setFormDirty]           = useState(false)
+  const [confirmarSalirWizard, setConfirmarSalirWizard] = useState(false)
   const [wForm, setWForm] = useState({
     tipo_orden_id: '', cliente_id: '', equipos_ids: [], observaciones: '',
     repartidor_id: '', recibido_por: '', fecha_entrega: '', fecha_vigencia: '',
@@ -281,8 +284,12 @@ export default function OrdenesClient({
       plantillas_ids: [],
     })
     setWizardPaso(1)
+    setFormDirty(false)
     setWizardOpen(true)
   }
+
+  function cerrarWizard() { setWizardOpen(false); setFormDirty(false) }
+  function intentarCerrarWizard() { if (formDirty) setConfirmarSalirWizard(true); else cerrarWizard() }
 
   function toggleEquipo(id) {
     setWForm(f => ({
@@ -372,7 +379,7 @@ export default function OrdenesClient({
 
     setOrdenes(prev => [nuevaOrden, ...prev])
     setSaving(false)
-    setWizardOpen(false)
+    cerrarWizard()
     // Abrir drawer automáticamente con la orden recién creada
     abrirDrawer(nuevaOrden)
     showToast('Orden creada')
@@ -842,7 +849,7 @@ export default function OrdenesClient({
       {/* ── WIZARD ── */}
       {wizardOpen && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setWizardOpen(false)} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => intentarCerrarWizard()} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl w-full max-w-[600px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}>
@@ -857,12 +864,12 @@ export default function OrdenesClient({
                     <div key={i} className={`h-2 rounded-full transition-all ${i + 1 === wizardPaso ? 'w-6 bg-white' : i + 1 < wizardPaso ? 'w-2 bg-white/60' : 'w-2 bg-white/25'}`} />
                   ))}
                 </div>
-                <button onClick={() => setWizardOpen(false)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+                <button onClick={() => intentarCerrarWizard()} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
                   <X size={16} />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-5">
+              <div className="flex-1 overflow-y-auto px-6 py-5" onChange={() => setFormDirty(true)}>
 
                 {/* PASO 1 — Tipo y cliente */}
                 {wizardPaso === 1 && (
@@ -993,7 +1000,7 @@ export default function OrdenesClient({
               </div>
 
               <div className="px-6 py-4 border-t border-slate-200 flex justify-between flex-shrink-0 bg-white">
-                <button onClick={() => wizardPaso > 1 ? setWizardPaso(p => p - 1) : setWizardOpen(false)}
+                <button onClick={() => wizardPaso > 1 ? setWizardPaso(p => p - 1) : intentarCerrarWizard()}
                   className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
                   {wizardPaso === 1 ? 'Cancelar' : '← Anterior'}
                 </button>
@@ -1049,6 +1056,17 @@ export default function OrdenesClient({
           {toast.msg}
         </div>
       )}
+
+      <ConfirmDialog
+        abierto={confirmarSalirWizard}
+        titulo="¿Descartar cambios?"
+        mensaje="Tienes cambios sin guardar. ¿Deseas salir sin guardar?"
+        textoConfirmar="Sí, salir"
+        textoCancelar="Seguir editando"
+        tipo="default"
+        onConfirmar={() => { setConfirmarSalirWizard(false); cerrarWizard() }}
+        onCancelar={() => setConfirmarSalirWizard(false)}
+      />
     </div>
   )
 }
