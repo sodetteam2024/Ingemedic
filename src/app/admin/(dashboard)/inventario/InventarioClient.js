@@ -258,7 +258,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   }
 
   function nombreTipo(tipo) {
-    return tipo?.nombre || tipo?.atributos?.nombre || '—'
+    return tipo?.nombre || '—'
   }
 
   function renderIconoTipo(tipo, size = 48) {
