@@ -1331,31 +1331,64 @@ export default function ConfiguracionClient({
                   {/* Imagen del tipo */}
                   <div>
                     <label className={labelCls}>Imagen del equipo <span className="text-slate-300 font-normal normal-case">(opcional — foto real del modelo)</span></label>
-                    <div className="flex items-center gap-4">
-                      {/* Preview */}
-                      <div className="w-20 h-20 rounded-xl border-2 border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {imagenTipo
-                          ? <img src={URL.createObjectURL(imagenTipo)} alt="preview" className="w-full h-full object-contain p-1" />
-                          : imagenTipoUrl
-                          ? <img src={imagenTipoUrl} alt="actual" className="w-full h-full object-contain p-1" />
-                          : <Cpu size={28} className="text-slate-200" />
-                        }
+                    {(imagenTipo || imagenTipoUrl) ? (
+                      /* Estado: hay imagen — mostrar preview + quitar */
+                      <div className="flex items-center gap-4 p-3 border border-slate-200 rounded-[10px] bg-slate-50">
+                        <div className="w-16 h-16 rounded-lg border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                          <img
+                            src={imagenTipo ? URL.createObjectURL(imagenTipo) : imagenTipoUrl}
+                            alt="preview"
+                            className="w-full h-full object-contain p-1"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[12.5px] font-medium text-slate-700 truncate">
+                            {imagenTipo ? imagenTipo.name : 'Imagen actual'}
+                          </div>
+                          {imagenTipo && (
+                            <div className="text-[11px] text-slate-400 mt-0.5">
+                              {(imagenTipo.size / 1024).toFixed(0)} KB
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3 mt-2">
+                            <label className="text-[12px] text-[#D81B43] font-medium hover:underline cursor-pointer">
+                              Cambiar
+                              <input type="file" accept="image/*" className="hidden"
+                                onChange={e => { const f = e.target.files?.[0]; if (f) setImagenTipo(f); e.target.value = '' }} />
+                            </label>
+                            <button onClick={() => { setImagenTipo(null); setImagenTipoUrl('') }}
+                              className="text-[12px] text-red-400 hover:text-red-600 transition-colors">
+                              Quitar
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] font-medium text-slate-600 hover:border-[#D81B43] hover:text-[#D81B43] transition-all cursor-pointer w-fit">
-                          <Upload size={13} /> {imagenTipo ? imagenTipo.name.slice(0, 20) + '...' : 'Subir imagen'}
-                          <input type="file" accept="image/*" className="hidden"
-                            onChange={e => { const f = e.target.files?.[0]; if (f) setImagenTipo(f); e.target.value = '' }} />
-                        </label>
-                        {(imagenTipo || imagenTipoUrl) && (
-                          <button onClick={() => { setImagenTipo(null); setImagenTipoUrl('') }}
-                            className="text-[12px] text-red-400 hover:text-red-600 transition-colors text-left">
-                            Quitar imagen
-                          </button>
-                        )}
+                    ) : (
+                      /* Estado: sin imagen — zona de drop */
+                      <label
+                        className="flex flex-col items-center justify-center gap-2 w-full h-[100px] border-2 border-dashed border-slate-200 rounded-[10px] bg-slate-50 hover:border-[#D81B43]/50 hover:bg-[#D81B43]/[0.02] transition-all cursor-pointer group"
+                        onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-[#D81B43]/60', 'bg-[#D81B43]/[0.04]') }}
+                        onDragLeave={e => { e.currentTarget.classList.remove('border-[#D81B43]/60', 'bg-[#D81B43]/[0.04]') }}
+                        onDrop={e => {
+                          e.preventDefault()
+                          e.currentTarget.classList.remove('border-[#D81B43]/60', 'bg-[#D81B43]/[0.04]')
+                          const f = e.dataTransfer.files?.[0]
+                          if (f && f.type.startsWith('image/')) setImagenTipo(f)
+                        }}
+                      >
+                        <Upload size={18} className="text-slate-300 group-hover:text-[#D81B43]/50 transition-colors" />
+                        <div className="text-center">
+                          <span className="text-[12.5px] font-medium text-slate-500 group-hover:text-[#D81B43] transition-colors">
+                            Arrastra una imagen aquí
+                          </span>
+                          <span className="text-[12px] text-slate-400"> o </span>
+                          <span className="text-[12.5px] font-medium text-[#D81B43]">selecciona un archivo</span>
+                        </div>
                         <div className="text-[11px] text-slate-400">JPG, PNG o WEBP · máx. 2MB</div>
-                      </div>
-                    </div>
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) setImagenTipo(f); e.target.value = '' }} />
+                      </label>
+                    )}
                   </div>
 
                   {/* Campos dinámicos */}
