@@ -20,6 +20,7 @@ const FILTRO_PALETTE = [
   { color: '#B45309', Icon: Layers },
   { color: '#0E7490', Icon: SlidersHorizontal },
 ]
+const FILTRO_DROPDOWN_MAX = 6
 
 const ESTADO_STYLES = {
   'Disponible':        { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
@@ -107,9 +108,14 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     return map
   }, [equipos])
 
+  const baseUnidadesDeTipo = useMemo(() =>
+    tipoActual ? equipos.filter(e => e.tipo_equipo_id === tipoActual.id) : [],
+    [equipos, tipoActual]
+  )
+
   const unidadesDeTipo = useMemo(() => {
     if (!tipoActual) return []
-    let result = equipos.filter(e => e.tipo_equipo_id === tipoActual.id)
+    let result = [...baseUnidadesDeTipo]
     if (search) result = result.filter(e => {
       const atrs = e.atributos || {}
       return Object.values(atrs).some(v => v?.toString().toLowerCase().includes(search.toLowerCase())) ||
@@ -122,10 +128,22 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       )
     })
     return result
-  }, [equipos, tipoActual, search, filtroEstado, filtrosCampos])
+  }, [baseUnidadesDeTipo, tipoActual, search, filtroEstado, filtrosCampos])
 
   const camposTipo   = catActual?.atributos_extra?.campos_tipo   || []
   const camposUnidad = catActual?.atributos_extra?.campos_unidad || []
+
+  const valoresUnicosPorCampo = useMemo(() => {
+    const result = {}
+    for (const campo of camposUnidad) {
+      result[campo.clave] = [...new Set(
+        baseUnidadesDeTipo
+          .map(e => e.atributos?.[campo.clave])
+          .filter(v => v != null && v !== '')
+      )].sort()
+    }
+    return result
+  }, [baseUnidadesDeTipo, camposUnidad])
 
   function irACat(cat) {
     setCatActual(categorias.find(c => c.id === cat.id) || cat)
@@ -520,19 +538,32 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 {camposUnidad.map((campo, idx) => {
                   const style = CAMPO_FILTRO_STYLES[campo.clave] || FILTRO_PALETTE[idx % FILTRO_PALETTE.length]
                   const Icon = style.Icon
+                  const valoresUnicos = valoresUnicosPorCampo[campo.clave] || []
+                  const usarDropdown  = valoresUnicos.length > 0 && valoresUnicos.length <= FILTRO_DROPDOWN_MAX
                   return (
                     <div key={campo.clave}>
                       <div className="flex items-center gap-1.5 mb-1.5">
                         <Icon size={13} color={style.color} />
                         <span className="text-[11px] font-bold uppercase tracking-[0.03em] text-slate-500">{campo.nombre}</span>
                       </div>
-                      <input
-                        type="text"
-                        value={filtrosCampos[campo.clave] || ''}
-                        onChange={e => setFiltrosCampos(f => ({ ...f, [campo.clave]: e.target.value }))}
-                        placeholder="Filtrar…"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white h-[38px] placeholder:text-slate-400"
-                      />
+                      {usarDropdown ? (
+                        <select
+                          value={filtrosCampos[campo.clave] || ''}
+                          onChange={e => setFiltrosCampos(f => ({ ...f, [campo.clave]: e.target.value }))}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white text-slate-600 h-[38px]"
+                        >
+                          <option value="">Todos</option>
+                          {valoresUnicos.map(v => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={filtrosCampos[campo.clave] || ''}
+                          onChange={e => setFiltrosCampos(f => ({ ...f, [campo.clave]: e.target.value }))}
+                          placeholder="Filtrar…"
+                          className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white h-[38px] placeholder:text-slate-400"
+                        />
+                      )}
                     </div>
                   )
                 })}

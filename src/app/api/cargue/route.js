@@ -70,7 +70,7 @@ export async function POST(request) {
       header:          true,
       skipEmptyLines:  true,
       delimiter:       '',
-      transformHeader: h => h.trim().replace(/^﻿/, '').replace(/;$/, ''),
+      transformHeader: h => h.trim().replace(/^﻿/, '').replace(/;$/, '').toLowerCase(),
       transform:       v => (typeof v === 'string' ? v.trim() : v),
     })
 
@@ -137,6 +137,12 @@ export async function POST(request) {
 
       if (tipoObj) {
         resultados.tiposReutilizados++
+        // Actualizar atributos del tipo existente si el CSV trae valores nuevos para campos recién añadidos
+        if (Object.keys(atributosTipo).length > 0) {
+          const atributosActualizados = { ...(tipoObj.atributos || {}), ...atributosTipo }
+          await supabaseAdmin.from('tipos_equipo').update({ atributos: atributosActualizados }).eq('id', tipoObj.id)
+          tipoObj.atributos = atributosActualizados
+        }
       } else {
         const { data: nuevoTipo, error: errTipo } = await supabaseAdmin
           .from('tipos_equipo')

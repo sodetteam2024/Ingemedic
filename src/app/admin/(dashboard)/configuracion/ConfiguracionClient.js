@@ -5,12 +5,9 @@ import { useState, useEffect } from 'react'
 import {
   Users, Lock, Tag, Cpu, Building2,
   FileText, Upload, Plus, X, Edit3, Trash2,
-  Check, Save, ClipboardList, Download, CheckCircle2, Smartphone,
-  UserX, UserCheck, ChevronDown, ChevronRight, ChevronUp
+  Check, Save, ClipboardList, Download, CheckCircle2, Smartphone
 } from 'lucide-react'
 import { GaleriaIconos, IconoEquipo } from '@/components/inventario/IconosEquipo'
-import HistorialCargas from '@/components/inventario/HistorialCargas'
-import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const NAV = [
   { id: 'usuarios',   label: 'Usuarios',               icon: Users,         grupo: 'Acceso' },
@@ -258,15 +255,8 @@ export default function ConfiguracionClient({
   const [saving, setSaving]           = useState(false)
   const [toast, setToast]             = useState(null)
   const [form, setForm]               = useState({})
-  const [formDirty, setFormDirty]     = useState(false)
-  const [confirmarSalir, setConfirmarSalir] = useState(false)
-  const [confirmElim, setConfirmElim] = useState(null)
-  const [listaExpandida, setListaExpandida]         = useState(null)
-  const [tipoExpandido, setTipoExpandido]           = useState(null)
-  const [categoriasExpandidas, setCategoriasExpandidas] = useState(() => {
-    const primera = catsIniciales?.find(c => tiposIniciales?.some(t => (t.categoria_id ?? t.categoria?.id) === c.id))
-    return primera ? new Set([primera.id]) : new Set()
-  })
+  const [listaExpandida, setListaExpandida] = useState(null)
+  const [tipoExpandido, setTipoExpandido]   = useState(null)
   const [nuevaActividad, setNuevaActividad] = useState('')
   const [empresa, setEmpresa]         = useState(empresaInicial)
   const [subiendoLogo, setSubiendoLogo] = useState(false)
@@ -280,16 +270,6 @@ export default function ConfiguracionClient({
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
     setTimeout(() => setToast(null), 3000)
-  }
-
-  function cerrarModal() {
-    setModal(null)
-    setFormDirty(false)
-  }
-
-  function intentarCerrarModal() {
-    if (formDirty) setConfirmarSalir(true)
-    else cerrarModal()
   }
 
   async function getSupabase() {
@@ -317,14 +297,7 @@ export default function ConfiguracionClient({
       setImagenTipo(null)
       setImagenTipoUrl(urlActual)
     }
-    setForm({
-      ...data,
-      password: '',
-      atributos: tipo === 'tipo'
-        ? { ...(data.atributos || {}), nombre: data.nombre || '' }
-        : (data.atributos || {}),
-    })
-    setFormDirty(false)
+    setForm({ ...data, password: '', atributos: data.atributos || {} })
     setModal(tipo)
   }
 
@@ -356,7 +329,7 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'usuario', entidad_id: data.usuario?.id, detalle: { nombre: form.nombre, email: form.email } })
       showToast('Usuario creado')
     }
-    setSaving(false); cerrarModal(); setForm({})
+    setSaving(false); setModal(null); setForm({})
   }
 
   async function toggleUsuario(u) {
@@ -394,10 +367,11 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'categoría de equipo', entidad_id: data.id, detalle: { nombre: form.nombre } })
       showToast('Categoría creada')
     }
-    setSaving(false); cerrarModal()
+    setSaving(false); setModal(null)
   }
 
   async function eliminarCat(id) {
+    if (!confirm('¿Eliminar esta categoría?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('categorias_equipo').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -482,10 +456,11 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'tipo de equipo', entidad_id: data.id, detalle: { nombre: nombreTipo } })
       showToast('Tipo creado')
     }
-    setSaving(false); cerrarModal()
+    setSaving(false); setModal(null)
   }
 
   async function eliminarTipo(id) {
+    if (!confirm('¿Eliminar este tipo de equipo?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('tipos_equipo').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -512,10 +487,11 @@ export default function ConfiguracionClient({
       registrarBitacora({ modulo: 'configuracion', accion: 'crear', entidad: 'lista de mantenimiento', entidad_id: data.id, detalle: { nombre: form.nombre } })
       showToast('Lista creada')
     }
-    setSaving(false); cerrarModal()
+    setSaving(false); setModal(null)
   }
 
   async function eliminarLista(id) {
+    if (!confirm('¿Eliminar esta lista?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('listas_mantenimiento').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -537,6 +513,7 @@ export default function ConfiguracionClient({
   }
 
   async function eliminarActividad(id) {
+    if (!confirm('¿Eliminar esta actividad?')) return
     const supabase = await getSupabase()
     const { error } = await supabase.from('actividades_lista_mantenimiento').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
@@ -708,14 +685,8 @@ export default function ConfiguracionClient({
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
                               <button onClick={() => abrirModal('usuario', { ...u, rol_id: u.rol_id })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
-                              <button
-                                title={u.activo ? 'Desactivar usuario' : 'Activar usuario'}
-                                onClick={() => u.activo
-                                  ? setConfirmElim({ fn: () => toggleUsuario(u), titulo: '¿Desactivar usuario?', mensaje: `"${u.nombre}" no podrá iniciar sesión hasta que vuelvas a activarlo.` })
-                                  : toggleUsuario(u)
-                                }
-                                className={`p-1.5 rounded-[6px] transition-all ${u.activo ? 'text-slate-400 hover:text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`}>
-                                {u.activo ? <UserX size={13} /> : <UserCheck size={13} />}
+                              <button onClick={() => toggleUsuario(u)} className={`p-1.5 rounded-[6px] transition-all ${u.activo ? 'text-slate-400 hover:text-red-500 hover:bg-red-50' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`}>
+                                {u.activo ? <X size={13} /> : <Check size={13} />}
                               </button>
                             </div>
                           </td>
@@ -779,7 +750,7 @@ export default function ConfiguracionClient({
                         </div>
                         <div className="flex items-center gap-1.5">
                           <button onClick={() => abrirModal('categoria', { ...c })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
-                          <button onClick={() => setConfirmElim({ fn: () => eliminarCat(c.id), titulo: '¿Eliminar categoría?', mensaje: `"${c.nombre}" y todos sus tipos quedarán desactivados. Esta acción no se puede deshacer.` })} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
+                          <button onClick={() => eliminarCat(c.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
                         </div>
                       </div>
                     )
@@ -802,117 +773,86 @@ export default function ConfiguracionClient({
                     <Plus size={14} /> Nuevo tipo
                   </button>
                 </div>
-                {(() => {
-                  const tiposPorCategoria = cats.map(cat => ({
-                    categoria: cat,
-                    tipos: tipos.filter(t => (t.categoria_id ?? t.categoria?.id) === cat.id),
-                  })).filter(g => g.tipos.length > 0)
-
-                  if (tiposPorCategoria.length === 0) {
-                    return <div className="bg-white rounded-xl border border-slate-200 shadow-sm text-center py-12 text-slate-400">Sin tipos configurados</div>
-                  }
-
-                  return (
-                    <div className="space-y-3">
-                      {tiposPorCategoria.map(grupo => {
-                        const abierta = categoriasExpandidas.has(grupo.categoria.id)
-                        return (
-                          <div key={grupo.categoria.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            {/* HEADER DE CATEGORÍA */}
-                            <div className="flex items-center gap-3 px-5 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors"
-                              onClick={() => setCategoriasExpandidas(prev => {
-                                const next = new Set(prev)
-                                next.has(grupo.categoria.id) ? next.delete(grupo.categoria.id) : next.add(grupo.categoria.id)
-                                return next
-                              })}>
-                              <div className="text-slate-400">
-                                {abierta ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                              </div>
-                              <span className="text-[14px] font-bold text-slate-800 flex-1">{grupo.categoria.nombre}</span>
-                              <span className="text-[12px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-semibold">
-                                {grupo.tipos.length} {grupo.tipos.length === 1 ? 'tipo' : 'tipos'}
+                <div className="space-y-2">
+                  {tipos.length === 0 && <div className="bg-white rounded-xl border border-slate-200 shadow-sm text-center py-12 text-slate-400">Sin tipos configurados</div>}
+                  {tipos.map(t => {
+                    const cat = cats.find(c => c.id === (t.categoria_id ?? t.categoria?.id))
+                    const camposTipo = cat?.atributos_extra?.campos_tipo || []
+                    const expanded = tipoExpandido === t.id
+                    const nombre = t.atributos?.nombre || t.nombre || '—'
+                    const tieneIcono   = t.imagen_url?.startsWith('icono:')
+                    const tieneImagen  = t.imagen_url && !tieneIcono
+                    const iconoClave   = tieneIcono ? t.imagen_url.replace('icono:', '') : null
+                    // Fallback: ícono de la categoría
+                    const iconoCatClave = !t.imagen_url && cat?.imagen_url?.startsWith('icono:')
+                      ? cat.imagen_url.replace('icono:', '') : null
+                    return (
+                      <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className={`flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors ${expanded ? 'bg-slate-50' : ''}`}
+                          onClick={() => setTipoExpandido(prev => prev === t.id ? null : t.id)}>
+                          {/* Imagen, ícono o placeholder */}
+                          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                            {tieneImagen
+                              ? <img src={t.imagen_url} alt={nombre} className="w-full h-full object-contain p-1" />
+                              : iconoClave
+                              ? <IconoEquipo clave={iconoClave} size={24} color="#D81B43" />
+                              : iconoCatClave
+                              ? <IconoEquipo clave={iconoCatClave} size={22} color="#94A3B8" />
+                              : <Cpu size={18} className="text-slate-300" />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[12px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium flex-shrink-0">
+                                {t.categoria?.nombre || cat?.nombre || '—'}
                               </span>
+                              <span className="text-[14px] font-bold text-slate-700">{nombre}</span>
                             </div>
-
-                            {/* FILAS DE TIPOS */}
-                            {abierta && (
-                              <div className="border-t border-slate-100">
-                                {grupo.tipos.map(t => {
-                                  const cat = grupo.categoria
-                                  const camposTipo = cat?.atributos_extra?.campos_tipo || []
-                                  const expanded = tipoExpandido === t.id
-                                  const nombre = t.nombre || t.atributos?.nombre || '—'
-                                  const tieneIcono    = t.imagen_url?.startsWith('icono:')
-                                  const tieneImagen   = t.imagen_url && !tieneIcono
-                                  const iconoClave    = tieneIcono ? t.imagen_url.replace('icono:', '') : null
-                                  const iconoCatClave = !t.imagen_url && cat?.imagen_url?.startsWith('icono:')
-                                    ? cat.imagen_url.replace('icono:', '') : null
-                                  return (
-                                    <div key={t.id} className="border-b border-slate-100 last:border-b-0">
-                                      <div className={`flex items-center gap-3 pl-8 pr-5 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors ${expanded ? 'bg-slate-50' : ''}`}
-                                        onClick={() => setTipoExpandido(prev => prev === t.id ? null : t.id)}>
-                                        <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                          {tieneImagen
-                                            ? <img src={t.imagen_url} alt={nombre} className="w-full h-full object-contain p-1" />
-                                            : iconoClave
-                                            ? <IconoEquipo clave={iconoClave} size={22} color="#D81B43" />
-                                            : iconoCatClave
-                                            ? <IconoEquipo clave={iconoCatClave} size={20} color="#94A3B8" />
-                                            : <Cpu size={16} className="text-slate-300" />
-                                          }
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                          <div className="text-[13.5px] font-bold text-slate-700">{nombre}</div>
-                                          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                            {t.lista
-                                              ? <span className="text-[11.5px] font-semibold text-[#0F7B55]">✓ {t.lista.nombre}</span>
-                                              : <span className="text-[11.5px] text-slate-400">Sin lista de mantenimiento</span>}
-                                            {camposTipo.length > 0 && <span className="text-[11.5px] text-[#25A9E0]">· {camposTipo.length} columnas</span>}
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                          <button onClick={() => abrirModal('tipo', { ...t, categoria_id: t.categoria_id ?? t.categoria?.id, lista_mantenimiento_id: t.lista_mantenimiento_id ?? t.lista?.id })}
-                                            className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
-                                          <button onClick={() => setConfirmElim({ fn: () => eliminarTipo(t.id), titulo: '¿Eliminar tipo de equipo?', mensaje: `"${t.nombre}" quedará desactivado. Esta acción no se puede deshacer.` })}
-                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
-                                        </div>
-                                        <div className="text-slate-400 ml-1">
-                                          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                        </div>
-                                      </div>
-                                      {expanded && (
-                                        <div className="border-t border-slate-200 bg-[#F8FAFC] pl-8 pr-5 py-4">
-                                          {camposTipo.length > 0 ? (
-                                            <>
-                                              <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Columnas del tipo</div>
-                                              <div className="flex flex-wrap gap-6">
-                                                {camposTipo.map(campo => (
-                                                  <div key={campo.clave}>
-                                                    <div className="text-[10px] font-semibold uppercase text-slate-400">{campo.nombre}</div>
-                                                    <div className="text-[13.5px] font-medium text-slate-700 mt-0.5">{t.atributos?.[campo.clave] || '—'}</div>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </>
-                                          ) : (
-                                            <div className="text-[12.5px] text-slate-400">
-                                              Esta categoría no tiene columnas del tipo.
-                                              <button onClick={() => setSeccion('categorias')} className="ml-2 text-[#D81B43] font-medium hover:underline">Ir a Categorías →</button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {t.lista
+                                ? <span className="text-[11.5px] font-semibold text-[#0F7B55]">✓ {t.lista.nombre}</span>
+                                : <span className="text-[11.5px] text-slate-400">Sin lista de mantenimiento</span>}
+                              {camposTipo.length > 0 && <span className="text-[11.5px] text-[#25A9E0]">· {camposTipo.length} columnas</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => abrirModal('tipo', { ...t, categoria_id: t.categoria_id ?? t.categoria?.id, lista_mantenimiento_id: t.lista_mantenimiento_id ?? t.lista?.id })}
+                              className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
+                            <button onClick={() => eliminarTipo(t.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
+                          </div>
+                          <div className="text-slate-400 ml-1">
+                            {expanded
+                              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg>
+                              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>}
+                          </div>
+                        </div>
+                        {expanded && (
+                          <div className="border-t border-slate-200 bg-[#F8FAFC] px-6 py-4">
+                            {camposTipo.length > 0 ? (
+                              <>
+                                <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Columnas del tipo</div>
+                                <div className="flex flex-wrap gap-6">
+                                  {camposTipo.map(campo => (
+                                    <div key={campo.clave}>
+                                      <div className="text-[10px] font-semibold uppercase text-slate-400">{campo.nombre}</div>
+                                      <div className="text-[13.5px] font-medium text-slate-700 mt-0.5">{t.atributos?.[campo.clave] || '—'}</div>
                                     </div>
-                                  )
-                                })}
+                                  ))}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-[12.5px] text-slate-400">
+                                Esta categoría no tiene columnas del tipo.
+                                <button onClick={() => setSeccion('categorias')} className="ml-2 text-[#D81B43] font-medium hover:underline">Ir a Categorías →</button>
                               </div>
                             )}
                           </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })()}
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
@@ -952,7 +892,7 @@ export default function ConfiguracionClient({
                           </div>
                           <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                             <button onClick={() => abrirModal('lista', { ...l })} className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px]"><Edit3 size={13} /></button>
-                            <button onClick={() => setConfirmElim({ fn: () => eliminarLista(l.id), titulo: '¿Eliminar lista?', mensaje: `"${l.nombre}" y todas sus actividades quedarán desactivadas. Esta acción no se puede deshacer.` })} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px]"><Trash2 size={13} /></button>
+                            <button onClick={() => eliminarLista(l.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px]"><Trash2 size={13} /></button>
                           </div>
                           <div className="text-slate-400 ml-1">
                             {expanded
@@ -967,7 +907,7 @@ export default function ConfiguracionClient({
                                 <div key={a.id} className="flex items-center gap-2.5 p-2.5 bg-slate-50 rounded-[8px] border border-slate-200">
                                   <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500 flex-shrink-0">{i + 1}</div>
                                   <span className="flex-1 text-[13px] text-slate-700">{a.nombre}</span>
-                                  <button onClick={() => setConfirmElim({ fn: () => eliminarActividad(a.id), titulo: '¿Eliminar actividad?', mensaje: `"${a.nombre}" quedará desactivada.` })} className="p-1 text-slate-400 hover:text-red-500"><X size={12} /></button>
+                                  <button onClick={() => eliminarActividad(a.id)} className="p-1 text-slate-400 hover:text-red-500"><X size={12} /></button>
                                 </div>
                               ))}
                               {acts.length === 0 && <div className="text-[12.5px] text-slate-400 text-center py-2">Sin actividades</div>}
@@ -1077,10 +1017,6 @@ export default function ConfiguracionClient({
                 <CargueEquipos cats={cats} />
                 <CargueCard titulo="Clientes" tipo="clientes" sub="Importa clientes desde CSV"
                   cols="tipo_persona, nombre, nit_cc, departamento, municipio, direccion, telefono, email" />
-                <div className="mt-6">
-                  <div className="text-[14px] font-bold text-slate-700 mb-3">Historial de cargas</div>
-                  <HistorialCargas />
-                </div>
               </div>
             )}
 
@@ -1151,7 +1087,7 @@ export default function ConfiguracionClient({
       {/* ── MODALES — sin scroll interno, tamaño adaptativo ── */}
       {modal && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => intentarCerrarModal()} />
+          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => setModal(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className={`bg-white rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden
               ${modal === 'categoria' ? 'max-w-[640px]' : modal === 'tipo' ? 'max-w-[600px]' : 'max-w-[480px]'}
@@ -1166,11 +1102,11 @@ export default function ConfiguracionClient({
                    modal === 'tipo'      ? (form.id ? 'Editar tipo de equipo': 'Nuevo tipo de equipo') :
                    modal === 'lista'     ? (form.id ? 'Editar lista'         : 'Nueva lista')          : ''}
                 </h3>
-                <button onClick={() => intentarCerrarModal()} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"><X size={16} /></button>
               </div>
 
               {/* Modal body — scroll solo si no cabe en pantalla */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4" onChange={() => setFormDirty(true)}>
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
                 {/* USUARIO */}
                 {modal === 'usuario' && <>
@@ -1331,64 +1267,31 @@ export default function ConfiguracionClient({
                   {/* Imagen del tipo */}
                   <div>
                     <label className={labelCls}>Imagen del equipo <span className="text-slate-300 font-normal normal-case">(opcional — foto real del modelo)</span></label>
-                    {(imagenTipo || imagenTipoUrl) ? (
-                      /* Estado: hay imagen — mostrar preview + quitar */
-                      <div className="flex items-center gap-4 p-3 border border-slate-200 rounded-[10px] bg-slate-50">
-                        <div className="w-16 h-16 rounded-lg border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
-                          <img
-                            src={imagenTipo ? URL.createObjectURL(imagenTipo) : imagenTipoUrl}
-                            alt="preview"
-                            className="w-full h-full object-contain p-1"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[12.5px] font-medium text-slate-700 truncate">
-                            {imagenTipo ? imagenTipo.name : 'Imagen actual'}
-                          </div>
-                          {imagenTipo && (
-                            <div className="text-[11px] text-slate-400 mt-0.5">
-                              {(imagenTipo.size / 1024).toFixed(0)} KB
-                            </div>
-                          )}
-                          <div className="flex items-center gap-3 mt-2">
-                            <label className="text-[12px] text-[#D81B43] font-medium hover:underline cursor-pointer">
-                              Cambiar
-                              <input type="file" accept="image/*" className="hidden"
-                                onChange={e => { const f = e.target.files?.[0]; if (f) setImagenTipo(f); e.target.value = '' }} />
-                            </label>
-                            <button onClick={() => { setImagenTipo(null); setImagenTipoUrl('') }}
-                              className="text-[12px] text-red-400 hover:text-red-600 transition-colors">
-                              Quitar
-                            </button>
-                          </div>
-                        </div>
+                    <div className="flex items-center gap-4">
+                      {/* Preview */}
+                      <div className="w-20 h-20 rounded-xl border-2 border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {imagenTipo
+                          ? <img src={URL.createObjectURL(imagenTipo)} alt="preview" className="w-full h-full object-contain p-1" />
+                          : imagenTipoUrl
+                          ? <img src={imagenTipoUrl} alt="actual" className="w-full h-full object-contain p-1" />
+                          : <Cpu size={28} className="text-slate-200" />
+                        }
                       </div>
-                    ) : (
-                      /* Estado: sin imagen — zona de drop */
-                      <label
-                        className="flex flex-col items-center justify-center gap-2 w-full h-[100px] border-2 border-dashed border-slate-200 rounded-[10px] bg-slate-50 hover:border-[#D81B43]/50 hover:bg-[#D81B43]/[0.02] transition-all cursor-pointer group"
-                        onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-[#D81B43]/60', 'bg-[#D81B43]/[0.04]') }}
-                        onDragLeave={e => { e.currentTarget.classList.remove('border-[#D81B43]/60', 'bg-[#D81B43]/[0.04]') }}
-                        onDrop={e => {
-                          e.preventDefault()
-                          e.currentTarget.classList.remove('border-[#D81B43]/60', 'bg-[#D81B43]/[0.04]')
-                          const f = e.dataTransfer.files?.[0]
-                          if (f && f.type.startsWith('image/')) setImagenTipo(f)
-                        }}
-                      >
-                        <Upload size={18} className="text-slate-300 group-hover:text-[#D81B43]/50 transition-colors" />
-                        <div className="text-center">
-                          <span className="text-[12.5px] font-medium text-slate-500 group-hover:text-[#D81B43] transition-colors">
-                            Arrastra una imagen aquí
-                          </span>
-                          <span className="text-[12px] text-slate-400"> o </span>
-                          <span className="text-[12.5px] font-medium text-[#D81B43]">selecciona un archivo</span>
-                        </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-[8px] text-[12.5px] font-medium text-slate-600 hover:border-[#D81B43] hover:text-[#D81B43] transition-all cursor-pointer w-fit">
+                          <Upload size={13} /> {imagenTipo ? imagenTipo.name.slice(0, 20) + '...' : 'Subir imagen'}
+                          <input type="file" accept="image/*" className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) setImagenTipo(f); e.target.value = '' }} />
+                        </label>
+                        {(imagenTipo || imagenTipoUrl) && (
+                          <button onClick={() => { setImagenTipo(null); setImagenTipoUrl('') }}
+                            className="text-[12px] text-red-400 hover:text-red-600 transition-colors text-left">
+                            Quitar imagen
+                          </button>
+                        )}
                         <div className="text-[11px] text-slate-400">JPG, PNG o WEBP · máx. 2MB</div>
-                        <input type="file" accept="image/*" className="hidden"
-                          onChange={e => { const f = e.target.files?.[0]; if (f) setImagenTipo(f); e.target.value = '' }} />
-                      </label>
-                    )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Campos dinámicos */}
@@ -1433,7 +1336,7 @@ export default function ConfiguracionClient({
 
               {/* Modal footer */}
               <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 flex-shrink-0 bg-white">
-                <button onClick={() => intentarCerrarModal()} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
+                <button onClick={() => setModal(null)} className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">Cancelar</button>
                 <button onClick={
                   modal === 'usuario'   ? guardarUsuario :
                   modal === 'categoria' ? guardarCat     :
@@ -1448,28 +1351,6 @@ export default function ConfiguracionClient({
           </div>
         </>
       )}
-
-      <ConfirmDialog
-        abierto={!!confirmElim}
-        titulo={confirmElim?.titulo || ''}
-        mensaje={confirmElim?.mensaje}
-        textoConfirmar="Sí, eliminar"
-        textoCancelar="Cancelar"
-        tipo="peligro"
-        onConfirmar={() => { confirmElim?.fn(); setConfirmElim(null) }}
-        onCancelar={() => setConfirmElim(null)}
-      />
-
-      <ConfirmDialog
-        abierto={confirmarSalir}
-        titulo="¿Descartar cambios?"
-        mensaje="Tienes cambios sin guardar. ¿Deseas salir sin guardar?"
-        textoConfirmar="Sí, salir"
-        textoCancelar="Seguir editando"
-        tipo="default"
-        onConfirmar={() => { setConfirmarSalir(false); cerrarModal() }}
-        onCancelar={() => setConfirmarSalir(false)}
-      />
 
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>
