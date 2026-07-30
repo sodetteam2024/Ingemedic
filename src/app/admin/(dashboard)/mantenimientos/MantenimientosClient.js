@@ -288,13 +288,24 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
   }
 
   function actualizarActividad(actId, cambios) {
-    const updFn = m => ({
+    const updFn = (m) => ({
       ...m,
-      actividades: (m.actividades || []).map(a => a.id === actId ? { ...a, ...cambios } : a)
-    })
-    skipSyncUntil.current = Date.now() + 2500
-    setMantenimientos(prev => prev.map(m => m.id === drawer?.id ? updFn(m) : m))
-    if (drawer) setDrawer(prev => updFn(prev))
+      actividades: (m.actividades || []).map((a) =>
+        a.id === actId ? { ...a, ...cambios } : a
+      ),
+    });
+
+    queueMicrotask(() => {
+      skipSyncUntil.current = performance.now() + 2500;
+
+      setMantenimientos((prev) =>
+        prev.map((m) => (m.id === drawer?.id ? updFn(m) : m))
+      );
+
+      if (drawer) {
+        setDrawer((prev) => updFn(prev));
+      }
+    });
   }
 
   // ── CERRAR MANTENIMIENTO ─────────────────────────────────
@@ -599,8 +610,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
             {tipos.map(t => (
               <button key={t.id} onClick={() => setFiltroTipo(p => p === t.nombre ? '' : t.nombre)}
                 className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all ${filtroTipo === t.nombre
-                    ? t.nombre === 'Correctivo' ? 'bg-[#D81B43] text-white' : 'bg-[#25A9E0] text-white'
-                    : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'
+                  ? t.nombre === 'Correctivo' ? 'bg-[#D81B43] text-white' : 'bg-[#25A9E0] text-white'
+                  : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'
                   }`}>{t.nombre}</button>
             ))}
           </div>
@@ -624,8 +635,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           {filtrados.map(m => (
             <div key={m.id} onClick={() => setDrawer(m)}
               className={`bg-white rounded-xl p-4 cursor-pointer shadow-sm ${m.tipo?.nombre === 'Correctivo' && m.estado?.nombre !== 'Cerrado'
-                  ? 'border-l-4 border-l-[#D81B43] border border-t-slate-200 border-r-slate-200 border-b-slate-200'
-                  : 'border border-slate-200'
+                ? 'border-l-4 border-l-[#D81B43] border border-t-slate-200 border-r-slate-200 border-b-slate-200'
+                : 'border border-slate-200'
                 }`}>
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <span className="font-mono text-[12px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{m.codigo}</span>
@@ -866,8 +877,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                     {tipos.map(t => (
                       <button key={t.id} onClick={() => setForm(f => ({ ...f, tipo_mantenimiento_id: t.id }))}
                         className={`flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all ${form.tipo_mantenimiento_id === t.id
-                            ? t.nombre === 'Correctivo' ? 'border-[#D81B43] bg-[#D81B43]/5 text-[#D81B43]' : 'border-[#25A9E0] bg-[#E8F7FB] text-[#0E86A0]'
-                            : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                          ? t.nombre === 'Correctivo' ? 'border-[#D81B43] bg-[#D81B43]/5 text-[#D81B43]' : 'border-[#25A9E0] bg-[#E8F7FB] text-[#0E86A0]'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300'
                           }`}>
                         {t.nombre === 'Correctivo' ? <AlertTriangle size={15} /> : <Wrench size={15} />}
                         {t.nombre}
