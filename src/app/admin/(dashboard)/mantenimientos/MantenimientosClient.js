@@ -1,6 +1,6 @@
 'use client'
 import { registrarBitacora } from '@/lib/bitacora'
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import {
@@ -11,21 +11,21 @@ import {
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const ESTADOS = {
-  Abierto:   '9c71ba4d-e82d-4714-b2fb-4cc242cd47be',
+  Abierto: '9c71ba4d-e82d-4714-b2fb-4cc242cd47be',
   EnProceso: 'eef1b963-5bf5-4be7-85ab-312d9605234d',
-  Cerrado:   '08136bd6-f134-406a-98e9-2132516edd7f',
+  Cerrado: '08136bd6-f134-406a-98e9-2132516edd7f',
 }
 
 const ESTADO_EQUIPO = {
-  Disponible:      'f33e7c6f-0f81-484e-9f0a-93fd28f9c414',
+  Disponible: 'f33e7c6f-0f81-484e-9f0a-93fd28f9c414',
   EnMantenimiento: 'edf159bf-6402-4991-a673-ade689ded77e',
-  Baja:            '1be9843f-bcbf-46f2-bb6c-5a487225b8c3',
+  Baja: '1be9843f-bcbf-46f2-bb6c-5a487225b8c3',
 }
 
 const ESTADO_STYLES = {
-  'Abierto':    { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
+  'Abierto': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
   'En proceso': { bg: '#EFF6FF', color: '#1D4ED8', dot: '#3B82F6' },
-  'Cerrado':    { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+  'Cerrado': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
 }
 
 function EstadoBadge({ nombre }) {
@@ -41,9 +41,8 @@ function EstadoBadge({ nombre }) {
 
 function TipoBadge({ nombre }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold ${
-      nombre === 'Correctivo' ? 'bg-[#FEF2F2] text-[#D81B43]' : 'bg-[#E8F7FB] text-[#0E86A0]'
-    }`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold ${nombre === 'Correctivo' ? 'bg-[#FEF2F2] text-[#D81B43]' : 'bg-[#E8F7FB] text-[#0E86A0]'
+      }`}>
       {nombre === 'Correctivo' ? <AlertTriangle size={9} /> : <Wrench size={9} />}
       {nombre}
     </span>
@@ -61,21 +60,55 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
 
 export default function MantenimientosClient({ mantenimientosIniciales, tipos, equipos, listas }) {
-  const router   = useRouter()
+  const router = useRouter()
   const supabase = createClient()
 
   const [mantenimientos, setMantenimientos] = useState(mantenimientosIniciales || [])
-  const [search, setSearch]                 = useState('')
-  const [filtroEstado, setFiltroEstado]     = useState('')
-  const [filtroTipo, setFiltroTipo]         = useState('')
-  const [drawer, setDrawer]                 = useState(null)
-  const [modal, setModal]                   = useState(false)
-  const [modalCierre, setModalCierre]       = useState(null)
-  const [saving, setSaving]                 = useState(false)
-  const [formDirty, setFormDirty]           = useState(false)
+  const skipSyncUntil = useRef(0)
+
+  // Mantener el estado local sincronizado cuando el servidor manda datos frescos
+  // (esto se dispara después de router.refresh(), incluido el que llega por realtime)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (Date.now() < skipSyncUntil.current) return
+      setMantenimientos(mantenimientosIniciales || [])
+    }, 0)
+    return () => clearTimeout(t)
+  }, [mantenimientosIniciales])
+
+  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
+  // Sin esto, un dispositivo no se entera de cambios hechos en otro
+  // (ej. un técnico cerró un mantenimiento) hasta recargar la página.
+  useEffect(() => {
+    let debounceTimer = null
+    function refrescarConDebounce() {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        if (Date.now() < skipSyncUntil.current) return
+        router.refresh()
+      }, 500)
+    }
+
+    const canal = supabase
+      .channel('mantenimientos-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mantenimientos' }, refrescarConDebounce)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'actividades_mantenimiento' }, refrescarConDebounce)
+      .subscribe()
+
+    return () => { clearTimeout(debounceTimer); supabase.removeChannel(canal) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const [search, setSearch] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [drawer, setDrawer] = useState(null)
+  const [modal, setModal] = useState(false)
+  const [modalCierre, setModalCierre] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [formDirty, setFormDirty] = useState(false)
   const [confirmarSalir, setConfirmarSalir] = useState(false)
-  const [toast, setToast]                   = useState(null)
-  const [uploading, setUploading]           = useState({})
+  const [toast, setToast] = useState(null)
+  const [uploading, setUploading] = useState({})
   const [form, setForm] = useState({
     equipo_id: '', tipo_mantenimiento_id: '', tecnico: '',
     observaciones_cliente: '', lista_id: '',
@@ -98,10 +131,10 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
   function intentarCerrarModal() { if (formDirty) setConfirmarSalir(true); else cerrarModal() }
 
   const stats = useMemo(() => ({
-    total:       (mantenimientos || []).length,
-    abiertos:    (mantenimientos || []).filter(m => m.estado?.nombre === 'Abierto').length,
-    enProceso:   (mantenimientos || []).filter(m => m.estado?.nombre === 'En proceso').length,
-    cerrados:    (mantenimientos || []).filter(m => m.estado?.nombre === 'Cerrado').length,
+    total: (mantenimientos || []).length,
+    abiertos: (mantenimientos || []).filter(m => m.estado?.nombre === 'Abierto').length,
+    enProceso: (mantenimientos || []).filter(m => m.estado?.nombre === 'En proceso').length,
+    cerrados: (mantenimientos || []).filter(m => m.estado?.nombre === 'Cerrado').length,
     correctivos: (mantenimientos || []).filter(m => m.tipo?.nombre === 'Correctivo').length,
   }), [mantenimientos])
 
@@ -110,14 +143,14 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       const mq = !search || [m.codigo, nombreEquipo(m.equipo), m.tecnico]
         .some(v => v?.toLowerCase().includes(search.toLowerCase()))
       const me = !filtroEstado || m.estado?.nombre === filtroEstado
-      const mt = !filtroTipo   || m.tipo?.nombre   === filtroTipo
+      const mt = !filtroTipo || m.tipo?.nombre === filtroTipo
       return mq && me && mt
     })
   }, [mantenimientos, search, filtroEstado, filtroTipo])
 
   // ── CREAR MANTENIMIENTO ──────────────────────────────────
   async function crearMantenimiento() {
-    if (!form.equipo_id)             { showToast('Selecciona un equipo', 'error'); return }
+    if (!form.equipo_id) { showToast('Selecciona un equipo', 'error'); return }
     if (!form.tipo_mantenimiento_id) { showToast('Selecciona el tipo', 'error'); return }
     setSaving(true)
 
@@ -136,15 +169,15 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
 
     const { data, error } = await supabase.from('mantenimientos').insert({
       codigo,
-      equipo_id:             form.equipo_id,
+      equipo_id: form.equipo_id,
       tipo_mantenimiento_id: form.tipo_mantenimiento_id,
-      estado_id:             ESTADOS.EnProceso, // directo a En proceso
-      tecnico:               form.tecnico || null,
-      fecha_apertura:        new Date().toISOString().split('T')[0],
+      estado_id: ESTADOS.EnProceso, // directo a En proceso
+      tecnico: form.tecnico || null,
+      fecha_apertura: new Date().toISOString().split('T')[0],
       observaciones_cliente: form.observaciones_cliente || null,
-      en_curso:              true,
+      en_curso: true,
     })
-    .select(`
+      .select(`
       *,
       equipo:equipos(id, codigo,
         tipo_equipo:tipos_equipo(id, nombre, atributos, categoria:categorias_equipo(id, nombre)),
@@ -154,7 +187,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       tipo:tipos_mantenimiento(id, nombre),
       actividades:actividades_mantenimiento(id, descripcion, completado, observaciones, fecha, archivo_url, adjuntos:adjuntos_actividad_mantenimiento(id, nombre, url, tipo))
     `)
-    .single()
+      .single()
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
     registrarBitacora({ modulo: 'mantenimientos', accion: 'crear', entidad: 'mantenimiento', entidad_id: data.id, detalle: { codigo } })
@@ -165,20 +198,21 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     // Insertar actividades de la lista seleccionada
     if (form.lista_id) {
       const lista = listas.find(l => l.id === form.lista_id)
-      const acts  = lista?.actividades?.sort((a, b) => a.orden - b.orden) || []
+      const acts = lista?.actividades?.sort((a, b) => a.orden - b.orden) || []
       if (acts.length > 0) {
         const { data: actsCreadas } = await supabase.from('actividades_mantenimiento').insert(
           acts.map(a => ({
-            mantenimiento_id:  data.id,
+            mantenimiento_id: data.id,
             checklist_item_id: null,
-            descripcion:       a.nombre,
-            completado:        false,
+            descripcion: a.nombre,
+            completado: false,
           }))
         ).select('id, descripcion, completado, observaciones, fecha, archivo_url')
         data.actividades = actsCreadas || []
       }
     }
 
+    skipSyncUntil.current = Date.now() + 2500
     setMantenimientos(prev => [data, ...prev])
     setSaving(false)
     cerrarModal()
@@ -224,7 +258,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     const idMant = mantId || drawer?.id
     if (!idMant) { showToast('Error: mantenimiento no identificado', 'error'); return }
     setUploading(prev => ({ ...prev, [act.id]: true }))
-    const ext  = file.name.split('.').pop().toLowerCase()
+    const ext = file.name.split('.').pop().toLowerCase()
     const uuid = crypto.randomUUID()
     const path = `adjuntos/${idMant}_${act.id}_${uuid}.${ext}`
     const { error: upErr } = await supabase.storage.from('mantenimientos-adjuntos').upload(path, file)
@@ -234,9 +268,9 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
 
     const { data: adj, error } = await supabase.from('adjuntos_actividad_mantenimiento').insert({
       actividad_id: act.id,
-      nombre:       file.name,
-      url:          publicUrl,
-      tipo:         file.type,
+      nombre: file.name,
+      url: publicUrl,
+      tipo: file.type,
     }).select('id, nombre, url, tipo').single()
 
     if (error) { showToast('Error: ' + error.message, 'error'); setUploading(prev => ({ ...prev, [act.id]: false })); return }
@@ -258,6 +292,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       ...m,
       actividades: (m.actividades || []).map(a => a.id === actId ? { ...a, ...cambios } : a)
     })
+    skipSyncUntil.current = Date.now() + 2500
     setMantenimientos(prev => prev.map(m => m.id === drawer?.id ? updFn(m) : m))
     if (drawer) setDrawer(prev => updFn(prev))
   }
@@ -272,11 +307,11 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     const estadoEquipoId = cierreForm.resultado === 'disponible' ? ESTADO_EQUIPO.Disponible : ESTADO_EQUIPO.Baja
 
     const { error } = await supabase.from('mantenimientos').update({
-      estado_id:         ESTADOS.Cerrado,
-      en_curso:          false,
-      actividades:       cierreForm.actividades,
-      tecnico:           cierreForm.tecnico || modalCierre.tecnico || null,
-      fecha_cierre:      cierreForm.fecha_cierre || new Date().toISOString().split('T')[0],
+      estado_id: ESTADOS.Cerrado,
+      en_curso: false,
+      actividades: cierreForm.actividades,
+      tecnico: cierreForm.tecnico || modalCierre.tecnico || null,
+      fecha_cierre: cierreForm.fecha_cierre || new Date().toISOString().split('T')[0],
       fecha_cierre_real: new Date().toISOString().split('T')[0],
     }).eq('id', modalCierre.id)
 
@@ -292,6 +327,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       tecnico: cierreForm.tecnico || modalCierre.tecnico,
       fecha_cierre: cierreForm.fecha_cierre || new Date().toISOString().split('T')[0],
     }
+    skipSyncUntil.current = Date.now() + 2500
     setMantenimientos(prev => prev.map(m => m.id === modalCierre.id ? { ...m, ...updCambios } : m))
     if (drawer?.id === modalCierre.id) setDrawer(prev => ({ ...prev, ...updCambios }))
     setSaving(false); setModalCierre(null)
@@ -325,9 +361,9 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     let logoEndX = M // donde termina el logo, para arrancar la franja roja
 
     try {
-      const res  = await fetch(LOGO_URL)
+      const res = await fetch(LOGO_URL)
       const blob = await res.blob()
-      const b64  = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+      const b64 = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
       const dims = await new Promise(r => { const img = new window.Image(); img.onload = () => r({ w: img.naturalWidth, h: img.naturalHeight }); img.src = b64 })
       const maxH = HEADER_H // logo llena toda la altura del header
       const ratio = maxH / dims.h
@@ -370,18 +406,18 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
 
     // Datos equipo
     y = seccion('DATOS DEL EQUIPO', [
-      ['Equipo',      nombreEquipo(m.equipo)],
-      ['Código',      m.equipo?.codigo],
-      ['Categoría',   m.equipo?.tipo_equipo?.categoria?.nombre],
+      ['Equipo', nombreEquipo(m.equipo)],
+      ['Código', m.equipo?.codigo],
+      ['Categoría', m.equipo?.tipo_equipo?.categoria?.nombre],
     ], y)
 
     // Datos cliente / orden (si aplica)
     y = seccion('DATOS DEL SERVICIO', [
-      ['Código',      m.codigo],
-      ['Tipo',        m.tipo?.nombre],
-      ['Técnico',     m.tecnico],
-      ['Apertura',    m.fecha_apertura],
-      ['Cierre',      m.fecha_cierre || 'En proceso'],
+      ['Código', m.codigo],
+      ['Tipo', m.tipo?.nombre],
+      ['Técnico', m.tecnico],
+      ['Apertura', m.fecha_apertura],
+      ['Cierre', m.fecha_cierre || 'En proceso'],
     ], y)
 
     // Observaciones cliente
@@ -429,11 +465,11 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
         for (const img of adjImgs) {
           try {
             if (y > 220) { doc.addPage(); y = M }
-            const res  = await fetch(img.url)
+            const res = await fetch(img.url)
             const blob = await res.blob()
-            const b64  = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+            const b64 = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
             const dims = await new Promise(r => { const i = new window.Image(); i.onload = () => r({ w: i.naturalWidth, h: i.naturalHeight }); i.src = b64 })
-            const ext  = img.tipo === 'image/png' ? 'PNG' : 'JPEG'
+            const ext = img.tipo === 'image/png' ? 'PNG' : 'JPEG'
             const maxImgW = 80, maxImgH = 55
             const ratio = Math.min(maxImgW / dims.w, maxImgH / dims.h)
             const imgW = dims.w * ratio
@@ -442,7 +478,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
             doc.setTextColor(130, 130, 130); doc.setFontSize(7); doc.setFont('helvetica', 'normal')
             doc.text(img.nombre, M + 9, y + imgH + 3)
             y += imgH + 7
-          } catch {}
+          } catch { }
         }
         y += 3
       }
@@ -517,15 +553,14 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           {/* Móvil: chips */}
           <div className="flex md:hidden gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {[
-              { label: 'Total',      value: stats.total,     color: '#1E293B', f: '',           t: '' },
-              { label: 'Abiertos',   value: stats.abiertos,  color: '#B45309', f: 'Abierto',    t: '' },
+              { label: 'Total', value: stats.total, color: '#1E293B', f: '', t: '' },
+              { label: 'Abiertos', value: stats.abiertos, color: '#B45309', f: 'Abierto', t: '' },
               { label: 'En proceso', value: stats.enProceso, color: '#1D4ED8', f: 'En proceso', t: '' },
             ].map(s => (
               <button key={s.label}
                 onClick={() => s.t ? setFiltroTipo(p => p === s.t ? '' : s.t) : setFiltroEstado(p => p === s.f ? '' : s.f)}
-                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium whitespace-nowrap transition-all ${
-                  (filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 bg-white'
-                }`}>
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium whitespace-nowrap transition-all ${(filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 bg-white'
+                  }`}>
                 <span className="font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</span>
                 <span className="text-slate-500">{s.label}</span>
               </button>
@@ -535,17 +570,16 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           {/* Desktop: cards (igual que antes) */}
           <div className="hidden md:grid md:grid-cols-5 gap-3">
             {[
-              { label: 'Total',       value: stats.total,       color: '#1E293B', f: '',           t: '' },
-              { label: 'Abiertos',    value: stats.abiertos,    color: '#B45309', f: 'Abierto',    t: '' },
-              { label: 'En proceso',  value: stats.enProceso,   color: '#1D4ED8', f: 'En proceso', t: '' },
-              { label: 'Cerrados',    value: stats.cerrados,    color: '#0F7B55', f: 'Cerrado',    t: '' },
-              { label: 'Correctivos', value: stats.correctivos, color: '#D81B43', f: '',           t: 'Correctivo' },
+              { label: 'Total', value: stats.total, color: '#1E293B', f: '', t: '' },
+              { label: 'Abiertos', value: stats.abiertos, color: '#B45309', f: 'Abierto', t: '' },
+              { label: 'En proceso', value: stats.enProceso, color: '#1D4ED8', f: 'En proceso', t: '' },
+              { label: 'Cerrados', value: stats.cerrados, color: '#0F7B55', f: 'Cerrado', t: '' },
+              { label: 'Correctivos', value: stats.correctivos, color: '#D81B43', f: '', t: 'Correctivo' },
             ].map(s => (
               <div key={s.label}
                 onClick={() => s.t ? setFiltroTipo(p => p === s.t ? '' : s.t) : setFiltroEstado(p => p === s.f ? '' : s.f)}
-                className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${
-                  (filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43]' : 'border-slate-200'
-                }`}>
+                className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${(filtroEstado === s.f && s.f) || (filtroTipo === s.t && s.t) ? 'border-[#D81B43]' : 'border-slate-200'
+                  }`}>
                 <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
                 <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
               </div>
@@ -564,11 +598,10 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           <div className="hidden md:flex gap-2">
             {tipos.map(t => (
               <button key={t.id} onClick={() => setFiltroTipo(p => p === t.nombre ? '' : t.nombre)}
-                className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all ${
-                  filtroTipo === t.nombre
+                className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all ${filtroTipo === t.nombre
                     ? t.nombre === 'Correctivo' ? 'bg-[#D81B43] text-white' : 'bg-[#25A9E0] text-white'
                     : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'
-                }`}>{t.nombre}</button>
+                  }`}>{t.nombre}</button>
             ))}
           </div>
           {(filtroEstado || filtroTipo) && (
@@ -590,11 +623,10 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
           )}
           {filtrados.map(m => (
             <div key={m.id} onClick={() => setDrawer(m)}
-              className={`bg-white rounded-xl p-4 cursor-pointer shadow-sm ${
-                m.tipo?.nombre === 'Correctivo' && m.estado?.nombre !== 'Cerrado'
+              className={`bg-white rounded-xl p-4 cursor-pointer shadow-sm ${m.tipo?.nombre === 'Correctivo' && m.estado?.nombre !== 'Cerrado'
                   ? 'border-l-4 border-l-[#D81B43] border border-t-slate-200 border-r-slate-200 border-b-slate-200'
                   : 'border border-slate-200'
-              }`}>
+                }`}>
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <span className="font-mono text-[12px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{m.codigo}</span>
                 <TipoBadge nombre={m.tipo?.nombre} />
@@ -652,9 +684,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                 )}
                 {filtrados.map(m => (
                   <tr key={m.id} onClick={() => setDrawer(m)}
-                    className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${
-                      m.tipo?.nombre === 'Correctivo' && m.estado?.nombre !== 'Cerrado' ? 'border-l-4 border-l-[#D81B43]' : ''
-                    }`}>
+                    className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${m.tipo?.nombre === 'Correctivo' && m.estado?.nombre !== 'Cerrado' ? 'border-l-4 border-l-[#D81B43]' : ''
+                      }`}>
                     <td className="px-4 py-3">
                       <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{m.codigo}</span>
                     </td>
@@ -728,13 +759,12 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                 <div className="flex items-start mt-3">
                   {['Abierto', 'En proceso', 'Cerrado'].map((paso, i) => {
                     const idx = ['Abierto', 'En proceso', 'Cerrado'].indexOf(drawer.estado?.nombre || 'En proceso')
-                    const st  = i < idx ? 'done' : i === idx ? 'active' : 'pending'
+                    const st = i < idx ? 'done' : i === idx ? 'active' : 'pending'
                     return (
                       <div key={paso} className="flex-1 flex flex-col items-center relative">
                         {i > 0 && <div className={`absolute top-3 right-1/2 w-full h-0.5 ${st === 'done' || st === 'active' ? 'bg-[#D81B43]' : 'bg-slate-200'}`} />}
-                        <div className={`w-6 h-6 rounded-full z-10 flex items-center justify-center ${
-                          st === 'done' ? 'bg-[#D81B43]' : st === 'active' ? 'bg-white border-2 border-[#D81B43]' : 'bg-white border-2 border-slate-200'
-                        }`}>
+                        <div className={`w-6 h-6 rounded-full z-10 flex items-center justify-center ${st === 'done' ? 'bg-[#D81B43]' : st === 'active' ? 'bg-white border-2 border-[#D81B43]' : 'bg-white border-2 border-slate-200'
+                          }`}>
                           {st === 'done' && <CheckCircle2 size={10} className="text-white" />}
                           {st === 'active' && <div className="w-2 h-2 bg-[#D81B43] rounded-full" />}
                         </div>
@@ -750,10 +780,10 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                 <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Detalles</div>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: 'Tipo',      value: drawer.tipo?.nombre },
-                    { label: 'Técnico',   value: drawer.tecnico || '—' },
-                    { label: 'Apertura',  value: drawer.fecha_apertura || '—' },
-                    { label: 'Cierre',    value: drawer.fecha_cierre || '—' },
+                    { label: 'Tipo', value: drawer.tipo?.nombre },
+                    { label: 'Técnico', value: drawer.tecnico || '—' },
+                    { label: 'Apertura', value: drawer.fecha_apertura || '—' },
+                    { label: 'Cierre', value: drawer.fecha_cierre || '—' },
                   ].map(f => (
                     <div key={f.label}>
                       <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">{f.label}</div>
@@ -835,11 +865,10 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                   <div className="grid grid-cols-2 gap-3">
                     {tipos.map(t => (
                       <button key={t.id} onClick={() => setForm(f => ({ ...f, tipo_mantenimiento_id: t.id }))}
-                        className={`flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all ${
-                          form.tipo_mantenimiento_id === t.id
+                        className={`flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all ${form.tipo_mantenimiento_id === t.id
                             ? t.nombre === 'Correctivo' ? 'border-[#D81B43] bg-[#D81B43]/5 text-[#D81B43]' : 'border-[#25A9E0] bg-[#E8F7FB] text-[#0E86A0]'
                             : 'border-slate-200 text-slate-500 hover:border-slate-300'
-                        }`}>
+                          }`}>
                         {t.nombre === 'Correctivo' ? <AlertTriangle size={15} /> : <Wrench size={15} />}
                         {t.nombre}
                       </button>
@@ -1004,7 +1033,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                   <div className="grid grid-cols-2 gap-3">
                     {[
                       { value: 'disponible', label: 'Vuelve a Disponible', icon: <CheckCircle2 size={15} />, color: '#0F7B55' },
-                      { value: 'baja',       label: 'Dar de baja',         icon: <X size={15} />,            color: '#D81B43' },
+                      { value: 'baja', label: 'Dar de baja', icon: <X size={15} />, color: '#D81B43' },
                     ].map(r => (
                       <button key={r.value} onClick={() => setCierreForm(f => ({ ...f, resultado: r.value }))}
                         className="flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all border-slate-200 text-slate-500 hover:border-slate-300"
@@ -1055,17 +1084,16 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
 
 // ── COMPONENTE ACTIVIDAD ─────────────────────────────────────
 function ActividadItem({ act, cerrado, uploading, onToggle, onObservacion, onAdjunto }) {
-  const [showObs, setShowObs]   = useState(false)
-  const [obsText, setObsText]   = useState(act.observaciones || '')
-  const fileRef                 = useRef(null)
+  const [showObs, setShowObs] = useState(false)
+  const [obsText, setObsText] = useState(act.observaciones || '')
+  const fileRef = useRef(null)
 
   return (
     <div className={`rounded-[9px] border transition-all ${act.completado ? 'bg-[#ECFDF5] border-[#0F7B55]/20' : 'bg-white border-slate-200'}`}>
       <div className="flex items-start gap-3 p-3">
         <button onClick={() => !cerrado && onToggle()}
-          className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center mt-0.5 transition-all ${
-            act.completado ? 'bg-[#0F7B55]' : cerrado ? 'border-2 border-slate-200' : 'border-2 border-slate-300 hover:border-[#0F7B55] cursor-pointer'
-          }`}>
+          className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center mt-0.5 transition-all ${act.completado ? 'bg-[#0F7B55]' : cerrado ? 'border-2 border-slate-200' : 'border-2 border-slate-300 hover:border-[#0F7B55] cursor-pointer'
+            }`}>
           {act.completado && <CheckCircle2 size={11} className="text-white" />}
         </button>
         <div className="flex-1 min-w-0">

@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 import {
   Package, Truck, Wrench, FileText, AlertTriangle,
   Clock, CheckCircle2, TrendingUp, Calendar, ChevronRight,
@@ -9,18 +10,18 @@ import {
 import EntregaEnCursoBanner from '@/components/dashboard/EntregaEnCursoBanner'
 
 const ESTADO_EQUIPO_STYLES = {
-  'Disponible':       { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
-  'En préstamo':      { bg: '#E8F7FB', color: '#0E86A0', dot: '#25A9E0' },
+  'Disponible': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+  'En préstamo': { bg: '#E8F7FB', color: '#0E86A0', dot: '#25A9E0' },
   'En mantenimiento': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
-  'Con novedad':      { bg: '#FEF2F2', color: '#D81B43', dot: '#D81B43' },
-  'Baja':             { bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' },
+  'Con novedad': { bg: '#FEF2F2', color: '#D81B43', dot: '#D81B43' },
+  'Baja': { bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' },
 }
 
 const ESTADO_OS_STYLES = {
-  'Borrador':   { bg: '#F1F5F9', color: '#64748B' },
+  'Borrador': { bg: '#F1F5F9', color: '#64748B' },
   'Programada': { bg: '#EFF6FF', color: '#1D4ED8' },
   'En reparto': { bg: '#FFFBEB', color: '#B45309' },
-  'Entregada':  { bg: '#E8F7FB', color: '#0E86A0' },
+  'Entregada': { bg: '#E8F7FB', color: '#0E86A0' },
   'Finalizada': { bg: '#ECFDF5', color: '#0F7B55' },
 }
 
@@ -51,15 +52,40 @@ export default function DashboardClient({
   ordenesRetrasadas, actividadReciente
 }) {
   const router = useRouter()
+  const supabase = createClient()
   const [alertaAbierta, setAlertaAbierta] = useState(false)
 
-  const disponibles    = estadosEquipo['Disponible'] || 0
-  const enPrestamo     = estadosEquipo['En préstamo'] || 0
-  const enMant         = estadosEquipo['En mantenimiento'] || 0
-  const conNovedad     = estadosEquipo['Con novedad'] || 0
-  const baja           = estadosEquipo['Baja'] || 0
+  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
+  // El Dashboard no guarda nada en estado local (todo viene de props),
+  // así que solo necesitamos disparar router.refresh() cuando algo
+  // relevante cambie en otra sesión — sin necesidad de proteger
+  // mutaciones optimistas, porque este componente no hace ninguna.
+  useEffect(() => {
+    let debounceTimer = null
+    function refrescarConDebounce() {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => router.refresh(), 500)
+    }
 
-  const entregasPendientes  = entregasHoy.filter(e => e.estado?.nombre !== 'Completada').length
+    const canal = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipos' }, refrescarConDebounce)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_servicio' }, refrescarConDebounce)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, refrescarConDebounce)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mantenimientos' }, refrescarConDebounce)
+      .subscribe()
+
+    return () => { clearTimeout(debounceTimer); supabase.removeChannel(canal) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const disponibles = estadosEquipo['Disponible'] || 0
+  const enPrestamo = estadosEquipo['En préstamo'] || 0
+  const enMant = estadosEquipo['En mantenimiento'] || 0
+  const conNovedad = estadosEquipo['Con novedad'] || 0
+  const baja = estadosEquipo['Baja'] || 0
+
+  const entregasPendientes = entregasHoy.filter(e => e.estado?.nombre !== 'Completada').length
   const entregasCompletadas = entregasHoy.filter(e => e.estado?.nombre === 'Completada').length
   const totalAlertas = ordenesRetrasadas.length + vigenciasProximas.length + conNovedad
 
@@ -128,8 +154,8 @@ export default function DashboardClient({
         <div className="grid grid-cols-3 gap-2 md:hidden">
           {[
             { label: 'Mantenimiento', value: mantenimientosActivos.length, color: '#B45309', icon: Wrench },
-            { label: 'Disponibles',   value: disponibles,                  color: '#0F7B55', icon: CheckCircle2 },
-            { label: 'En préstamo',   value: enPrestamo,                   color: '#0E86A0', icon: ArrowUpRight },
+            { label: 'Disponibles', value: disponibles, color: '#0F7B55', icon: CheckCircle2 },
+            { label: 'En préstamo', value: enPrestamo, color: '#0E86A0', icon: ArrowUpRight },
           ].map(s => {
             const Icon = s.icon
             return (
@@ -147,12 +173,12 @@ export default function DashboardClient({
         {/* ── FILA 1 (DESKTOP): 6 KPIs completos ── */}
         <div className="hidden md:grid md:grid-cols-6 gap-3">
           {[
-            { label: 'Total equipos',    value: totalEquipos, color: '#1E293B', icon: Package,       sub: 'en inventario' },
-            { label: 'Disponibles',      value: disponibles,  color: '#0F7B55', icon: CheckCircle2,  sub: 'listos para préstamo' },
-            { label: 'En préstamo',      value: enPrestamo,   color: '#0E86A0', icon: ArrowUpRight,  sub: 'fuera del almacén' },
-            { label: 'Mantenimiento',    value: enMant,       color: '#B45309', icon: Wrench,        sub: 'en servicio técnico' },
-            { label: 'Con novedad',      value: conNovedad,   color: '#D81B43', icon: AlertTriangle, sub: 'requieren atención' },
-            { label: 'Baja',             value: baja,         color: '#64748B', icon: Package,       sub: 'fuera de servicio' },
+            { label: 'Total equipos', value: totalEquipos, color: '#1E293B', icon: Package, sub: 'en inventario' },
+            { label: 'Disponibles', value: disponibles, color: '#0F7B55', icon: CheckCircle2, sub: 'listos para préstamo' },
+            { label: 'En préstamo', value: enPrestamo, color: '#0E86A0', icon: ArrowUpRight, sub: 'fuera del almacén' },
+            { label: 'Mantenimiento', value: enMant, color: '#B45309', icon: Wrench, sub: 'en servicio técnico' },
+            { label: 'Con novedad', value: conNovedad, color: '#D81B43', icon: AlertTriangle, sub: 'requieren atención' },
+            { label: 'Baja', value: baja, color: '#64748B', icon: Package, sub: 'fuera de servicio' },
           ].map(s => {
             const Icon = s.icon
             return (
@@ -195,9 +221,8 @@ export default function DashboardClient({
                   className="px-5 py-3 hover:bg-slate-50 cursor-pointer transition-colors">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-[12px] font-bold text-slate-600">{e.codigo}</span>
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                      e.estado?.nombre === 'Completada' ? 'bg-[#ECFDF5] text-[#0F7B55]' : 'bg-[#FFFBEB] text-[#B45309]'
-                    }`}>{e.estado?.nombre}</span>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${e.estado?.nombre === 'Completada' ? 'bg-[#ECFDF5] text-[#0F7B55]' : 'bg-[#FFFBEB] text-[#B45309]'
+                      }`}>{e.estado?.nombre}</span>
                   </div>
                   <div className="text-[12px] text-slate-500 mt-0.5 flex items-center justify-between">
                     <span className="truncate max-w-[200px]">{e.cliente?.nombre}</span>
@@ -211,10 +236,9 @@ export default function DashboardClient({
 
         {/* ── ALERTAS — solo se muestran las que tienen datos, para no ocupar espacio en vano ── */}
         {(ordenesRetrasadas.length > 0 || vigenciasProximas.length > 0 || conNovedad > 0) && (
-          <div className={`grid grid-cols-1 gap-4 ${
-            [ordenesRetrasadas.length > 0, vigenciasProximas.length > 0, conNovedad > 0].filter(Boolean).length >= 2
-              ? 'md:grid-cols-2' : ''
-          } ${[ordenesRetrasadas.length > 0, vigenciasProximas.length > 0, conNovedad > 0].filter(Boolean).length >= 3 ? 'md:grid-cols-3' : ''}`}>
+          <div className={`grid grid-cols-1 gap-4 ${[ordenesRetrasadas.length > 0, vigenciasProximas.length > 0, conNovedad > 0].filter(Boolean).length >= 2
+            ? 'md:grid-cols-2' : ''
+            } ${[ordenesRetrasadas.length > 0, vigenciasProximas.length > 0, conNovedad > 0].filter(Boolean).length >= 3 ? 'md:grid-cols-3' : ''}`}>
 
             {ordenesRetrasadas.length > 0 && (
               <div className="bg-white rounded-xl border border-[#D81B43]/30 shadow-sm overflow-hidden">

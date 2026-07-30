@@ -233,85 +233,194 @@ export default function LandingPage() {
       </section>
 
       {/* ── NUESTROS PRODUCTOS ── */}
-      <section id="servicios" className="py-16 md:py-20" style={{ background: `linear-gradient(115deg, ${AZUL_OSCURO} 0%, ${AZUL_BRILLANTE} 100%)` }}>
+      <section id="servicios" className="py-16 md:py-20 overflow-hidden" style={{ background: `linear-gradient(115deg, ${AZUL_OSCURO} 0%, ${AZUL_BRILLANTE} 100%)` }}>
         <div className="max-w-7xl mx-auto px-4 md:px-8">
-          <h2 className="text-[24px] md:text-[28px] font-extrabold text-white mb-1">NUESTROS PRODUCTOS</h2>
-          <div className="w-14 h-1 rounded-full bg-white/60 mb-2" />
-          <p className="text-[13.5px] text-blue-100/80 mb-8">
-            Contamos con una amplia gama de equipos para diferentes necesidades, con asesoría y soporte especializados
-          </p>
+          <div className="mb-8 text-center md:text-left">
+            <h2 className="text-[24px] md:text-[28px] font-extrabold text-white mb-1">NUESTROS PRODUCTOS</h2>
+            <div className="w-14 h-1 rounded-full bg-white/60 mb-2 mx-auto md:mx-0" />
+            <p className="text-[13.5px] text-blue-100/80">
+              Contamos con una amplia gama de equipos para diferentes necesidades, con asesoría y soporte especializados
+            </p>
+          </div>
 
-          <div className="relative">
-            <div className="flex flex-col md:flex-row items-stretch gap-4">
-              {/* Card grande destacada */}
-              <div className="md:w-[52%] flex-shrink-0 rounded-2xl bg-white/10 p-6 md:p-8 flex items-center gap-5 md:gap-6">
-                <div className="w-28 h-28 md:w-36 md:h-36 rounded-xl bg-white/90 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={PRODUCTOS[productoActivo].img} alt={PRODUCTOS[productoActivo].nombre} className="w-full h-full object-contain p-2" />
-                </div>
-                <div className="min-w-0">
-                  <span className="inline-block text-[10.5px] font-bold text-white px-2.5 py-0.5 rounded-full mb-1.5" style={{ background: AZUL_BRILLANTE }}>
-                    Modelo
-                  </span>
-                  <div className="text-[18px] md:text-[20px] font-extrabold text-white">{PRODUCTOS[productoActivo].nombre}</div>
-                  <div className="text-[12.5px] text-blue-100/70 mt-1">{PRODUCTOS[productoActivo].desc}</div>
-                  <button className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-[12.5px] font-semibold text-slate-800 hover:scale-[1.03] transition-transform">
-                    Ver servicio <ChevronRight size={13} />
-                  </button>
-                </div>
-              </div>
+          {/* Carrusel: siempre 3 tarjetas visibles con animación fluida */}
+          <div className="relative px-10 md:px-16">
+            {/* Botón Izquierdo */}
+            <button
+              onClick={() => setProductoActivo(p => (p - 1 + PRODUCTOS.length) % PRODUCTOS.length)}
+              aria-label="Producto anterior"
+              className="absolute left-0 md:-left-2 top-1/2 -translate-y-1/2 z-30 w-10 h-10 md:w-12 md:h-12 rounded-full bg-white shadow-2xl flex items-center justify-center border border-slate-200 cursor-pointer"
+              style={{ transition: 'transform 0.2s ease' }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
+              <ChevronLeft size={22} className="text-slate-700" />
+            </button>
 
-              {/* Flecha flotante — entre la card grande y las de "vista previa" */}
-              <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
-                className="hidden md:flex absolute z-20 w-10 h-10 rounded-full bg-white text-slate-700 items-center justify-center shadow-lg hover:scale-105 transition-transform"
-                style={{ left: 'calc(52% - 20px)', top: '50%', transform: 'translateY(-50%)' }}>
-                <ChevronRight size={18} />
-              </button>
+            {/* Botón Derecho */}
+            <button
+              onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
+              aria-label="Siguiente producto"
+              className="absolute right-0 md:-right-2 top-1/2 -translate-y-1/2 z-30 w-10 h-10 md:w-12 md:h-12 rounded-full bg-white shadow-2xl flex items-center justify-center border border-slate-200 cursor-pointer"
+              style={{ transition: 'transform 0.2s ease' }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
+              <ChevronRight size={22} className="text-slate-700" />
+            </button>
 
-              {/* Peek de los siguientes 2 productos — recortados, más tenues, dan la idea de "hay más" */}
-              <div className="hidden md:flex flex-1 gap-3 overflow-hidden">
-                {[1, 2].map(offset => {
-                  const p = PRODUCTOS[(productoActivo + offset) % PRODUCTOS.length]
-                  return (
-                    <div key={offset} className="flex-1 rounded-2xl bg-white/5 p-4 flex flex-col items-start justify-between min-w-[120px]">
-                      <div className="w-14 h-14 rounded-lg bg-white/80 flex items-center justify-center overflow-hidden">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={p.img} alt={p.nombre} className="w-full h-full object-contain p-1" />
+            {/* 3 slots con llave FIJA — React reutiliza el nodo y anima entre estados */}
+            <div className="flex flex-row gap-4 md:gap-5 h-[230px] md:h-[240px]">
+              {[0, 1, 2].map((slotIdx) => {
+                const realIdx = (productoActivo + slotIdx) % PRODUCTOS.length
+                const p = PRODUCTOS[realIdx]
+                const activo = slotIdx === 0
+                const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+                const DUR = '0.5s'
+
+                return (
+                  <div
+                    key={`slot-${slotIdx}`}
+                    onClick={() => !activo && setProductoActivo(realIdx)}
+                    style={{
+                      flex: activo ? '1.8 1 0%' : '1 1 0%',
+                      opacity: activo ? 1 : 0.45,
+                      transform: activo ? 'scale(1)' : 'scale(0.94)',
+                      cursor: activo ? 'default' : 'pointer',
+                      transition: `flex ${DUR} ${EASE}, opacity ${DUR} ${EASE}, transform ${DUR} ${EASE}`,
+                      borderRadius: '1rem',
+                      display: 'flex',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: '1rem',
+                      overflow: 'hidden',
+                      height: '100%',
+                      padding: '1rem 1.25rem',
+                      border: '1px solid',
+                      borderColor: activo ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)',
+                      background: activo ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.05)',
+                      boxShadow: activo ? '0 20px 60px rgba(0,0,0,0.3)' : 'none',
+                      backdropFilter: 'blur(12px)',
+                      zIndex: activo ? 10 : 0,
+                    }}
+                  >
+                    {/* Imagen */}
+                    <div style={{
+                      width: activo ? 96 : 64,
+                      height: activo ? 96 : 64,
+                      flexShrink: 0,
+                      borderRadius: '0.75rem',
+                      background: 'rgba(255,255,255,0.97)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0.5rem',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      transition: `width ${DUR} ${EASE}, height ${DUR} ${EASE}`,
+                    }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.img} alt={p.nombre} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+
+                    {/* Contenido */}
+                    <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.3rem', overflow: 'hidden' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: 'white',
+                        padding: '0.15rem 0.6rem',
+                        borderRadius: 999,
+                        width: 'fit-content',
+                        background: activo ? '#2563eb' : 'rgba(255,255,255,0.2)',
+                        opacity: activo ? 1 : 0.75,
+                        transition: `background ${DUR} ease, opacity ${DUR} ease`,
+                      }}>
+                        {p.modelo}
+                      </span>
+
+                      <div style={{
+                        fontWeight: 800,
+                        color: 'white',
+                        lineHeight: 1.25,
+                        fontSize: activo ? 18 : 13,
+                        transition: `font-size ${DUR} ${EASE}`,
+                      }}>
+                        {p.nombre}
                       </div>
-                      <div>
-                        <span className="inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-full mb-1" style={{ background: `${AZUL_BRILLANTE}bb` }}>
-                          Modelo
-                        </span>
-                        <div className="text-[11.5px] font-bold text-white leading-tight">{p.nombre}</div>
+
+                      <div style={{
+                        fontSize: 12,
+                        color: 'rgba(219,234,254,0.85)',
+                        lineHeight: 1.4,
+                        overflow: 'hidden',
+                        maxHeight: activo ? 40 : 0,
+                        opacity: activo ? 1 : 0,
+                        transition: `max-height ${DUR} ${EASE}, opacity 0.4s ease`,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                      }}>
+                        {p.desc}
+                      </div>
+
+                      <div style={{
+                        overflow: 'hidden',
+                        maxHeight: activo ? 44 : 0,
+                        opacity: activo ? 1 : 0,
+                        pointerEvents: activo ? 'auto' : 'none',
+                        transition: `max-height ${DUR} ${EASE}, opacity 0.35s ease`,
+                      }}>
+                        <button style={{
+                          marginTop: '0.25rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.35rem 1rem',
+                          borderRadius: 999,
+                          background: 'white',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#1e293b',
+                          border: 'none',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                          transition: 'transform 0.2s ease, background 0.2s ease',
+                        }}
+                          onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.04)'}
+                          onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                          Ver servicio <ChevronRight size={13} />
+                        </button>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Móvil: flechas debajo, card grande a ancho completo arriba */}
-            <div className="flex md:hidden items-center justify-center gap-3 mt-4">
-              <button onClick={() => setProductoActivo(p => (p - 1 + PRODUCTOS.length) % PRODUCTOS.length)}
-                className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center">
-                <ChevronLeft size={16} />
-              </button>
-              <button onClick={() => setProductoActivo(p => (p + 1) % PRODUCTOS.length)}
-                className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center">
-                <ChevronRight size={16} />
-              </button>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
-          <div className="flex items-center justify-center gap-1.5 mt-8">
+          {/* Indicadores de posición */}
+          <div className="flex items-center justify-center gap-2 mt-8">
             {PRODUCTOS.map((_, i) => (
-              <button key={i} onClick={() => setProductoActivo(i)}
-                className="h-1.5 rounded-full transition-all"
-                style={{ width: i === productoActivo ? 22 : 6, background: i === productoActivo ? '#fff' : 'rgba(255,255,255,0.35)' }} />
+              <button
+                key={i}
+                onClick={() => setProductoActivo(i)}
+                aria-label={`Ver producto ${i + 1}`}
+                style={{
+                  height: 8,
+                  width: i === productoActivo ? 30 : 8,
+                  borderRadius: 999,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: i === productoActivo ? '#ffffff' : 'rgba(255,255,255,0.3)',
+                  transition: 'width 0.4s cubic-bezier(0.22,1,0.36,1), background 0.4s ease',
+                  padding: 0,
+                }}
+              />
             ))}
           </div>
         </div>
       </section>
+
 
       {/* ── POR QUÉ ELEGIRNOS ── */}
       <section className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">

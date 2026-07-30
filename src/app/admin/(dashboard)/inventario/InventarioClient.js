@@ -1,18 +1,18 @@
 'use client'
 import { registrarBitacora } from '@/lib/bitacora'
 import Image from 'next/image'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriangle, Clock, CheckCircle2, Box, Hash, Tag, Layers, SlidersHorizontal } from 'lucide-react'
 import { IconoEquipo, GaleriaIconos } from '@/components/inventario/IconosEquipo'
 
 const CAMPO_FILTRO_STYLES = {
-  modelo:  { color: '#2EB5D4', Icon: Box },
-  serie:   { color: '#D81B43', Icon: Hash },
-  codigo:  { color: '#D81B43', Icon: Hash },
-  marca:   { color: '#6D28D9', Icon: Tag },
-  tipo:    { color: '#B45309', Icon: Layers },
+  modelo: { color: '#2EB5D4', Icon: Box },
+  serie: { color: '#D81B43', Icon: Hash },
+  codigo: { color: '#D81B43', Icon: Hash },
+  marca: { color: '#6D28D9', Icon: Tag },
+  tipo: { color: '#B45309', Icon: Layers },
 }
 const FILTRO_PALETTE = [
   { color: '#2EB5D4', Icon: Box },
@@ -23,11 +23,11 @@ const FILTRO_PALETTE = [
 const FILTRO_DROPDOWN_MAX = 6
 
 const ESTADO_STYLES = {
-  'Disponible':        { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
-  'En préstamo':       { bg: '#E8F7FB', color: '#0E86A0', dot: '#2EB5D4' },
-  'En mantenimiento':  { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
-  'Con novedad':       { bg: '#FEF2F2', color: '#C0392B', dot: '#C0392B' },
-  'Baja':              { bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' },
+  'Disponible': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+  'En préstamo': { bg: '#E8F7FB', color: '#0E86A0', dot: '#2EB5D4' },
+  'En mantenimiento': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
+  'Con novedad': { bg: '#FEF2F2', color: '#C0392B', dot: '#C0392B' },
+  'Baja': { bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' },
 }
 
 const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#D81B43] bg-white transition-colors placeholder:text-slate-400'
@@ -45,28 +45,72 @@ function formatearFecha(iso) {
 }
 
 export default function InventarioClient({ categorias: catsIniciales, tipos: tiposIniciales, equipos, estados }) {
-  const router   = useRouter()
+  const router = useRouter()
   const supabase = createClient()
 
   const [categorias, setCategorias] = useState(catsIniciales)
-  const [tipos, setTipos]           = useState(tiposIniciales)
-  const [vista, setVista]           = useState('categorias')
-  const [catActual, setCatActual]   = useState(null)
+  const [tipos, setTipos] = useState(tiposIniciales)
+  const skipSyncUntil = useRef(0)
+
+  // Mantener el estado local sincronizado cuando el servidor manda datos frescos
+  // (esto se dispara después de router.refresh(), incluido el que llega por realtime)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (Date.now() < skipSyncUntil.current) return
+      setCategorias(catsIniciales)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [catsIniciales])
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (Date.now() < skipSyncUntil.current) return
+      setTipos(tiposIniciales)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [tiposIniciales])
+
+  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
+  // Sin esto, un dispositivo no se entera de cambios hechos en otro
+  // (ej. otro usuario registró un equipo nuevo) hasta recargar la página.
+  useEffect(() => {
+    let debounceTimer = null
+    function refrescarConDebounce() {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        if (Date.now() < skipSyncUntil.current) return
+        router.refresh()
+      }, 500)
+    }
+
+    const canal = supabase
+      .channel('inventario-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipos' }, refrescarConDebounce)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tipos_equipo' }, refrescarConDebounce)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categorias_equipo' }, refrescarConDebounce)
+      .subscribe()
+
+    return () => { clearTimeout(debounceTimer); supabase.removeChannel(canal) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [vista, setVista] = useState('categorias')
+  const [catActual, setCatActual] = useState(null)
   const [tipoActual, setTipoActual] = useState(null)
-  const [search, setSearch]         = useState('')
+  const [search, setSearch] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [filtrosCampos, setFiltrosCampos] = useState({})
-  const [drawer, setDrawer]         = useState(null)
+  const [drawer, setDrawer] = useState(null)
   const [modalNueva, setModalNueva] = useState(false)
-  const [modalTipo, setModalTipo]   = useState(false)
+  const [modalTipo, setModalTipo] = useState(false)
   const [modalEditar, setModalEditar] = useState(false)
   const [modalSalir, setModalSalir] = useState(false)
-  const [formDirty, setFormDirty]   = useState(false)
-  const [saving, setSaving]         = useState(false)
+  const [formDirty, setFormDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [exportando, setExportando] = useState(false)
-  const [toast, setToast]           = useState(null)
+  const [toast, setToast] = useState(null)
   const [formUnidad, setFormUnidad] = useState({ estado_id: '', atributos: {} })
-  const [formTipo, setFormTipo]     = useState({ icono: '', atributos: {} })
+  const [formTipo, setFormTipo] = useState({ icono: '', atributos: {} })
   const [formEditar, setFormEditar] = useState({ estado_id: '', atributos: {}, motivo: '' })
 
   function showToast(msg, tipo = 'success') {
@@ -83,10 +127,10 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       base = equipos.filter(e => e.tipo_equipo_id === tipoActual.id)
     }
     return {
-      total:       base.length,
+      total: base.length,
       disponibles: base.filter(e => e.estado?.nombre === 'Disponible').length,
-      prestamo:    base.filter(e => e.estado?.nombre === 'En préstamo').length,
-      mant:        base.filter(e => e.estado?.nombre === 'En mantenimiento').length,
+      prestamo: base.filter(e => e.estado?.nombre === 'En préstamo').length,
+      mant: base.filter(e => e.estado?.nombre === 'En mantenimiento').length,
     }
   }, [equipos, vista, catActual, tipoActual, tipos])
 
@@ -101,8 +145,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       if (!e.tipo_equipo_id) return
       if (!map[e.tipo_equipo_id]) map[e.tipo_equipo_id] = { total: 0, disponibles: 0, prestamo: 0, mant: 0 }
       map[e.tipo_equipo_id].total++
-      if (e.estado?.nombre === 'Disponible')       map[e.tipo_equipo_id].disponibles++
-      if (e.estado?.nombre === 'En préstamo')      map[e.tipo_equipo_id].prestamo++
+      if (e.estado?.nombre === 'Disponible') map[e.tipo_equipo_id].disponibles++
+      if (e.estado?.nombre === 'En préstamo') map[e.tipo_equipo_id].prestamo++
       if (e.estado?.nombre === 'En mantenimiento') map[e.tipo_equipo_id].mant++
     })
     return map
@@ -130,7 +174,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     return result
   }, [baseUnidadesDeTipo, tipoActual, search, filtroEstado, filtrosCampos])
 
-  const camposTipo   = catActual?.atributos_extra?.campos_tipo   || []
+  const camposTipo = catActual?.atributos_extra?.campos_tipo || []
   const camposUnidad = catActual?.atributos_extra?.campos_unidad || []
 
   const valoresUnicosPorCampo = useMemo(() => {
@@ -207,7 +251,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       const blob = await res.blob()
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = `inventario_${nivel}_${new Date().toISOString().slice(0,10)}.xlsx`
+      a.download = `inventario_${nivel}_${new Date().toISOString().slice(0, 10)}.xlsx`
       a.click()
     } catch (e) {
       showToast('Error exportando', 'error')
@@ -233,14 +277,15 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     const { data, error } = await supabase.from('tipos_equipo')
       .insert({
         categoria_id: catActual.id,
-        nombre:       nombreVal,
-        imagen_url:   formTipo.icono ? `icono:${formTipo.icono}` : null,
-        atributos:    Object.keys(formTipo.atributos).length > 0 ? formTipo.atributos : null,
-        activo:       true,
+        nombre: nombreVal,
+        imagen_url: formTipo.icono ? `icono:${formTipo.icono}` : null,
+        atributos: Object.keys(formTipo.atributos).length > 0 ? formTipo.atributos : null,
+        activo: true,
       })
       .select('*, categoria:categorias_equipo(id, nombre, atributos_extra)').single()
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
     registrarBitacora({ modulo: 'inventario', accion: 'crear', entidad: 'tipo de equipo', entidad_id: data.id, detalle: { nombre: formTipo.atributos?.nombre } })
+    skipSyncUntil.current = Date.now() + 2500
     setTipos(prev => [...prev, data])
     showToast('Tipo creado')
     setSaving(false)
@@ -262,9 +307,9 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     setSaving(true)
     const { data: newUnit, error } = await supabase.from('equipos').insert({
       tipo_equipo_id: tipoActual.id,
-      codigo:         formUnidad.codigo?.trim() || null,
-      estado_id:      formUnidad.estado_id || null,
-      atributos:      Object.keys(formUnidad.atributos).length > 0 ? formUnidad.atributos : null,
+      codigo: formUnidad.codigo?.trim() || null,
+      estado_id: formUnidad.estado_id || null,
+      atributos: Object.keys(formUnidad.atributos).length > 0 ? formUnidad.atributos : null,
     }).select('id').single()
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
     registrarBitacora({ modulo: 'inventario', accion: 'crear', entidad: 'equipo', entidad_id: newUnit?.id, detalle: { codigo: formUnidad.codigo?.trim() || null } })
@@ -392,10 +437,10 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         {/* Stats */}
         <div className="hidden md:grid md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Total equipos', value: stats.total,       color: '#1E293B' },
-            { label: 'Disponibles',   value: stats.disponibles, color: '#0F7B55' },
-            { label: 'En préstamo',   value: stats.prestamo,    color: '#0E86A0' },
-            { label: 'Mantenimiento', value: stats.mant,        color: '#B45309' },
+            { label: 'Total equipos', value: stats.total, color: '#1E293B' },
+            { label: 'Disponibles', value: stats.disponibles, color: '#0F7B55' },
+            { label: 'En préstamo', value: stats.prestamo, color: '#0E86A0' },
+            { label: 'Mantenimiento', value: stats.mant, color: '#B45309' },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
               <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
@@ -415,9 +460,9 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               </div>
             )}
             {categorias.map(cat => {
-              const tiposCat   = tipos.filter(t => t.categoria_id === cat.id)
+              const tiposCat = tipos.filter(t => t.categoria_id === cat.id)
               const equiposCat = equipos.filter(e => tiposCat.some(t => t.id === e.tipo_equipo_id))
-              const nCampos    = (cat.atributos_extra?.campos_tipo?.length || 0) + (cat.atributos_extra?.campos_unidad?.length || 0)
+              const nCampos = (cat.atributos_extra?.campos_tipo?.length || 0) + (cat.atributos_extra?.campos_unidad?.length || 0)
               const iconoClave = cat.imagen_url?.startsWith('icono:') ? cat.imagen_url.replace('icono:', '') : null
               return (
                 <div key={cat.id} onClick={() => irACat(cat)}
@@ -468,7 +513,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               {tiposDeCat
                 .filter(t => !search || nombreTipo(t).toLowerCase().includes(search.toLowerCase()))
                 .map(tipo => {
-                  const stock  = stockPorTipo[tipo.id] || { total: 0, disponibles: 0 }
+                  const stock = stockPorTipo[tipo.id] || { total: 0, disponibles: 0 }
                   const campos = camposTipo.filter(c => c.clave !== 'nombre').slice(0, 2)
                   return (
                     <div key={tipo.id} onClick={() => irATipo(tipo)}
@@ -539,7 +584,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   const style = CAMPO_FILTRO_STYLES[campo.clave] || FILTRO_PALETTE[idx % FILTRO_PALETTE.length]
                   const Icon = style.Icon
                   const valoresUnicos = valoresUnicosPorCampo[campo.clave] || []
-                  const usarDropdown  = valoresUnicos.length > 0 && valoresUnicos.length <= FILTRO_DROPDOWN_MAX
+                  const usarDropdown = valoresUnicos.length > 0 && valoresUnicos.length <= FILTRO_DROPDOWN_MAX
                   return (
                     <div key={campo.clave}>
                       <div className="flex items-center gap-1.5 mb-1.5">
@@ -592,7 +637,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                     </thead>
                     <tbody>
                       {unidadesDeTipo.map(eq => {
-                        const est    = eq.estado?.nombre || '—'
+                        const est = eq.estado?.nombre || '—'
                         const estSty = ESTADO_STYLES[est] || {}
                         return (
                           <tr key={eq.id}
@@ -602,8 +647,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                               <td key={c.clave} className="px-4 py-3 text-[13px] text-slate-600">
                                 {c.clave === 'codigo'
                                   ? <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                                      {eq.atributos?.[c.clave] || eq[c.clave] || '—'}
-                                    </span>
+                                    {eq.atributos?.[c.clave] || eq[c.clave] || '—'}
+                                  </span>
                                   : formatearValor(eq.atributos?.[c.clave] || eq[c.clave], c.tipo)
                                 }
                               </td>
@@ -616,7 +661,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                               </span>
                             </td>
                             <td className="px-3 py-3 text-slate-300">
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
                             </td>
                           </tr>
                         )
@@ -628,7 +673,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 {/* Cards móvil — solo en mobile */}
                 <div className="md:hidden flex flex-col gap-2">
                   {unidadesDeTipo.map(eq => {
-                    const est    = eq.estado?.nombre || '—'
+                    const est = eq.estado?.nombre || '—'
                     const estSty = ESTADO_STYLES[est] || {}
                     const primerCampo = camposUnidad[0]
                     const segundoCampo = camposUnidad[1]

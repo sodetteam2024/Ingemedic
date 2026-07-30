@@ -1,28 +1,30 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 import { Search, Filter, Download, User, Clock } from 'lucide-react'
 
 const ACCION_STYLES = {
-  'crear':     { bg: '#ECFDF5', color: '#0F7B55', label: 'CREACIÓN' },
-  'editar':    { bg: '#E8F7FB', color: '#0E86A0', label: 'EDICIÓN' },
-  'eliminar':  { bg: '#FEF2F2', color: '#C0392B', label: 'ELIMINACIÓN' },
-  'login':     { bg: '#F5F3FF', color: '#6D28D9', label: 'ACCESO' },
-  'logout':    { bg: '#F1F5F9', color: '#64748B', label: 'SALIDA' },
-  'activar':   { bg: '#ECFDF5', color: '#0F7B55', label: 'ACTIVACIÓN' },
-  'desactivar':{ bg: '#FEF2F2', color: '#C0392B', label: 'DESACTIVACIÓN' },
-  'cerrar':    { bg: '#FFFBEB', color: '#B45309', label: 'CIERRE' },
-  'avanzar':   { bg: '#E8F7FB', color: '#0E86A0', label: 'AVANCE' },
+  'crear': { bg: '#ECFDF5', color: '#0F7B55', label: 'CREACIÓN' },
+  'editar': { bg: '#E8F7FB', color: '#0E86A0', label: 'EDICIÓN' },
+  'eliminar': { bg: '#FEF2F2', color: '#C0392B', label: 'ELIMINACIÓN' },
+  'login': { bg: '#F5F3FF', color: '#6D28D9', label: 'ACCESO' },
+  'logout': { bg: '#F1F5F9', color: '#64748B', label: 'SALIDA' },
+  'activar': { bg: '#ECFDF5', color: '#0F7B55', label: 'ACTIVACIÓN' },
+  'desactivar': { bg: '#FEF2F2', color: '#C0392B', label: 'DESACTIVACIÓN' },
+  'cerrar': { bg: '#FFFBEB', color: '#B45309', label: 'CIERRE' },
+  'avanzar': { bg: '#E8F7FB', color: '#0E86A0', label: 'AVANCE' },
 }
 
 const MODULO_LABELS = {
-  inventario:      'Inventario',
-  clientes:        'Clientes',
-  ordenes:         'Órdenes',
-  entregas:        'Entregas',
-  mantenimientos:  'Mantenimientos',
-  servicios:       'Servicios',
-  configuracion:   'Configuración',
-  auth:            'Autenticación',
+  inventario: 'Inventario',
+  clientes: 'Clientes',
+  ordenes: 'Órdenes',
+  entregas: 'Entregas',
+  mantenimientos: 'Mantenimientos',
+  servicios: 'Servicios',
+  configuracion: 'Configuración',
+  auth: 'Autenticación',
 }
 
 function fmtFecha(f) {
@@ -35,11 +37,32 @@ function fmtFecha(f) {
 }
 
 export default function BitacoraClient({ registrosIniciales }) {
-  const [search, setSearch]       = useState('')
+  const router = useRouter()
+  const supabase = createClient()
+  const [search, setSearch] = useState('')
   const [filtroModulo, setFiltroModulo] = useState('')
   const [filtroAccion, setFiltroAccion] = useState('')
-  const [desde, setDesde]         = useState('')
-  const [hasta, setHasta]         = useState('')
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+
+  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
+  // Igual que en Dashboard: no hay estado local que proteger,
+  // solo se refresca la página cuando entra un registro nuevo.
+  useEffect(() => {
+    let debounceTimer = null
+    function refrescarConDebounce() {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => router.refresh(), 500)
+    }
+
+    const canal = supabase
+      .channel('bitacora-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bitacora' }, refrescarConDebounce)
+      .subscribe()
+
+    return () => { clearTimeout(debounceTimer); supabase.removeChannel(canal) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const modulos = useMemo(() =>
     [...new Set(registrosIniciales.map(r => r.modulo).filter(Boolean))].sort(),
@@ -141,10 +164,10 @@ export default function BitacoraClient({ registrosIniciales }) {
         {/* Stats rápidas */}
         <div className="hidden md:grid md:grid-cols-4 gap-3 flex-shrink-0">
           {[
-            { label: 'Total registros', value: filtrados.length,                                             color: '#1B3A6B' },
-            { label: 'Creaciones',      value: filtrados.filter(r => r.accion === 'crear').length,           color: '#0F7B55' },
-            { label: 'Ediciones',       value: filtrados.filter(r => r.accion === 'editar').length,          color: '#0E86A0' },
-            { label: 'Eliminaciones',   value: filtrados.filter(r => r.accion === 'eliminar').length,        color: '#C0392B' },
+            { label: 'Total registros', value: filtrados.length, color: '#1B3A6B' },
+            { label: 'Creaciones', value: filtrados.filter(r => r.accion === 'crear').length, color: '#0F7B55' },
+            { label: 'Ediciones', value: filtrados.filter(r => r.accion === 'editar').length, color: '#0E86A0' },
+            { label: 'Eliminaciones', value: filtrados.filter(r => r.accion === 'eliminar').length, color: '#C0392B' },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
               <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>

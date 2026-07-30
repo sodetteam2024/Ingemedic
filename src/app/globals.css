@@ -32,3 +32,62 @@ input::placeholder {
 input, select, textarea {
   color: #1E293B;
 }
+
+@keyframes productFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes productImageZoom {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-product-card {
+  animation: productFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-product-img {
+  animation: productImageZoom 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.carousel-card-transition {
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              flex-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              background-color 0.5s ease,
+              border-color 0.5s ease,
+              box-shadow 0.5s ease;
+  will-change: transform, opacity, flex-grow;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.carousel-img-transition {
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.carousel-text-transition {
+  transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), 
+              max-height 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, max-height;
+}
+
+
+

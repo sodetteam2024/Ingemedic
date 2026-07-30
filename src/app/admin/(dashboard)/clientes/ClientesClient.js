@@ -1,5 +1,6 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { registrarBitacora } from '@/lib/bitacora'
 import {
@@ -14,26 +15,60 @@ const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.07em] text-s
 
 const TIPO_STYLES = {
   'Jurídica': { bg: '#E8F7FB', color: '#0E86A0', icon: <Building2 size={14} /> },
-  'Natural':  { bg: '#F1F5F9', color: '#475569', icon: <User size={14} /> },
+  'Natural': { bg: '#F1F5F9', color: '#475569', icon: <User size={14} /> },
 }
 
 export default function ClientesClient({ clientesIniciales, departamentos, municipios }) {
+  const router = useRouter()
   const supabase = createClient()
+  const skipSyncUntil = useRef(0)
 
-  const [clientes, setClientes]           = useState(clientesIniciales)
-  const [search, setSearch]               = useState('')
-  const [filtroTipo, setFiltroTipo]       = useState('')
-  const [drawer, setDrawer]               = useState(null)
-  const [modal, setModal]                 = useState(false)
+  const [clientes, setClientes] = useState(clientesIniciales)
+
+  // Mantener el estado local sincronizado cuando el servidor manda datos frescos
+  // (esto se dispara después de router.refresh(), incluido el que llega por realtime)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (Date.now() < skipSyncUntil.current) return
+      setClientes(clientesIniciales)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [clientesIniciales])
+
+  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
+  // Sin esto, un dispositivo no se entera de cambios hechos en otro
+  // (ej. otro usuario creó o editó un cliente) hasta recargar la página.
+  useEffect(() => {
+    let debounceTimer = null
+    function refrescarConDebounce() {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        if (Date.now() < skipSyncUntil.current) return
+        router.refresh()
+      }, 500)
+    }
+
+    const canal = supabase
+      .channel('clientes-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes' }, refrescarConDebounce)
+      .subscribe()
+
+    return () => { clearTimeout(debounceTimer); supabase.removeChannel(canal) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const [search, setSearch] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [drawer, setDrawer] = useState(null)
+  const [modal, setModal] = useState(false)
   const [modalEliminar, setModalEliminar] = useState(null)
-  const [saving, setSaving]               = useState(false)
-  const [toast, setToast]                 = useState(null)
-  const [form, setForm]                   = useState({})
-  const [formDirty, setFormDirty]         = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState(null)
+  const [form, setForm] = useState({})
+  const [formDirty, setFormDirty] = useState(false)
   const [confirmarSalir, setConfirmarSalir] = useState(false)
   const [municipiosFiltrados, setMunicipiosFiltrados] = useState([])
-  const [historial, setHistorial]         = useState({ loading: false, ordenes: [], entregas: [] })
-  const [tabHoja, setTabHoja]             = useState('prestamo') // 'prestamo' | 'ordenes' | 'linea'
+  const [historial, setHistorial] = useState({ loading: false, ordenes: [], entregas: [] })
+  const [tabHoja, setTabHoja] = useState('prestamo') // 'prestamo' | 'ordenes' | 'linea'
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
@@ -47,16 +82,16 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
     setFormDirty(false)
     if (cliente) {
       setForm({
-        id:                  cliente.id,
-        tipo_persona:        cliente.tipo_persona || '',
-        nombre:              cliente.nombre || '',
-        nit_cc:              cliente.nit_cc || '',
+        id: cliente.id,
+        tipo_persona: cliente.tipo_persona || '',
+        nombre: cliente.nombre || '',
+        nit_cc: cliente.nit_cc || '',
         digito_verificacion: cliente.digito_verificacion || '',
-        direccion:           cliente.direccion || '',
-        telefono:            cliente.telefono || '',
-        email:               cliente.email || '',
-        departamento_id:     cliente.departamento_id || '',
-        municipio_id:        cliente.municipio_id || '',
+        direccion: cliente.direccion || '',
+        telefono: cliente.telefono || '',
+        email: cliente.email || '',
+        departamento_id: cliente.departamento_id || '',
+        municipio_id: cliente.municipio_id || '',
       })
       if (cliente.departamento_id)
         setMunicipiosFiltrados(municipios.filter(m => m.departamento_id === cliente.departamento_id))
@@ -138,10 +173,10 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   }, [drawer, historial])
 
   const ICONO_EVENTO = {
-    cliente:     { icon: <UserPlus size={13} />,      color: '#64748B', bg: '#F1F5F9' },
-    orden:       { icon: <FileText size={13} />,      color: '#1B3A6B', bg: '#E8EEF9' },
-    entrega:     { icon: <ArrowUpRight size={13} />,  color: '#0F7B55', bg: '#E7F6EF' },
-    devolucion:  { icon: <ArrowDownLeft size={13} />, color: '#B45309', bg: '#FEF3E2' },
+    cliente: { icon: <UserPlus size={13} />, color: '#64748B', bg: '#F1F5F9' },
+    orden: { icon: <FileText size={13} />, color: '#1B3A6B', bg: '#E8EEF9' },
+    entrega: { icon: <ArrowUpRight size={13} />, color: '#0F7B55', bg: '#E7F6EF' },
+    devolucion: { icon: <ArrowDownLeft size={13} />, color: '#B45309', bg: '#FEF3E2' },
   }
 
   // ── EXPORTAR HOJA DE VIDA A CSV ──
@@ -201,32 +236,33 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   }, [clientes, search, filtroTipo])
 
   async function guardarCliente() {
-    if (!form.nombre?.trim())   { showToast('El nombre es requerido', 'error'); return }
-    if (!form.tipo_persona)     { showToast('El tipo de persona es requerido', 'error'); return }
+    if (!form.nombre?.trim()) { showToast('El nombre es requerido', 'error'); return }
+    if (!form.tipo_persona) { showToast('El tipo de persona es requerido', 'error'); return }
     setSaving(true)
     const payload = {
-      tipo_persona:        form.tipo_persona,
-      nombre:              form.nombre.trim(),
-      nit_cc:              form.nit_cc?.trim() || null,
+      tipo_persona: form.tipo_persona,
+      nombre: form.nombre.trim(),
+      nit_cc: form.nit_cc?.trim() || null,
       digito_verificacion: form.digito_verificacion?.trim() || null,
-      direccion:           form.direccion?.trim() || null,
-      telefono:            form.telefono?.trim() || null,
-      email:               form.email?.trim() || null,
-      departamento_id:     form.departamento_id || null,
-      municipio_id:        form.municipio_id || null,
+      direccion: form.direccion?.trim() || null,
+      telefono: form.telefono?.trim() || null,
+      email: form.email?.trim() || null,
+      departamento_id: form.departamento_id || null,
+      municipio_id: form.municipio_id || null,
     }
     if (form.id) {
       const { error } = await supabase.from('clientes').update(payload).eq('id', form.id)
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+      skipSyncUntil.current = Date.now() + 2500
       setClientes(prev => prev.map(c => c.id === form.id ? {
         ...c, ...payload,
         departamento: departamentos.find(d => d.id === form.departamento_id) || c.departamento,
-        municipio:    municipios.find(m => m.id === form.municipio_id)       || c.municipio,
+        municipio: municipios.find(m => m.id === form.municipio_id) || c.municipio,
       } : c))
       if (drawer?.id === form.id) setDrawer(prev => ({
         ...prev, ...payload,
         departamento: departamentos.find(d => d.id === form.departamento_id) || prev.departamento,
-        municipio:    municipios.find(m => m.id === form.municipio_id)       || prev.municipio,
+        municipio: municipios.find(m => m.id === form.municipio_id) || prev.municipio,
       }))
       showToast('Cliente actualizado')
       registrarBitacora({ modulo: 'clientes', accion: 'editar', entidad: 'cliente', entidad_id: form.id, detalle: { nombre: payload.nombre } })
@@ -236,6 +272,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
         .select('*, municipio:municipios(id, nombre), departamento:departamentos(id, nombre)')
         .single()
       if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
+      skipSyncUntil.current = Date.now() + 2500
       setClientes(prev => [data, ...prev])
       showToast('Cliente creado')
       registrarBitacora({ modulo: 'clientes', accion: 'crear', entidad: 'cliente', entidad_id: data.id, detalle: { nombre: data.nombre } })
@@ -247,6 +284,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
     const { error } = await supabase.from('clientes').update({ activo: false }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
     const cliente = clientes.find(c => c.id === id)
+    skipSyncUntil.current = Date.now() + 2500
     setClientes(prev => prev.filter(c => c.id !== id))
     if (drawer?.id === id) setDrawer(null)
     setModalEliminar(null)
@@ -257,9 +295,9 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   const estiloTipo = c => TIPO_STYLES[c.tipo_persona] || TIPO_STYLES['Jurídica']
 
   const stats = useMemo(() => ({
-    total:    clientes.length,
+    total: clientes.length,
     juridica: clientes.filter(c => c.tipo_persona === 'Jurídica').length,
-    natural:  clientes.filter(c => c.tipo_persona === 'Natural').length,
+    natural: clientes.filter(c => c.tipo_persona === 'Natural').length,
   }), [clientes])
 
   return (
@@ -287,9 +325,9 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
           {/* Stats */}
           <div className="hidden md:grid md:grid-cols-3 gap-4 mb-5">
             {[
-              { label: 'Total clientes',      value: stats.total,    color: '#1E293B' },
-              { label: 'Personas jurídicas',  value: stats.juridica, color: '#0E86A0' },
-              { label: 'Personas naturales',  value: stats.natural,  color: '#475569' },
+              { label: 'Total clientes', value: stats.total, color: '#1E293B' },
+              { label: 'Personas jurídicas', value: stats.juridica, color: '#0E86A0' },
+              { label: 'Personas naturales', value: stats.natural, color: '#475569' },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                 <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
@@ -309,16 +347,15 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 overflow-x-auto flex-1">
                 {[
-                  { value: '',         label: 'Todos' },
+                  { value: '', label: 'Todos' },
                   { value: 'Jurídica', label: 'Persona jurídica' },
-                  { value: 'Natural',  label: 'Persona natural' },
+                  { value: 'Natural', label: 'Persona natural' },
                 ].map(t => (
                   <button key={t.value} onClick={() => setFiltroTipo(t.value)}
-                    className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all whitespace-nowrap ${
-                      filtroTipo === t.value
-                        ? 'bg-[#D81B43] text-white'
-                        : 'bg-white border border-slate-200 text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43]'
-                    }`}>
+                    className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all whitespace-nowrap ${filtroTipo === t.value
+                      ? 'bg-[#D81B43] text-white'
+                      : 'bg-white border border-slate-200 text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43]'
+                      }`}>
                     {t.label}
                   </button>
                 ))}
@@ -425,7 +462,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                           <td className="px-4 py-3">
                             <div className="space-y-0.5">
                               {c.telefono && <div className="flex items-center gap-1.5 text-[12px] text-slate-500"><Phone size={11} className="text-slate-400" />{c.telefono}</div>}
-                              {c.email    && <div className="flex items-center gap-1.5 text-[12px] text-slate-500"><Mail size={11} className="text-slate-400" />{c.email}</div>}
+                              {c.email && <div className="flex items-center gap-1.5 text-[12px] text-slate-500"><Mail size={11} className="text-slate-400" />{c.email}</div>}
                               {!c.telefono && !c.email && <span className="text-slate-300 text-[12px]">—</span>}
                             </div>
                           </td>
@@ -472,11 +509,11 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
               <div className="p-6 space-y-3 border-b border-slate-100">
                 <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Información general</div>
                 {[
-                  { label: 'NIT / CC',   value: drawer.nit_cc ? `${drawer.nit_cc}${drawer.digito_verificacion ? `-${drawer.digito_verificacion}` : ''}` : null },
-                  { label: 'Teléfono',   value: drawer.telefono, icon: <Phone size={12} /> },
-                  { label: 'Email',      value: drawer.email,    icon: <Mail size={12} /> },
-                  { label: 'Dirección',  value: drawer.direccion, icon: <MapPin size={12} /> },
-                  { label: 'Ubicación',  value: drawer.municipio ? `${drawer.municipio.nombre}, ${drawer.departamento?.nombre}` : null, icon: <MapPin size={12} /> },
+                  { label: 'NIT / CC', value: drawer.nit_cc ? `${drawer.nit_cc}${drawer.digito_verificacion ? `-${drawer.digito_verificacion}` : ''}` : null },
+                  { label: 'Teléfono', value: drawer.telefono, icon: <Phone size={12} /> },
+                  { label: 'Email', value: drawer.email, icon: <Mail size={12} /> },
+                  { label: 'Dirección', value: drawer.direccion, icon: <MapPin size={12} /> },
+                  { label: 'Ubicación', value: drawer.municipio ? `${drawer.municipio.nombre}, ${drawer.departamento?.nombre}` : null, icon: <MapPin size={12} /> },
                 ].filter(f => f.value).map(f => (
                   <div key={f.label} className="flex justify-between text-[12.5px]">
                     <span className="text-slate-400 flex items-center gap-1">{f.icon}{f.label}</span>
@@ -491,8 +528,8 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                   <div className="flex gap-1 border-b border-slate-200 flex-1 overflow-x-auto">
                     {[
                       { id: 'prestamo', label: 'En préstamo', count: equiposEnPrestamo.length },
-                      { id: 'ordenes',  label: 'Órdenes',     count: historial.ordenes.length },
-                      { id: 'linea',    label: 'Línea de tiempo', count: lineaTiempo.length },
+                      { id: 'ordenes', label: 'Órdenes', count: historial.ordenes.length },
+                      { id: 'linea', label: 'Línea de tiempo', count: lineaTiempo.length },
                     ].map(t => (
                       <button key={t.id} onClick={() => setTabHoja(t.id)}
                         className={`px-3 py-2 text-[12.5px] font-semibold border-b-2 whitespace-nowrap transition-all ${tabHoja === t.id ? 'border-[#D81B43] text-[#D81B43]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
@@ -638,11 +675,10 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                     {['Jurídica', 'Natural'].map(tipo => (
                       <button key={tipo} type="button"
                         onClick={() => setForm(f => ({ ...f, tipo_persona: tipo }))}
-                        className={`flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all ${
-                          form.tipo_persona === tipo
-                            ? 'border-[#D81B43] bg-[#D81B43]/5 text-[#D81B43]'
-                            : 'border-slate-200 text-slate-500 hover:border-slate-300'
-                        }`}>
+                        className={`flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all ${form.tipo_persona === tipo
+                          ? 'border-[#D81B43] bg-[#D81B43]/5 text-[#D81B43]'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                          }`}>
                         {tipo === 'Jurídica' ? <Building2 size={15} /> : <User size={15} />}
                         Persona {tipo}
                       </button>

@@ -53,11 +53,11 @@ function generarCodigoInterno() {
 
 export async function POST(request) {
   try {
-    const formData    = await request.formData()
-    const tipoCarga   = formData.get('tipo')
+    const formData = await request.formData()
+    const tipoCarga = formData.get('tipo')
     const categoriaId = formData.get('categoria_id')
-    const archivo     = formData.get('archivo')
-    const texto       = await archivo.text()
+    const archivo = formData.get('archivo')
+    const texto = await archivo.text()
 
     if (tipoCarga !== 'equipos') {
       return NextResponse.json({ error: 'Tipo no soportado' }, { status: 400 })
@@ -67,11 +67,11 @@ export async function POST(request) {
     }
 
     const { data: filas, errors: parseErrors } = Papa.parse(texto, {
-      header:          true,
-      skipEmptyLines:  true,
-      delimiter:       '',
+      header: true,
+      skipEmptyLines: true,
+      delimiter: '',
       transformHeader: h => h.trim().replace(/^﻿/, '').replace(/;$/, '').toLowerCase(),
-      transform:       v => (typeof v === 'string' ? v.trim() : v),
+      transform: v => (typeof v === 'string' ? v.trim() : v),
     })
 
     if (parseErrors.length > 0) {
@@ -96,7 +96,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Categoría no encontrada' }, { status: 404 })
     }
 
-    const camposTipo   = cat.atributos_extra?.campos_tipo   || []
+    const camposTipo = cat.atributos_extra?.campos_tipo || []
     const camposUnidad = cat.atributos_extra?.campos_unidad || []
 
     const { data: carga } = await supabaseAdmin.from('cargas_masivas').insert({
@@ -121,7 +121,7 @@ export async function POST(request) {
     const resultados = { exitosos: 0, errores: [], tiposCreados: 0, tiposReutilizados: 0 }
 
     for (let i = 0; i < filasFinales.length; i++) {
-      const fila  = filasFinales[i]
+      const fila = filasFinales[i]
       const nFila = i + 2
 
       const nombreTipo = limpiar(fila.tipo)
@@ -130,7 +130,7 @@ export async function POST(request) {
         continue
       }
 
-      const atributosTipo   = leerAtributos(fila, camposTipo)
+      const atributosTipo = leerAtributos(fila, camposTipo)
       const atributosUnidad = leerAtributos(fila, camposUnidad)
 
       let tipoObj = tiposCache.find(t => t.nombre?.toLowerCase() === nombreTipo.toLowerCase())
@@ -148,9 +148,9 @@ export async function POST(request) {
           .from('tipos_equipo')
           .insert({
             categoria_id: cat.id,
-            nombre:       nombreTipo,
-            atributos:    Object.keys(atributosTipo).length > 0 ? atributosTipo : null,
-            activo:       true,
+            nombre: nombreTipo,
+            atributos: Object.keys(atributosTipo).length > 0 ? atributosTipo : null,
+            activo: true,
           })
           .select('id, nombre, atributos').single()
 
@@ -187,21 +187,21 @@ export async function POST(request) {
 
     if (carga?.id) {
       await supabaseAdmin.from('cargas_masivas').update({
-        exitosos:          resultados.exitosos,
-        tipos_creados:     resultados.tiposCreados,
+        exitosos: resultados.exitosos,
+        tipos_creados: resultados.tiposCreados,
         tipos_reutilizados: resultados.tiposReutilizados,
-        errores:           resultados.errores.length > 0 ? resultados.errores : null,
-        estado:            resultados.errores.length > 0 ? 'con_errores' : 'completado',
-        fecha_fin:         new Date().toISOString(),
+        errores: resultados.errores.length > 0 ? resultados.errores : null,
+        estado: resultados.errores.length > 0 ? 'con_errores' : 'completado',
+        fecha_fin: new Date().toISOString(),
       }).eq('id', carga.id)
     }
 
     return NextResponse.json({
-      carga_id:          carga?.id || null,
-      total:             filasFinales.length,
-      exitosos:          resultados.exitosos,
-      errores:           resultados.errores,
-      tiposCreados:      resultados.tiposCreados,
+      carga_id: carga?.id || null,
+      total: filasFinales.length,
+      exitosos: resultados.exitosos,
+      errores: resultados.errores,
+      tiposCreados: resultados.tiposCreados,
       tiposReutilizados: resultados.tiposReutilizados,
     })
 
