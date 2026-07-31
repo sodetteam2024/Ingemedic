@@ -7,6 +7,9 @@ import { createClient } from '@/lib/supabase'
 import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriangle, Clock, CheckCircle2, Box, Hash, Tag, Layers, SlidersHorizontal } from 'lucide-react'
 import { IconoEquipo, GaleriaIconos } from '@/components/inventario/IconosEquipo'
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
+
 const CAMPO_FILTRO_STYLES = {
   modelo: { color: '#2EB5D4', Icon: Box },
   serie: { color: '#D81B43', Icon: Hash },
@@ -285,6 +288,210 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     } finally {
       setExportando(false)
     }
+  }
+
+  // ── GENERAR HOJA DE VIDA PDF ─────────────────────────────
+  async function generarHojaVidaPDF(equipo) {
+    const { default: jsPDF } = await import('jspdf')
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const W = 210, M = 15, CW = W - M * 2
+    const HEADER_H = 28
+    let logoEndX = M
+
+    // Helpers
+    function hexRgb(hex) {
+      return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
+    }
+    async function fetchBase64(url) {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const b64 = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+      const dims = await new Promise(r => { const img = new window.Image(); img.onload = () => r({ w: img.naturalWidth, h: img.naturalHeight }); img.src = b64 })
+      return { b64, dims }
+    }
+
+    // ── LOGO ────────────────────────────────────────────────
+    try {
+      const { b64, dims } = await fetchBase64(LOGO_URL)
+      const ratio = HEADER_H / dims.h
+      const logoW = dims.w * ratio
+      doc.addImage(b64, 'PNG', M + 2, M, logoW, HEADER_H)
+      logoEndX = M + logoW + 6
+    } catch { logoEndX = M + 4 }
+
+    // ── HEADER (franja azul) ─────────────────────────────────
+    doc.setFillColor(27, 58, 107) // #1B3A6B
+    doc.rect(logoEndX, M, W - M - logoEndX, HEADER_H, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10.5); doc.setFont('helvetica', 'bold')
+    doc.text('HOJA DE VIDA DEL EQUIPO', logoEndX + 3, M + 9)
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+    doc.text('Ingemedic de Colombia S.A.S.', logoEndX + 3, M + 16)
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}`, W - M - 2, M + 23, { align: 'right' })
+
+    let y = M + HEADER_H + 8
+
+    // ── BLOQUE IDENTIFICACIÓN ────────────────────────────────
+    const tipo = equipo.tipo_equipo
+    const imagenUrl = tipo?.imagen_url && !tipo.imagen_url.startsWith('icono:') ? tipo.imagen_url : null
+    const IMG_SZ = 34
+    const INFO_X = imagenUrl ? M + IMG_SZ + 6 : M
+    const INFO_W = imagenUrl ? CW - IMG_SZ - 6 : CW
+
+    if (imagenUrl) {
+      try {
+        const { b64, dims } = await fetchBase64(imagenUrl)
+        const ratio = Math.min(IMG_SZ / dims.w, IMG_SZ / dims.h)
+        const iW = dims.w * ratio, iH = dims.h * ratio
+        doc.setDrawColor(220, 220, 220)
+        doc.roundedRect(M, y, IMG_SZ, IMG_SZ, 2, 2)
+        doc.addImage(b64, 'PNG', M + (IMG_SZ - iW) / 2, y + (IMG_SZ - iH) / 2, iW, iH, undefined, 'FAST')
+      } catch { }
+    }
+
+    const nombreTipoEq = tipo?.nombre || '—'
+    const categoriaNombre = tipo?.categoria?.nombre || ''
+    const estadoNombre = equipo.estado?.nombre || '—'
+    const estadoSty = ESTADO_STYLES[estadoNombre] || { color: '#64748B' }
+    const [er, eg, eb] = hexRgb(estadoSty.color)
+
+    doc.setTextColor(30, 30, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
+    const titleLines = doc.splitTextToSize(nombreTipoEq, INFO_W - 4)
+    doc.text(titleLines, INFO_X, y + 8)
+    let infoY = y + 8 + titleLines.length * 6
+
+    if (categoriaNombre) {
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120)
+      doc.text(categoriaNombre, INFO_X, infoY)
+      infoY += 5.5
+    }
+    // Badge estado
+    doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(er, eg, eb)
+    doc.text(`●  ${estadoNombre}`, INFO_X, infoY)
+
+    y = Math.max(y + IMG_SZ + 6, infoY + 10)
+
+    // Fila 3 columnas: Código · Serie · Fecha registro
+    doc.setFillColor(240, 242, 245)
+    doc.rect(M, y, CW, 6, 'F')
+    doc.setTextColor(30, 30, 30); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+    doc.text('IDENTIFICACIÓN', M + 2, y + 4)
+    y += 9
+
+    const C3 = CW / 3
+    const id3 = [
+      ['Código',      equipo.codigo || '—'],
+      ['Serie',       equipo.atributos?.serie || '—'],
+      ['Registrado',  equipo.fecha_creacion ? new Date(equipo.fecha_creacion).toLocaleDateString('es-CO') : '—'],
+    ]
+    id3.forEach(([lbl, val], i) => {
+      const cx = M + i * C3 + 2
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120)
+      doc.text(lbl, cx, y)
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30)
+      doc.text(String(val), cx, y + 5.5)
+    })
+    y += 14
+
+    // Características técnicas (atributos del tipo + unidad)
+    const atrsAll = { ...(tipo?.atributos || {}), ...(equipo.atributos || {}) }
+    delete atrsAll.serie   // ya en la fila de identificación
+    const atrsEntries = Object.entries(atrsAll).filter(([, v]) => v != null && v !== '')
+    if (atrsEntries.length > 0) {
+      if (y > 245) { doc.addPage(); y = M }
+      doc.setFillColor(240, 242, 245); doc.rect(M, y, CW, 6, 'F')
+      doc.setTextColor(30, 30, 30); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+      doc.text('CARACTERÍSTICAS TÉCNICAS', M + 2, y + 4)
+      y += 9
+      const colW = CW / 2
+      atrsEntries.forEach(([k, v], i) => {
+        if (y > 255) { doc.addPage(); y = M }
+        const cx = M + (i % 2) * colW + 2
+        if (i % 2 === 0 && i > 0) y += 5.5
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120)
+        doc.text(`${k}:`, cx, y)
+        doc.setTextColor(30, 30, 30)
+        doc.text(String(v).slice(0, 30), cx + 24, y)
+      })
+      if (atrsEntries.length % 2 !== 0) y += 5.5
+      y += 5
+    }
+
+    // ── LÍNEA DE TIEMPO ──────────────────────────────────────
+    if (y > 240) { doc.addPage(); y = M }
+    doc.setFillColor(240, 242, 245); doc.rect(M, y, CW, 6, 'F')
+    doc.setTextColor(30, 30, 30); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+    doc.text('HISTORIAL — LÍNEA DE TIEMPO', M + 2, y + 4)
+    y += 10
+
+    // Construir y ordenar eventos (igual que en pantalla)
+    const eventosP = []
+    eventosP.push({ tipo: 'registro', fecha: equipo.fecha_creacion ? new Date(equipo.fecha_creacion) : null, titulo: 'Equipo registrado en el sistema', sub: null, activo: false })
+    prestamosDrawer.forEach(p => {
+      const fE = p.fecha_entrega ? new Date(p.fecha_entrega) : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
+      const fD = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
+      const activo = !fD
+      const cli = p.orden?.cliente?.nombre || 'Cliente desconocido'
+      const pac = p.orden?.paciente?.nombre
+      const cod = p.orden?.codigo
+      eventosP.push({ tipo: 'prestamo', fecha: fE, titulo: `Prestado a ${cli}`, sub: [pac ? `Paciente: ${pac}` : null, cod ? `Orden ${cod}` : null].filter(Boolean).join(' · ') || null, activo })
+      if (fD) eventosP.push({ tipo: 'devolucion', fecha: fD, titulo: 'Devuelto', sub: cod ? `Orden ${cod}` : null, activo: false })
+    })
+    eventosP.sort((a, b) => { if (!a.fecha && !b.fecha) return 0; if (!a.fecha) return 1; if (!b.fecha) return -1; return b.fecha - a.fecha })
+
+    const LINE_X = M + 4
+    eventosP.forEach((ev, idx) => {
+      if (y > 262) { doc.addPage(); y = M + 8 }
+      // Dot color
+      const dotRgb = ev.tipo === 'prestamo' && ev.activo ? [14, 134, 160]
+        : ev.tipo === 'devolucion' ? [15, 123, 85]
+        : ev.tipo === 'registro'   ? [37, 169, 224]
+        : [100, 116, 139]
+      doc.setFillColor(...dotRgb)
+      doc.circle(LINE_X, y, 1.8, 'F')
+      // Connector line to next
+      if (idx < eventosP.length - 1) {
+        doc.setDrawColor(220, 220, 220)
+        doc.line(LINE_X, y + 2, LINE_X, y + 14)
+      }
+      // Título
+      const TX = LINE_X + 5
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30)
+      doc.text(ev.titulo, TX, y + 0.5)
+      let dY = 5
+      // Subtítulo
+      if (ev.sub) {
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100)
+        const subLines = doc.splitTextToSize(ev.sub, CW - TX + M - 2)
+        doc.text(subLines, TX, y + dY)
+        dY += subLines.length * 4
+      }
+      // Fecha
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(140, 140, 140)
+      let fStr = ev.fecha ? ev.fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Fecha no disponible'
+      if (ev.tipo === 'prestamo' && ev.activo) fStr += '  ·  Activo'
+      doc.text(fStr, TX, y + dY)
+      y += dY + 8
+    })
+
+    if (eventosP.length === 0) {
+      doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(160, 160, 160)
+      doc.text('Sin eventos registrados', M + 8, y)
+      y += 8
+    }
+
+    // ── PIE DE PÁGINA (todas las páginas) ──────────────────
+    const totalPags = doc.internal.getNumberOfPages()
+    for (let p = 1; p <= totalPags; p++) {
+      doc.setPage(p)
+      doc.setDrawColor(220, 220, 220); doc.line(M, 282, W - M, 282)
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(160, 160, 160)
+      doc.text('Ingemedic de Colombia S.A.S.  ·  Valledupar, Cesar', M, 287)
+      doc.text(`Página ${p} de ${totalPags}`, W - M, 287, { align: 'right' })
+    }
+
+    doc.save(`HojaVida_${equipo.codigo || 'equipo'}.pdf`)
+    showToast('PDF generado')
   }
 
   function abrirModalTipo() {
@@ -920,7 +1127,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 className="flex items-center gap-1.5 px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
                 <Edit3 size={13} /> Editar ficha
               </button>
-              <button className="flex items-center gap-1.5 px-4 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] transition-colors ml-auto">
+              <button onClick={() => generarHojaVidaPDF(drawer)}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#152D54] transition-colors ml-auto">
                 <FileText size={13} /> Hoja de vida PDF
               </button>
             </div>
