@@ -434,24 +434,41 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
       <div className="flex-1 overflow-y-auto p-3 md:p-6 pb-28 md:pb-6">
 
-        {/* Stats */}
-        <div className="hidden md:grid md:grid-cols-4 gap-4 mb-6">
-          {[
+        {/* Stats — desktop: grid 4 cols / móvil: chips en scroll horizontal */}
+        {(() => {
+          const statsItems = [
             { label: 'Total equipos', value: stats.total, color: '#1E293B' },
             { label: 'Disponibles', value: stats.disponibles, color: '#0F7B55' },
             { label: 'En préstamo', value: stats.prestamo, color: '#0E86A0' },
             { label: 'Mantenimiento', value: stats.mant, color: '#B45309' },
-          ].map(s => (
-            <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-              <div className="text-[11.5px] text-slate-400 mt-1">{s.label}</div>
-            </div>
-          ))}
-        </div>
+          ]
+          return (
+            <>
+              {/* Desktop */}
+              <div className="hidden md:grid md:grid-cols-4 gap-4 mb-6">
+                {statsItems.map(s => (
+                  <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                    <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
+                    <div className="text-[11.5px] text-slate-400 mt-1">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Móvil: scroll horizontal */}
+              <div className="md:hidden flex gap-2 overflow-x-auto pb-1 mb-4 -mx-3 px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {statsItems.map(s => (
+                  <div key={s.label} className="flex-shrink-0 bg-white border border-slate-200 rounded-full px-3 py-1.5 flex items-center gap-2 shadow-sm">
+                    <span className="text-[15px] font-extrabold tabular-nums leading-none" style={{ color: s.color }}>{s.value}</span>
+                    <span className="text-[11px] text-slate-400 whitespace-nowrap">{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )
+        })()}
 
         {/* VISTA CATEGORÍAS */}
         {vista === 'categorias' && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {categorias.length === 0 && (
               <div className="col-span-full text-center py-16 text-slate-400">
                 <Package className="w-16 h-16 mx-auto mb-3 opacity-20" />
@@ -490,14 +507,14 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
           <div>
             {tiposDeCat.length > 0 && (
               <div className="flex items-center gap-3 mb-4">
-                <div className="relative flex-1 max-w-[280px]">
+                <div className="relative flex-1 md:max-w-[280px]">
                   <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     value={search} onChange={e => setSearch(e.target.value)}
                     placeholder="Buscar tipo..."
                     className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
                 </div>
-                <div className="text-[12px] text-slate-400 ml-auto">
+                <div className="text-[12px] text-slate-400 flex-shrink-0">
                   {tiposDeCat.filter(t => !search || nombreTipo(t).toLowerCase().includes(search.toLowerCase())).length} tipo{tiposDeCat.length !== 1 ? 's' : ''}
                 </div>
               </div>
@@ -509,7 +526,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 <div className="text-[13px]">Usa el botón &quot;Nuevo tipo&quot; para agregar uno</div>
               </div>
             )}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
               {tiposDeCat
                 .filter(t => !search || nombreTipo(t).toLowerCase().includes(search.toLowerCase()))
                 .map(tipo => {
@@ -518,26 +535,22 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   return (
                     <div key={tipo.id} onClick={() => irATipo(tipo)}
                       className="bg-white rounded-xl border border-slate-200 overflow-hidden cursor-pointer hover:border-[#D81B43]/50 hover:shadow-sm transition-all group flex">
-                      {/* Imagen — izquierda */}
-                      <div className="w-[100px] h-[100px] flex-shrink-0 bg-[#F8FAFC] flex items-center justify-center p-4 border-r border-slate-100">
-                        {renderIconoTipo(tipo, 60)}
+                      {/* Imagen — izquierda, más compacta en móvil */}
+                      <div className="w-[72px] h-[72px] md:w-[100px] md:h-[100px] flex-shrink-0 bg-[#F8FAFC] flex items-center justify-center p-2 md:p-4 border-r border-slate-100">
+                        {renderIconoTipo(tipo, 48)}
                       </div>
                       {/* Contenido — derecha */}
                       <div className="p-3 flex-1 min-w-0 flex flex-col justify-center relative">
-                        <div className="text-[13px] font-bold text-slate-800 leading-snug mb-1 pr-12 truncate">{nombreTipo(tipo)}</div>
+                        <div className="text-[13px] font-bold text-slate-800 leading-snug mb-1 pr-10 break-words">{nombreTipo(tipo)}</div>
                         {campos.map(c => (
                           <div key={c.clave} className="text-[11px] text-slate-500 truncate">
                             <span className="text-slate-400">{c.nombre}:</span> {formatearValor(tipo.atributos?.[c.clave], c.tipo)}
                           </div>
                         ))}
-                        <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100">
-                          <span className="text-[11px] font-bold text-[#0F7B55]">
-                            {stock.disponibles} disp.
-                          </span>
+                        <div className="mt-1.5 pt-1.5 border-t border-slate-100">
+                          <span className="text-[11px] font-bold text-[#0F7B55]">{stock.disponibles} disp.</span>
                           {stock.total - stock.disponibles > 0 && (
-                            <span className="text-[10.5px] text-slate-400">
-                              {stock.total - stock.disponibles} en uso
-                            </span>
+                            <span className="text-[11px] text-slate-400"> · {stock.total - stock.disponibles} en uso</span>
                           )}
                         </div>
                         {/* Badge unidades */}
