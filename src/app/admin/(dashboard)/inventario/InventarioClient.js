@@ -112,6 +112,33 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   const [formUnidad, setFormUnidad] = useState({ estado_id: '', atributos: {} })
   const [formTipo, setFormTipo] = useState({ icono: '', atributos: {} })
   const [formEditar, setFormEditar] = useState({ estado_id: '', atributos: {}, motivo: '' })
+  const [prestamosDrawer, setPrestamosDrawer] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    const t = setTimeout(() => {
+      if (!drawer?.id) {
+        if (!cancelled) setPrestamosDrawer([])
+        return
+      }
+      supabase
+        .from('orden_equipos')
+        .select(`
+          id, fecha_entrega, fecha_devolucion,
+          orden:ordenes_servicio(
+            id, codigo, fecha_creacion,
+            estado:estados_orden(nombre),
+            cliente:clientes(id, nombre),
+            paciente:pacientes(id, nombre)
+          )
+        `)
+        .eq('equipo_id', drawer.id)
+        .order('fecha_entrega', { ascending: false })
+        .then(({ data }) => { if (!cancelled) setPrestamosDrawer(data || []) })
+    }, 0)
+    return () => { cancelled = true; clearTimeout(t) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawer?.id])
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
@@ -798,27 +825,93 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
               <div className="p-6">
                 <div className="text-[13px] font-bold text-slate-700 mb-4">Hoja de vida · Línea de tiempo</div>
-                <div className="relative">
-                  <div className="absolute left-[7px] top-2 bottom-0 w-[1.5px] bg-slate-100" />
-                  <div className="space-y-5">
-                    <div className="flex gap-3">
-                      <div className="w-4 h-4 rounded-full bg-[#25A9E0] flex-shrink-0 mt-0.5 z-10 flex items-center justify-center">
-                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                      </div>
-                      <div>
-                        <div className="text-[12.5px] font-semibold text-slate-700">Equipo registrado en el sistema</div>
-                        <div className="text-[11.5px] text-slate-400 mt-0.5 flex items-center gap-1">
-                          <Clock size={10} />
-                          {drawer.fecha_creacion ? formatearFecha(drawer.fecha_creacion) : 'Fecha no disponible'}
+                {(() => {
+                  // Construir lista de eventos mezclados y ordenados newest-first
+                  const eventos = []
+
+                  // Evento de registro (siempre presente, el más antiguo)
+                  eventos.push({
+                    key:    'registro',
+                    fecha:  drawer.fecha_creacion ? new Date(drawer.fecha_creacion) : null,
+                    titulo: 'Equipo registrado en el sistema',
+                    sub:    null,
+                    dot:    { bg: '#25A9E0', inner: true },
+                  })
+
+                  // Eventos de préstamo
+                  prestamosDrawer.forEach(p => {
+                    const fechaEntrega    = p.fecha_entrega    ? new Date(p.fecha_entrega)    : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
+                    const fechaDevolucion = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
+                    const activo         = !fechaDevolucion
+                    const cliente        = p.orden?.cliente?.nombre || 'Cliente desconocido'
+                    const paciente       = p.orden?.paciente?.nombre || null
+                    const codigo         = p.orden?.codigo || null
+
+                    eventos.push({
+                      key:    `prestamo-${p.id}`,
+                      fecha:  fechaEntrega,
+                      titulo: `Prestado a ${cliente}`,
+                      sub:    [paciente ? `Paciente: ${paciente}` : null, codigo ? `Orden ${codigo}` : null].filter(Boolean).join(' · ') || null,
+                      dot:    activo
+                        ? { bg: '#0E86A0', ring: true }       // activo: celeste con anillo
+                        : { bg: '#64748B', inner: false },    // cerrado: gris
+                    })
+
+                    if (fechaDevolucion) {
+                      eventos.push({
+                        key:    `devolucion-${p.id}`,
+                        fecha:  fechaDevolucion,
+                        titulo: 'Devuelto',
+                        sub:    codigo ? `Orden ${codigo}` : null,
+                        dot:    { bg: '#0F7B55', inner: false },
+                      })
+                    }
+                  })
+
+                  // Ordenar newest-first (nulls al final)
+                  eventos.sort((a, b) => {
+                    if (!a.fecha && !b.fecha) return 0
+                    if (!a.fecha) return 1
+                    if (!b.fecha) return -1
+                    return b.fecha - a.fecha
+                  })
+
+                  return (
+                    <div className="relative">
+                      <div className="absolute left-[7px] top-2 bottom-0 w-[1.5px] bg-slate-100" />
+                      <div className="space-y-5">
+                        {eventos.map(ev => (
+                          <div key={ev.key} className="flex gap-3">
+                            {/* Dot */}
+                            <div className="w-4 h-4 rounded-full flex-shrink-0 mt-0.5 z-10 flex items-center justify-center"
+                              style={{
+                                backgroundColor: ev.dot.ring ? 'white' : ev.dot.bg,
+                                border: ev.dot.ring ? `2px solid ${ev.dot.bg}` : 'none',
+                                boxShadow: ev.dot.ring ? `0 0 0 3px ${ev.dot.bg}22` : 'none',
+                              }}>
+                              {ev.dot.inner && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              {ev.dot.ring  && <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ev.dot.bg }} />}
+                            </div>
+                            {/* Texto */}
+                            <div>
+                              <div className="text-[12.5px] font-semibold text-slate-700">{ev.titulo}</div>
+                              {ev.sub && <div className="text-[11px] text-slate-400 mt-0.5">{ev.sub}</div>}
+                              <div className="text-[11.5px] text-slate-400 mt-0.5 flex items-center gap-1">
+                                <Clock size={10} />
+                                {ev.fecha ? formatearFecha(ev.fecha.toISOString()) : 'Fecha no disponible'}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {/* Placeholder mantenimientos */}
+                        <div className="flex gap-3 opacity-40">
+                          <div className="w-4 h-4 rounded-full border-2 border-dashed border-slate-300 flex-shrink-0 mt-0.5 z-10" />
+                          <div className="text-[12px] text-slate-400 italic">Los mantenimientos aparecerán aquí</div>
                         </div>
                       </div>
                     </div>
-                    <div className="flex gap-3 opacity-40">
-                      <div className="w-4 h-4 rounded-full border-2 border-dashed border-slate-300 flex-shrink-0 mt-0.5 z-10" />
-                      <div className="text-[12px] text-slate-400 italic">Los mantenimientos aparecerán aquí</div>
-                    </div>
-                  </div>
-                </div>
+                  )
+                })()}
               </div>
             </div>
 
