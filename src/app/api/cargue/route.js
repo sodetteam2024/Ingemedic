@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import Papa from 'papaparse'
-import { randomUUID } from 'crypto'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -42,13 +41,6 @@ function leerAtributos(fila, campos) {
     }
   }
   return atributos
-}
-
-// Genera un código interno único para equipos.codigo (NOT NULL UNIQUE en la BD).
-// El usuario no lo ve ni lo llena — si en el futuro quieren un código legible,
-// se agrega como campo dinámico normal de la categoría, no aquí.
-function generarCodigoInterno() {
-  return `EQ-${randomUUID().slice(0, 8).toUpperCase()}`
 }
 
 export async function POST(request) {
@@ -163,12 +155,16 @@ export async function POST(request) {
         resultados.tiposCreados++
       }
 
-      // codigo se genera internamente, con reintento simple por si hay colisión (muy improbable)
-      let codigo = generarCodigoInterno()
-      for (let intento = 0; intento < 3; intento++) {
-        const { data: choque } = await supabaseAdmin.from('equipos').select('id').eq('codigo', codigo).maybeSingle()
-        if (!choque) break
-        codigo = generarCodigoInterno()
+      const codigo = limpiar(fila.codigo)
+      if (!codigo) {
+        resultados.errores.push(`Fila ${nFila}: el campo "codigo" es obligatorio`)
+        continue
+      }
+
+      const { data: existente } = await supabaseAdmin.from('equipos').select('id').eq('codigo', codigo).maybeSingle()
+      if (existente) {
+        resultados.errores.push(`Fila ${nFila}: el código "${codigo}" ya existe en inventario`)
+        continue
       }
 
       const { error } = await supabaseAdmin.from('equipos').insert({

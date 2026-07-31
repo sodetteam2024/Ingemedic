@@ -35,8 +35,7 @@ export async function GET(request) {
     const camposTipo   = cat.atributos_extra?.campos_tipo   || []
     const camposUnidad = cat.atributos_extra?.campos_unidad || []
 
-    // Únicamente: identificador del tipo + lo que esté configurado en la categoría. Nada más.
-    columnas = ['tipo', ...camposTipo.map(c => c.clave), ...camposUnidad.map(c => c.clave)]
+    columnas = ['tipo', 'codigo', ...camposTipo.map(c => c.clave), ...camposUnidad.map(c => c.clave)]
   } else {
     return NextResponse.json({ error: 'Tipo inválido' }, { status: 400 })
   }

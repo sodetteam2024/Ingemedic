@@ -14,12 +14,13 @@ export default async function EntregasPage() {
     { data: entregas },
     { data: ordenes },
     { data: estados },
+    { data: estadosEquipo },
     { data: empresa },
   ] = await Promise.all([
     supabase.from('entregas').select(`
       *,
       orden:ordenes_servicio(
-        id, codigo, fecha_vigencia, observaciones,
+        id, codigo, fecha_vigencia, observaciones, paciente_id, cliente_id,
         cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
         equipos:orden_equipos(
           id, equipo_id,
@@ -38,7 +39,7 @@ export default async function EntregasPage() {
     `).order('fecha_creacion', { ascending: false }),
     // Órdenes en estado "Programada" sin entrega activa aún
     supabase.from('ordenes_servicio').select(`
-      id, codigo, fecha_vigencia, fecha_entrega, observaciones,
+      id, codigo, fecha_vigencia, fecha_entrega, observaciones, paciente_id, cliente_id,
       cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
       repartidor:usuarios!ordenes_servicio_repartidor_id_fkey(id, nombre),
       estado:estados_orden(id, nombre),
@@ -54,6 +55,7 @@ export default async function EntregasPage() {
       )
     `).eq('estado_id', '9430f8fe-008f-494e-ada5-3c667799b26c').order('fecha_entrega', { ascending: true }),
     supabase.from('estados_entrega').select('*').order('nombre'),
+    supabase.from('estados_equipo').select('*').order('nombre'),
     supabase.from('configuracion_empresa').select('*').single(),
   ])
 
@@ -62,6 +64,7 @@ export default async function EntregasPage() {
       entregasIniciales={entregas || []}
       ordenesEnReparto={ordenes || []}
       estados={estados || []}
+      estadosEquipo={estadosEquipo || []}
       empresa={empresa || {}}
     />
   )

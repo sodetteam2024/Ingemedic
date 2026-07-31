@@ -18,7 +18,7 @@ const NAV = [
     items: [
       { href: '/admin/entregas',       label: 'Entregas',            icon: 'truck',  tour: 'nav-entregas'       },
       { href: '/admin/inventario',     label: 'Inventario',          icon: 'pulse',  tour: 'nav-inventario'     },
-      { href: '/admin/ordenes',        label: 'Órdenes de servicio', icon: 'file',   tour: 'nav-ordenes'        },
+      { href: '/admin/ordenes',        label: 'Préstamos',           icon: 'file',   tour: 'nav-ordenes'        },
       { href: '/admin/clientes',       label: 'Clientes',            icon: 'users'                              },
       { href: '/admin/mantenimientos', label: 'Mantenimientos',      icon: 'tool',   tour: 'nav-mantenimientos' },
       { href: '/admin/servicios',      label: 'Servicios prestados', icon: 'pulse'                              },

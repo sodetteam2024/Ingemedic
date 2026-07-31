@@ -20,7 +20,7 @@ export default async function InventarioPage() {
       .select('id, nombre, imagen_url, atributos, categoria_id, lista_mantenimiento_id, categoria:categorias_equipo(id, nombre, imagen_url, atributos_extra)')
       .eq('activo', true).order('nombre'),
     supabase.from('equipos')
-      .select('*, estado:estados_equipo(id, nombre), tipo_equipo:tipos_equipo(id, nombre, imagen_url, atributos, categoria_id)')
+      .select('*, estado:estados_equipo(id, nombre), tipo_equipo:tipos_equipo(id, nombre, imagen_url, atributos, categoria_id), paciente_actual:pacientes(id, nombre, direccion, ciudad, telefono), cliente_actual:clientes(id, nombre)')
       .order('fecha_creacion', { ascending: false }),
     supabase.from('estados_equipo').select('*').order('nombre'),
   ])

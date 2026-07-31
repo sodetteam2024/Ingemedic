@@ -632,6 +632,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                           <th key={c.clave} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{c.nombre}</th>
                         ))}
                         <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Estado</th>
+                        <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Paciente</th>
+                        <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Dirección</th>
                         <th className="w-10 bg-slate-50"></th>
                       </tr>
                     </thead>
@@ -659,6 +661,16 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: estSty.dot }} />
                                 {est}
                               </span>
+                            </td>
+                            <td className="px-4 py-3 text-[12.5px] text-slate-600">
+                              {eq.paciente_actual?.nombre
+                                ? <span className="truncate max-w-[140px] block">{eq.paciente_actual.nombre}</span>
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-[12.5px] text-slate-500">
+                              {eq.paciente_actual?.direccion
+                                ? <span className="truncate max-w-[160px] block">{eq.paciente_actual.direccion}</span>
+                                : <span className="text-slate-300">—</span>}
                             </td>
                             <td className="px-3 py-3 text-slate-300">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>

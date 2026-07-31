@@ -226,7 +226,7 @@ export async function POST(request) {
       const { data: cats }    = await supabase.from('categorias_equipo').select('id, nombre, atributos_extra').eq('activo', true)
       const { data: tipos }   = await supabase.from('tipos_equipo').select('*').eq('activo', true)
       const { data: equipos } = await supabase.from('equipos')
-        .select('*, tipo_equipo:tipos_equipo(*, categoria:categorias_equipo(id, nombre)), estado:estados_equipo(nombre)')
+        .select('*, tipo_equipo:tipos_equipo(*, categoria:categorias_equipo(id, nombre)), estado:estados_equipo(nombre), paciente_actual:pacientes(nombre, direccion, telefono), cliente_actual:clientes(nombre)')
         .order('fecha_creacion', { ascending: false })
 
       // 1. Construir el mapa de columnas dinámicas únicas por clave,
@@ -246,6 +246,7 @@ export async function POST(request) {
       const headers = [
         'Categoría', 'Tipo', 'Código', 'Estado',
         ...clavesUnicas.map(clave => camposUnicos.get(clave)),
+        'Paciente actual', 'Dirección paciente', 'Teléfono paciente',
         'Fecha registro',
       ]
       const nCols = headers.length
@@ -256,6 +257,9 @@ export async function POST(request) {
         { key: 'codigo',    width: 14 },
         { key: 'estado',    width: 16 },
         ...clavesUnicas.map(() => ({ width: 20 })),
+        { key: 'paciente',  width: 22 },
+        { key: 'direccion', width: 26 },
+        { key: 'telefono',  width: 16 },
         { key: 'fecha',     width: 16 },
       ]
 
@@ -283,6 +287,9 @@ export async function POST(request) {
           eq.codigo || '',
           eq.estado?.nombre || '',
           ...valoresCampos,
+          eq.paciente_actual?.nombre    || '',
+          eq.paciente_actual?.direccion || '',
+          eq.paciente_actual?.telefono  || '',
           fecha,
         ])
 
@@ -345,20 +352,23 @@ export async function POST(request) {
       const { data: tipo }   = await supabase.from('tipos_equipo')
         .select('*, categoria:categorias_equipo(nombre, atributos_extra)').eq('id', tipo_id).single()
       const { data: equipos } = await supabase.from('equipos')
-        .select('*, estado:estados_equipo(nombre)').eq('tipo_equipo_id', tipo_id).order('fecha_creacion', { ascending: false })
+        .select('*, estado:estados_equipo(nombre), paciente_actual:pacientes(nombre, direccion, telefono), cliente_actual:clientes(nombre)').eq('tipo_equipo_id', tipo_id).order('fecha_creacion', { ascending: false })
 
       const camposUnidad = tipo?.categoria?.atributos_extra?.campos_unidad || []
       const camposTipo   = tipo?.categoria?.atributos_extra?.campos_tipo   || []
       const nombreTipo   = tipo?.nombre || 'Tipo'
 
       const ws = wb.addWorksheet(nombreTipo.slice(0, 31))
-      const headers = ['Estado', ...camposUnidad.map(c => c.nombre), 'Fecha registro']
+      const headers = ['Estado', ...camposUnidad.map(c => c.nombre), 'Paciente actual', 'Dirección paciente', 'Teléfono paciente', 'Fecha registro']
       const nCols = headers.length
 
       ws.columns = [
-        { key: 'estado', width: 18 },
+        { key: 'estado',    width: 18 },
         ...camposUnidad.map(() => ({ width: 20 })),
-        { key: 'fecha', width: 18 },
+        { key: 'paciente',  width: 22 },
+        { key: 'direccion', width: 26 },
+        { key: 'telefono',  width: 16 },
+        { key: 'fecha',     width: 18 },
       ]
 
       agregarTitulo(ws, `${nombreTipo} — Unidades`, nCols)
@@ -403,6 +413,9 @@ export async function POST(request) {
             if (c.tipo === 'numero' && !isNaN(val) && val !== '') return Number(val)
             return val
           }),
+          eq.paciente_actual?.nombre    || '',
+          eq.paciente_actual?.direccion || '',
+          eq.paciente_actual?.telefono  || '',
           fecha,
         ])
         estiloFila(ws, filaActual + i, nCols, i % 2 === 1)

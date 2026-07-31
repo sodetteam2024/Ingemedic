@@ -5,7 +5,8 @@ import { useState, useEffect } from 'react'
 import {
   Users, Lock, Tag, Cpu, Building2,
   FileText, Upload, Plus, X, Edit3, Trash2,
-  Check, Save, ClipboardList, Download, CheckCircle2, Smartphone
+  Check, Save, ClipboardList, Download, CheckCircle2, Smartphone,
+  ChevronDown, ChevronRight
 } from 'lucide-react'
 import { GaleriaIconos, IconoEquipo } from '@/components/inventario/IconosEquipo'
 
@@ -257,6 +258,12 @@ export default function ConfiguracionClient({
   const [form, setForm]               = useState({})
   const [listaExpandida, setListaExpandida] = useState(null)
   const [tipoExpandido, setTipoExpandido]   = useState(null)
+  const [categoriasExpandidas, setCategoriasExpandidas] = useState(() => {
+    const primeraConTipos = catsIniciales.find(cat =>
+      tiposIniciales.some(t => (t.categoria_id ?? t.categoria?.id) === cat.id)
+    )
+    return primeraConTipos ? new Set([primeraConTipos.id]) : new Set()
+  })
   const [nuevaActividad, setNuevaActividad] = useState('')
   const [empresa, setEmpresa]         = useState(empresaInicial)
   const [subiendoLogo, setSubiendoLogo] = useState(false)
@@ -582,6 +589,11 @@ export default function ConfiguracionClient({
       value={val} onChange={e => set(e.target.value)} placeholder={campo.nombre} className={inputCls} />
   }
 
+  const tiposPorCategoria = cats.map(cat => ({
+    categoria: cat,
+    tipos: tipos.filter(t => (t.categoria_id ?? t.categoria?.id) === cat.id),
+  })).filter(g => g.tipos.length > 0)
+
   // ── RENDER ────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -773,86 +785,112 @@ export default function ConfiguracionClient({
                     <Plus size={14} /> Nuevo tipo
                   </button>
                 </div>
-                <div className="space-y-2">
-                  {tipos.length === 0 && <div className="bg-white rounded-xl border border-slate-200 shadow-sm text-center py-12 text-slate-400">Sin tipos configurados</div>}
-                  {tipos.map(t => {
-                    const cat = cats.find(c => c.id === (t.categoria_id ?? t.categoria?.id))
-                    const camposTipo = cat?.atributos_extra?.campos_tipo || []
-                    const expanded = tipoExpandido === t.id
-                    const nombre = t.atributos?.nombre || t.nombre || '—'
-                    const tieneIcono   = t.imagen_url?.startsWith('icono:')
-                    const tieneImagen  = t.imagen_url && !tieneIcono
-                    const iconoClave   = tieneIcono ? t.imagen_url.replace('icono:', '') : null
-                    // Fallback: ícono de la categoría
-                    const iconoCatClave = !t.imagen_url && cat?.imagen_url?.startsWith('icono:')
-                      ? cat.imagen_url.replace('icono:', '') : null
-                    return (
-                      <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div className={`flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors ${expanded ? 'bg-slate-50' : ''}`}
-                          onClick={() => setTipoExpandido(prev => prev === t.id ? null : t.id)}>
-                          {/* Imagen, ícono o placeholder */}
-                          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                            {tieneImagen
-                              ? <img src={t.imagen_url} alt={nombre} className="w-full h-full object-contain p-1" />
-                              : iconoClave
-                              ? <IconoEquipo clave={iconoClave} size={24} color="#D81B43" />
-                              : iconoCatClave
-                              ? <IconoEquipo clave={iconoCatClave} size={22} color="#94A3B8" />
-                              : <Cpu size={18} className="text-slate-300" />
-                            }
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[12px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium flex-shrink-0">
-                                {t.categoria?.nombre || cat?.nombre || '—'}
-                              </span>
-                              <span className="text-[14px] font-bold text-slate-700">{nombre}</span>
-                            </div>
-                            <div className="flex items-center gap-3 mt-1 flex-wrap">
-                              {t.lista
-                                ? <span className="text-[11.5px] font-semibold text-[#0F7B55]">✓ {t.lista.nombre}</span>
-                                : <span className="text-[11.5px] text-slate-400">Sin lista de mantenimiento</span>}
-                              {camposTipo.length > 0 && <span className="text-[11.5px] text-[#25A9E0]">· {camposTipo.length} columnas</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => abrirModal('tipo', { ...t, categoria_id: t.categoria_id ?? t.categoria?.id, lista_mantenimiento_id: t.lista_mantenimiento_id ?? t.lista?.id })}
-                              className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
-                            <button onClick={() => eliminarTipo(t.id)}
-                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
-                          </div>
-                          <div className="text-slate-400 ml-1">
-                            {expanded
-                              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg>
-                              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>}
-                          </div>
+
+                {tipos.length === 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm text-center py-12 text-slate-400">Sin tipos configurados</div>
+                )}
+
+                {tiposPorCategoria.map(grupo => {
+                  const abierta = categoriasExpandidas.has(grupo.categoria.id)
+                  return (
+                    <div key={grupo.categoria.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-3">
+
+                      {/* HEADER DE CATEGORÍA */}
+                      <div className="flex items-center gap-3 px-5 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors"
+                        onClick={() => setCategoriasExpandidas(prev => {
+                          const next = new Set(prev)
+                          next.has(grupo.categoria.id) ? next.delete(grupo.categoria.id) : next.add(grupo.categoria.id)
+                          return next
+                        })}>
+                        <div className="text-slate-400">
+                          {abierta ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </div>
-                        {expanded && (
-                          <div className="border-t border-slate-200 bg-[#F8FAFC] px-6 py-4">
-                            {camposTipo.length > 0 ? (
-                              <>
-                                <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Columnas del tipo</div>
-                                <div className="flex flex-wrap gap-6">
-                                  {camposTipo.map(campo => (
-                                    <div key={campo.clave}>
-                                      <div className="text-[10px] font-semibold uppercase text-slate-400">{campo.nombre}</div>
-                                      <div className="text-[13.5px] font-medium text-slate-700 mt-0.5">{t.atributos?.[campo.clave] || '—'}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </>
-                            ) : (
-                              <div className="text-[12.5px] text-slate-400">
-                                Esta categoría no tiene columnas del tipo.
-                                <button onClick={() => setSeccion('categorias')} className="ml-2 text-[#D81B43] font-medium hover:underline">Ir a Categorías →</button>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        <span className="text-[14px] font-bold text-slate-800 flex-1">{grupo.categoria.nombre}</span>
+                        <span className="text-[12px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-semibold">
+                          {grupo.tipos.length} {grupo.tipos.length === 1 ? 'tipo' : 'tipos'}
+                        </span>
+                        <button onClick={e => { e.stopPropagation(); abrirModal('tipo', { categoria_id: grupo.categoria.id }) }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-semibold text-[#D81B43] hover:bg-[#D81B43]/5 rounded-[7px] transition-colors">
+                          <Plus size={12} /> Agregar
+                        </button>
                       </div>
-                    )
-                  })}
-                </div>
+
+                      {/* FILAS DE TIPO — solo si la categoría está abierta */}
+                      {abierta && (
+                        <div className="border-t border-slate-100">
+                          {grupo.tipos.map(t => {
+                            const cat = grupo.categoria
+                            const camposTipo = cat?.atributos_extra?.campos_tipo || []
+                            const expanded = tipoExpandido === t.id
+                            const nombre = t.atributos?.nombre || t.nombre || '—'
+                            const tieneIcono   = t.imagen_url?.startsWith('icono:')
+                            const tieneImagen  = t.imagen_url && !tieneIcono
+                            const iconoClave   = tieneIcono ? t.imagen_url.replace('icono:', '') : null
+                            const iconoCatClave = !t.imagen_url && cat?.imagen_url?.startsWith('icono:')
+                              ? cat.imagen_url.replace('icono:', '') : null
+                            return (
+                              <div key={t.id} className="border-b border-slate-100 last:border-b-0">
+                                <div className={`flex items-center gap-3 pl-10 pr-5 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors ${expanded ? 'bg-slate-50' : ''}`}
+                                  onClick={() => setTipoExpandido(prev => prev === t.id ? null : t.id)}>
+                                  <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                    {tieneImagen
+                                      ? <img src={t.imagen_url} alt={nombre} className="w-full h-full object-contain p-1" />
+                                      : iconoClave
+                                      ? <IconoEquipo clave={iconoClave} size={22} color="#D81B43" />
+                                      : iconoCatClave
+                                      ? <IconoEquipo clave={iconoCatClave} size={20} color="#94A3B8" />
+                                      : <Cpu size={16} className="text-slate-300" />
+                                    }
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[14px] font-bold text-slate-700">{nombre}</div>
+                                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                      {t.lista
+                                        ? <span className="text-[11.5px] font-semibold text-[#0F7B55]">✓ {t.lista.nombre}</span>
+                                        : <span className="text-[11.5px] text-slate-400">Sin lista de mantenimiento</span>}
+                                      {camposTipo.length > 0 && <span className="text-[11.5px] text-[#25A9E0]">· {camposTipo.length} columnas</span>}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => abrirModal('tipo', { ...t, categoria_id: t.categoria_id ?? t.categoria?.id, lista_mantenimiento_id: t.lista_mantenimiento_id ?? t.lista?.id })}
+                                      className="p-1.5 text-slate-400 hover:text-[#D81B43] hover:bg-slate-100 rounded-[6px] transition-all"><Edit3 size={13} /></button>
+                                    <button onClick={() => eliminarTipo(t.id)}
+                                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-[6px] transition-all"><Trash2 size={13} /></button>
+                                  </div>
+                                  <div className="text-slate-400 ml-1">
+                                    {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                  </div>
+                                </div>
+                                {expanded && (
+                                  <div className="border-t border-slate-200 bg-[#F8FAFC] pl-10 pr-6 py-4">
+                                    {camposTipo.length > 0 ? (
+                                      <>
+                                        <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-3">Columnas del tipo</div>
+                                        <div className="flex flex-wrap gap-6">
+                                          {camposTipo.map(campo => (
+                                            <div key={campo.clave}>
+                                              <div className="text-[10px] font-semibold uppercase text-slate-400">{campo.nombre}</div>
+                                              <div className="text-[13.5px] font-medium text-slate-700 mt-0.5">{t.atributos?.[campo.clave] || '—'}</div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <div className="text-[12.5px] text-slate-400">
+                                        Esta categoría no tiene columnas del tipo.
+                                        <button onClick={() => setSeccion('categorias')} className="ml-2 text-[#D81B43] font-medium hover:underline">Ir a Categorías →</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
 

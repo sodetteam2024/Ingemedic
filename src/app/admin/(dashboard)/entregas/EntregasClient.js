@@ -157,7 +157,7 @@ function FirmaPad({ onFirma, onLimpiar, fullscreen = false }) {
   )
 }
 
-export default function EntregasClient({ entregasIniciales, ordenesEnReparto, estados, empresa }) {
+export default function EntregasClient({ entregasIniciales, ordenesEnReparto, estados, estadosEquipo, empresa }) {
   const router   = useRouter()
   const supabase = createClient()
 
@@ -399,6 +399,17 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     await supabase.from('ordenes_servicio')
       .update({ estado_id: ESTADO_OS_ENTREGADA, recibido_por: regForm.recibido_por.trim() })
       .eq('id', modalRegistro.orden?.id)
+
+    // Actualizar equipos a "En préstamo" y registrar quién los tiene
+    const idsEquipos = (modalRegistro.orden?.equipos || []).map(oe => oe.equipo_id || oe.equipo?.id).filter(Boolean)
+    const estadoPrestamo = (estadosEquipo || []).find(e => e.nombre === 'En préstamo')
+    if (idsEquipos.length > 0 && estadoPrestamo) {
+      await supabase.from('equipos').update({
+        estado_id:          estadoPrestamo.id,
+        paciente_actual_id: modalRegistro.orden?.paciente_id || null,
+        cliente_actual_id:  modalRegistro.orden?.cliente_id  || null,
+      }).in('id', idsEquipos)
+    }
 
     const nuevoEstado = { id: ESTADOS_ENTREGA.Completada, nombre: 'Completada' }
     const cambiosCompletos = {

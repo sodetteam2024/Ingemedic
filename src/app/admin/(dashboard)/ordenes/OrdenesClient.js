@@ -1,10 +1,11 @@
 'use client'
+import { registrarBitacora } from '@/lib/bitacora'
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import {
   Plus, X, Search, FileText, CheckCircle2, Package,
-  AlertTriangle, Calendar, Clock, User, Edit3, Truck
+  AlertTriangle, Calendar, Clock, User, Edit3, Truck, ChevronRight
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
@@ -24,6 +25,12 @@ const ESTADO_STYLES = {
   'En reparto': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
   'Entregada':  { bg: '#E8F7FB', color: '#0E86A0', dot: '#25A9E0' },
   'Finalizada': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+}
+
+const BUCKETS = {
+  nuevos:   ['Borrador', 'Programada', 'En reparto'],
+  en_curso: ['Entregada'],
+  historial:['Finalizada'],
 }
 
 // Transiciones que puede hacer el ADMIN desde el drawer
@@ -119,18 +126,24 @@ function nombreEquipo(eq) {
 }
 
 export default function OrdenesClient({
-  ordenesIniciales, clientes, estados, plantillas, equiposDisponibles, usuarios, tipos
+  ordenesIniciales, clientes, pacientes, estados, estadosEquipo, plantillas, equiposDisponibles, usuarios, tipos
 }) {
   const router   = useRouter()
   const supabase = createClient()
 
   const [ordenes, setOrdenes]           = useState(ordenesIniciales)
+  const [pacientesLocal, setPacientesLocal] = useState(pacientes)
 
   // Sincronizar con datos frescos del servidor tras router.refresh()
   useEffect(() => {
     const t = setTimeout(() => setOrdenes(ordenesIniciales), 0)
     return () => clearTimeout(t)
   }, [ordenesIniciales])
+
+  useEffect(() => {
+    const t = setTimeout(() => setPacientesLocal(pacientes), 0)
+    return () => clearTimeout(t)
+  }, [pacientes])
 
   // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
   // Refleja cambios hechos desde Entregas (iniciar/completar) sin recargar
@@ -150,11 +163,13 @@ export default function OrdenesClient({
   }, [])
   const [search, setSearch]             = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
+  const [tabPrincipal, setTabPrincipal] = useState('nuevos')
   const [drawer, setDrawer]             = useState(null)
   const [editRepartidor, setEditRepartidor] = useState(false)
   const [nuevoRepartidor, setNuevoRepartidor] = useState('')
   const [editFecha, setEditFecha] = useState(false)
   const [nuevaFecha, setNuevaFecha] = useState('')
+  const [pacienteFiltro, setPacienteFiltro] = useState('')
 
   // Si el drawer está abierto y esa orden cambió (ej. entrega completada desde otro dispositivo), refrescar su vista
   useEffect(() => {
@@ -175,9 +190,9 @@ export default function OrdenesClient({
   const [formDirty, setFormDirty]           = useState(false)
   const [confirmarSalirWizard, setConfirmarSalirWizard] = useState(false)
   const [wForm, setWForm] = useState({
-    tipo_orden_id: '', cliente_id: '', equipos_ids: [], observaciones: '',
-    repartidor_id: '', recibido_por: '', fecha_entrega: '', fecha_vigencia: '',
-    plantillas_ids: [],
+    cliente_id: '', equipo_id: '', tiene_paciente: false, paciente_id: '',
+    pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
+    fecha_inicio: '', domicilio: false, repartidor_id: '', observaciones: '',
   })
 
   function showToast(msg, tipo = 'success') {
@@ -194,14 +209,34 @@ export default function OrdenesClient({
     finalizada: ordenes.filter(o => o.estado?.nombre === 'Finalizada').length,
   }), [ordenes])
 
+  const bucketCounts = useMemo(() => ({
+    nuevos:  stats.borrador + stats.programada + stats.enReparto,
+    en_curso: stats.entregada,
+    historial: stats.finalizada,
+  }), [stats])
+
+  const pacienteSeleccionado = useMemo(
+    () => pacientesLocal.find(p => p.id === wForm.paciente_id) || null,
+    [pacientesLocal, wForm.paciente_id]
+  )
+
+  const pacientesFiltrados = useMemo(() => {
+    const q = pacienteFiltro.trim().toLowerCase()
+    if (!q) return []
+    return pacientesLocal.filter(p => [p.nombre, p.cedula]
+      .some(v => v?.toLowerCase().includes(q)))
+  }, [pacientesLocal, pacienteFiltro])
+
   const ordenesFiltradas = useMemo(() => {
+    const bucket = BUCKETS[tabPrincipal] || []
     return ordenes.filter(o => {
       const mq = !search || [o.codigo, o.cliente?.nombre, o.repartidor?.nombre]
         .some(v => v?.toLowerCase().includes(search.toLowerCase()))
+      const mb = bucket.length === 0 || bucket.includes(o.estado?.nombre)
       const me = !filtroEstado || o.estado?.nombre === filtroEstado
-      return mq && me
+      return mq && mb && me
     })
-  }, [ordenes, search, filtroEstado])
+  }, [ordenes, search, filtroEstado, tabPrincipal])
 
   // ── ABRIR DRAWER ────────────────────────────────────────
   function abrirDrawer(orden) {
@@ -222,12 +257,17 @@ export default function OrdenesClient({
       .update({ estado_id: transicion.id }).eq('id', orden.id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
 
-    // Al finalizar la orden, los equipos vuelven a "Disponible"
+    // Al finalizar la orden, los equipos vuelven a "Disponible" y se desvinculan del paciente/cliente
     if (transicion.nombre === 'Finalizada') {
       const idsEquipos = (orden.equipos || []).map(oe => oe.equipo_id || oe.equipo?.id).filter(Boolean)
-      if (idsEquipos.length > 0) {
+      const estadoDisponible = (estadosEquipo || []).find(e => e.nombre === 'Disponible')
+      if (idsEquipos.length > 0 && estadoDisponible) {
         await supabase.from('equipos')
-          .update({ estado_id: 'f33e7c6f-0f81-484e-9f0a-93fd28f9c414' })
+          .update({
+            estado_id:          estadoDisponible.id,
+            paciente_actual_id: null,
+            cliente_actual_id:  null,
+          })
           .in('id', idsEquipos)
       }
     }
@@ -279,10 +319,11 @@ export default function OrdenesClient({
   // ── WIZARD ──────────────────────────────────────────────
   function abrirWizard() {
     setWForm({
-      tipo_orden_id: '', cliente_id: '', equipos_ids: [], observaciones: '',
-      repartidor_id: '', recibido_por: '', fecha_entrega: '', fecha_vigencia: '',
-      plantillas_ids: [],
+      cliente_id: '', equipo_id: '', tiene_paciente: false, paciente_id: '',
+      pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
+      fecha_inicio: '', domicilio: false, repartidor_id: '', observaciones: '',
     })
+    setPacienteFiltro('')
     setWizardPaso(1)
     setFormDirty(false)
     setWizardOpen(true)
@@ -291,101 +332,130 @@ export default function OrdenesClient({
   function cerrarWizard() { setWizardOpen(false); setFormDirty(false) }
   function intentarCerrarWizard() { if (formDirty) setConfirmarSalirWizard(true); else cerrarWizard() }
 
-  function toggleEquipo(id) {
-    setWForm(f => ({
-      ...f,
-      equipos_ids: f.equipos_ids.includes(id)
-        ? f.equipos_ids.filter(x => x !== id)
-        : [...f.equipos_ids, id]
-    }))
+  function seleccionarEquipo(id) {
+    setWForm(f => ({ ...f, equipo_id: id }))
   }
 
-  function togglePlantilla(id) {
+  function seleccionarPaciente(paciente) {
     setWForm(f => ({
       ...f,
-      plantillas_ids: f.plantillas_ids.includes(id)
-        ? f.plantillas_ids.filter(x => x !== id)
-        : [...f.plantillas_ids, id]
+      paciente_id: paciente.id,
+      pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
     }))
+    setPacienteFiltro('')
+  }
+
+  function limpiarPacienteSeleccionado() {
+    setWForm(f => ({ ...f, paciente_id: '', pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))
   }
 
   async function crearOrden() {
-    if (!wForm.tipo_orden_id)           { showToast('Selecciona el tipo de orden', 'error'); return }
-    if (!wForm.cliente_id)              { showToast('Selecciona un cliente', 'error'); return }
-    if (wForm.equipos_ids.length === 0) { showToast('Selecciona al menos un equipo', 'error'); return }
+    if (!wForm.cliente_id) {
+      showToast('Selecciona un cliente', 'error'); return
+    }
+    if (!wForm.equipo_id) {
+      showToast('Selecciona un equipo', 'error'); return
+    }
+    if (!wForm.fecha_inicio) {
+      showToast('Ingresa la fecha de inicio', 'error'); return
+    }
+    if (wForm.tiene_paciente && !wForm.paciente_id && !wForm.pacienteNuevo.nombre.trim()) {
+      showToast('Completa los datos del paciente o desmarca la casilla', 'error'); return
+    }
+    if (wForm.tiene_paciente && !wForm.paciente_id) {
+      if (!wForm.pacienteNuevo.direccion.trim()) {
+        showToast('La dirección del paciente es obligatoria', 'error'); return
+      }
+    }
+    if (wForm.domicilio && !wForm.repartidor_id) {
+      showToast('Selecciona un repartidor', 'error'); return
+    }
     setSaving(true)
 
-    const anio   = new Date().getFullYear()
-    const { count } = await supabase.from('ordenes_servicio').select('*', { count: 'exact', head: true })
-    const codigo = `OS-${anio}-${String((count || 0) + 1).padStart(3, '0')}`
+    const tipoOrden = tipos.find(t => {
+      const nombre = t.nombre?.toLowerCase() || ''
+      return nombre.includes('arrendamiento') || nombre.includes('préstamo') || nombre.includes('prestamo')
+    })
+    if (!tipoOrden) {
+      showToast('No se encontró el tipo de orden de préstamo/arrendamiento', 'error'); setSaving(false); return
+    }
 
-    const { data: nuevaOrden, error: errOrden } = await supabase
-      .from('ordenes_servicio')
+    let pacienteId = wForm.tiene_paciente ? wForm.paciente_id : null
+    if (wForm.tiene_paciente && !pacienteId) {
+      const { data: nuevoPaciente, error: errPac } = await supabase.from('pacientes')
+        .insert({
+          nombre:    wForm.pacienteNuevo.nombre.trim(),
+          cedula:    wForm.pacienteNuevo.cedula.trim() || null,
+          direccion: wForm.pacienteNuevo.direccion.trim(),
+          ciudad:    wForm.pacienteNuevo.ciudad.trim() || null,
+          telefono:  wForm.pacienteNuevo.telefono.trim() || null,
+          correo:    wForm.pacienteNuevo.correo.trim() || null,
+        }).select('id').single()
+      if (errPac) {
+        showToast('Error creando paciente: ' + errPac.message, 'error'); setSaving(false); return
+      }
+      pacienteId = nuevoPaciente.id
+      setPacientesLocal(prev => [...prev, {
+        id: nuevoPaciente.id,
+        nombre: wForm.pacienteNuevo.nombre.trim(),
+        cedula: wForm.pacienteNuevo.cedula.trim() || null,
+        activo: true,
+      }])
+    }
+
+    const estadoProgramada = estados.find(e => e.nombre === 'Programada')
+    const estadoEntregada  = estados.find(e => e.nombre === 'Entregada')
+    if (!estadoProgramada || !estadoEntregada) {
+      showToast('No se encontraron los estados de orden necesarios (Programada/Entregada) — revisa la tabla estados_orden', 'error')
+      setSaving(false); return
+    }
+    const estadoInicial = wForm.domicilio ? estadoProgramada.id : estadoEntregada.id
+
+    const { data: orden, error: errOrden } = await supabase.from('ordenes_servicio')
       .insert({
-        codigo,
-        tipo_orden_id:  wForm.tipo_orden_id,
-        cliente_id:     wForm.cliente_id,
-        estado_id:      E.Borrador,
-        repartidor_id:  wForm.repartidor_id  || null,
-        recibido_por:   wForm.recibido_por   || null,
-        observaciones:  wForm.observaciones  || null,
-        fecha_entrega:  localBogotaToISO(wForm.fecha_entrega),
-        fecha_vigencia: wForm.fecha_vigencia || null,
-      })
-      .select(`
-        *,
-        cliente:clientes(id, nombre, tipo_persona, nit_cc),
-        estado:estados_orden(id, nombre),
-        repartidor:usuarios!ordenes_servicio_repartidor_id_fkey(id, nombre),
-        equipos:orden_equipos(
-          id, equipo_id, fecha_entrega, fecha_devolucion,
-          equipo:equipos(id, codigo,
-            tipo_equipo:tipos_equipo(id, nombre, atributos,
-              categoria:categorias_equipo(id, nombre)
-            )
-          )
-        ),
-        plantillas:orden_plantillas(
-          id, plantilla_id, firmado, firmado_por, firma_iniciales, fecha_firma,
-          plantilla:plantillas_orden(id, nombre)
-        )
-      `)
-      .single()
+        tipo_orden_id: tipoOrden.id,
+        cliente_id:    wForm.cliente_id,
+        paciente_id:   pacienteId,
+        estado_id:     estadoInicial,
+        repartidor_id: wForm.domicilio ? wForm.repartidor_id : null,
+        fecha_entrega: wForm.fecha_inicio,
+        observaciones: wForm.observaciones || null,
+      }).select('id').single()
 
     if (errOrden) { showToast('Error: ' + errOrden.message, 'error'); setSaving(false); return }
 
-    if (wForm.equipos_ids.length > 0) {
-      await supabase.from('orden_equipos').insert(
-        wForm.equipos_ids.map(eqId => ({
-          orden_id:  nuevaOrden.id,
-          equipo_id: eqId,
-        }))
-      )
-      // Los equipos pasan a "En préstamo" — dejan de estar disponibles
-      await supabase.from('equipos')
-        .update({ estado_id: '56abea9f-8cad-413e-bc3c-31ba19fa00fe' })
-        .in('id', wForm.equipos_ids)
+    const { error: errEq } = await supabase.from('orden_equipos').insert({
+      orden_id: orden.id,
+      equipo_id: wForm.equipo_id,
+      fecha_entrega: wForm.domicilio ? null : wForm.fecha_inicio,
+    })
+    if (errEq) { showToast('Error vinculando equipo: ' + errEq.message, 'error'); setSaving(false); return }
+
+    if (!wForm.domicilio) {
+      const estadoPrestamo = (estadosEquipo || estados).find(e => e.nombre === 'En préstamo')
+      if (!estadoPrestamo) {
+        showToast('No se encontró el estado "En préstamo" en estados_equipo — revisa el nombre exacto', 'error')
+      } else {
+        await supabase.from('equipos').update({
+          estado_id:         estadoPrestamo.id,
+          paciente_actual_id: pacienteId,
+          cliente_actual_id:  wForm.cliente_id,
+        }).eq('id', wForm.equipo_id)
+      }
     }
 
-    if (wForm.plantillas_ids.length > 0) {
-      await supabase.from('orden_plantillas').insert(
-        wForm.plantillas_ids.map(pid => ({
-          orden_id:     nuevaOrden.id,
-          plantilla_id: pid,
-          firmado:      false,
-        }))
-      )
-    }
+    registrarBitacora({
+      modulo: 'ordenes', accion: 'crear', entidad: 'préstamo', entidad_id: orden.id,
+      detalle: { cliente_id: wForm.cliente_id, equipo_id: wForm.equipo_id, con_domicilio: wForm.domicilio }
+    })
 
-    setOrdenes(prev => [nuevaOrden, ...prev])
+    showToast(wForm.domicilio ? 'Préstamo creado — pendiente de entrega' : 'Préstamo registrado y activo')
     setSaving(false)
-    cerrarWizard()
-    // Abrir drawer automáticamente con la orden recién creada
-    abrirDrawer(nuevaOrden)
-    showToast('Orden creada')
+    setWizardOpen(false)
+    router.refresh()
   }
 
-  const PASOS = ['Tipo y cliente', 'Equipos', 'Logística', 'Documentos']
+  const PASOS = ['Cliente y paciente', 'Equipo', 'Fecha y domicilio']
 
   // ── DRAWER: info de la orden ─────────────────────────────
   const drawerEstado    = drawer?.estado?.nombre || 'Borrador'
@@ -400,17 +470,17 @@ export default function OrdenesClient({
   const puedeEdRep      = drawer && ['Borrador', 'Programada'].includes(drawerEstado)
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
 
       {/* Topbar */}
       <div className="h-14 md:h-16 md:bg-white md:border-b md:border-slate-200 flex items-center px-4 md:px-7 flex-shrink-0">
         <div>
-          <div className="text-[18px] font-bold text-slate-800">Órdenes de servicio</div>
-          <div className="text-[12px] text-slate-400 mt-0.5">{ordenes.length} órdenes registradas</div>
+          <div className="text-[18px] font-bold text-slate-800">Préstamos</div>
+          <div className="text-[12px] text-slate-400 mt-0.5">Gestión de préstamos de equipos biomédicos</div>
         </div>
         <button onClick={abrirWizard}
           className="ml-auto hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
-          <Plus size={14} strokeWidth={2.5} /> Nueva orden
+          <Plus size={14} strokeWidth={2.5} /> Nuevo préstamo
         </button>
       </div>
 
@@ -420,180 +490,184 @@ export default function OrdenesClient({
         <Plus size={22} strokeWidth={2.5} />
       </button>
 
-      <div className="flex-1 overflow-hidden flex flex-col p-4 md:p-6 gap-4">
-
-        {/* Stats — en móvil, chips compactos con scroll horizontal (siguen filtrando); en desktop, cards */}
-        <div className="flex-shrink-0">
-          {/* Móvil: chips */}
-          <div className="flex md:hidden gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="p-3 md:p-6 pb-3 md:pb-4 flex-shrink-0">
+          {/* Stats — solo desktop */}
+          <div className="hidden md:grid md:grid-cols-4 gap-4 mb-5">
             {[
-              { label: 'Total',      value: stats.total,     color: '#1E293B', f: '' },
-              { label: 'En reparto', value: stats.enReparto, color: '#B45309', f: 'En reparto' },
-              { label: 'Entregada',  value: stats.entregada, color: '#0E86A0', f: 'Entregada' },
+              { label: 'Total préstamos',  value: stats.total,            color: '#1E293B' },
+              { label: 'Nuevos / En ruta', value: bucketCounts.nuevos,    color: '#1D4ED8' },
+              { label: 'Activos',          value: bucketCounts.en_curso,  color: '#0E86A0' },
+              { label: 'Finalizados',      value: bucketCounts.historial, color: '#0F7B55' },
             ].map(s => (
-              <button key={s.label}
-                onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
-                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium whitespace-nowrap transition-all ${filtroEstado === s.f && s.f ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 bg-white'}`}>
-                <span className="font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</span>
-                <span className="text-slate-500">{s.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Desktop: cards (igual que antes) */}
-          <div className="hidden md:grid md:grid-cols-6 gap-3">
-            {[
-              { label: 'Total',       value: stats.total,      color: '#1E293B', f: '' },
-              { label: 'Borrador',    value: stats.borrador,   color: '#64748B', f: 'Borrador' },
-              { label: 'Programada', value: stats.programada, color: '#1D4ED8', f: 'Programada' },
-              { label: 'En reparto',  value: stats.enReparto,  color: '#B45309', f: 'En reparto' },
-              { label: 'Entregada',   value: stats.entregada,  color: '#0E86A0', f: 'Entregada' },
-              { label: 'Finalizada',  value: stats.finalizada, color: '#0F7B55', f: 'Finalizada' },
-            ].map(s => (
-              <div key={s.label}
-                onClick={() => setFiltroEstado(prev => prev === s.f ? '' : s.f)}
-                className={`bg-white rounded-xl border p-3 shadow-sm cursor-pointer transition-all hover:shadow-md ${filtroEstado === s.f && s.f ? 'border-[#D81B43]' : 'border-slate-200'}`}>
-                <div className="text-xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-                <div className="text-[10.5px] text-slate-400 mt-0.5">{s.label}</div>
+              <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
+                <div className="text-[11.5px] text-slate-400 mt-1">{s.label}</div>
               </div>
             ))}
           </div>
-        </div>
 
-        {/* Buscador */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="relative flex-1 md:max-w-[320px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar por código, cliente o repartidor..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
-          </div>
-          {filtroEstado && (
-            <button onClick={() => setFiltroEstado('')}
-              className="flex items-center gap-1 text-[12px] text-slate-400 hover:text-red-500">
-              <X size={12} /> Limpiar filtro
-            </button>
-          )}
-          <div className="text-[12px] text-slate-400 ml-auto">
-            {ordenesFiltradas.length} orden{ordenesFiltradas.length !== 1 ? 'es' : ''}
-          </div>
-        </div>
-
-        {/* Cards móvil */}
-        <div className="md:hidden flex-1 overflow-y-auto flex flex-col gap-2 pb-28">
-          {ordenesFiltradas.length === 0 && (
-            <div className="text-center py-16 text-slate-400">
-              {search || filtroEstado ? 'Sin resultados' : 'Sin órdenes registradas'}
+          {/* Filtros */}
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+            <div className="relative flex-1 md:max-w-[340px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar por código o cliente..."
+                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
             </div>
-          )}
-          {ordenesFiltradas.map(o => {
-            const retrasada  = estaRetrasada(o)
-            const incompleta = estaIncompleta(o)
-            return (
-              <div key={o.id} onClick={() => abrirDrawer(o)}
-                className={`bg-white rounded-xl border shadow-sm p-4 cursor-pointer active:bg-slate-50 ${
-                  retrasada ? 'border-l-4 border-l-[#D81B43] border-slate-200' :
-                  incompleta ? 'border-l-4 border-l-[#B45309] border-slate-200 opacity-80' : 'border-slate-200'
-                }`}>
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div>
-                    <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                      {o.codigo || '—'}
-                    </span>
-                    <div className="text-[13px] font-semibold text-slate-700 mt-1 truncate max-w-[200px]">
-                      {o.cliente?.nombre || '—'}
-                    </div>
-                  </div>
-                  <EstadoBadge orden={o} retrasada={retrasada} />
-                </div>
-                <div className="flex items-center justify-between text-[11.5px] text-slate-400">
-                  <span>{o.repartidor?.nombre || <span className="text-[#B45309]">Sin repartidor</span>}</span>
-                  {o.fecha_entrega && (
-                    <span className={retrasada ? 'text-[#D81B43] font-semibold' : ''}>
-                      {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto flex-1">
+                {[
+                  { key: 'nuevos',    label: 'Nuevos'    },
+                  { key: 'en_curso',  label: 'En curso'  },
+                  { key: 'historial', label: 'Historial' },
+                ].map(t => (
+                  <button key={t.key} onClick={() => setTabPrincipal(t.key)}
+                    className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all whitespace-nowrap ${
+                      tabPrincipal === t.key
+                        ? 'bg-[#D81B43] text-white'
+                        : 'bg-white border border-slate-200 text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43]'
+                    }`}>
+                    {t.label}
+                    <span className="ml-1 text-[10.5px] opacity-70">({bucketCounts[t.key]})</span>
+                  </button>
+                ))}
+              </div>
+              <div className="hidden md:block text-[12px] text-slate-400 flex-shrink-0 md:ml-auto">
+                {ordenesFiltradas.length} préstamo{ordenesFiltradas.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Lista */}
+        <div className="flex-1 overflow-y-auto px-3 md:px-6 pb-28 md:pb-6">
+          {ordenesFiltradas.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="text-center py-16 text-slate-400">
+                <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <div className="font-semibold mb-1">
+                  {search ? 'Sin resultados' : (
+                    tabPrincipal === 'nuevos' ? 'Sin préstamos nuevos' :
+                    tabPrincipal === 'en_curso' ? 'Sin préstamos en curso' :
+                    'Sin préstamos en historial'
                   )}
                 </div>
+                <div className="text-[13px]">
+                  {search ? 'Intenta con otros filtros' :
+                   tabPrincipal === 'nuevos' ? 'Usa "Nuevo préstamo" para registrar uno' :
+                   'Los préstamos aparecerán aquí cuando cambien de estado'}
+                </div>
               </div>
-            )
-          })}
-        </div>
-
-        {/* Tabla — solo en md+ */}
-        <div className="hidden md:flex flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-col">
-          <div className="overflow-auto flex-1">
-            <table className="w-full border-collapse min-w-[860px]">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b-2 border-slate-200">
-                  {['Código', 'Cliente', 'Equipos', 'Repartidor', 'Estado', 'Progreso', 'Entrega', 'Vigencia', 'Docs'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {ordenesFiltradas.length === 0 && (
-                  <tr><td colSpan={9} className="text-center py-16 text-slate-400">
-                    {search || filtroEstado ? 'Sin resultados' : 'Sin órdenes registradas'}
-                  </td></tr>
-                )}
+            </div>
+          ) : (
+            <>
+              {/* Cards móvil */}
+              <div className="md:hidden space-y-2">
                 {ordenesFiltradas.map(o => {
-                  const nEquipos   = o.equipos?.length || 0
                   const retrasada  = estaRetrasada(o)
-                  const vencida    = estaVencida(o)
                   const incompleta = estaIncompleta(o)
                   return (
-                    <tr key={o.id}
-                      onClick={() => abrirDrawer(o)}
-                      className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${
-                        retrasada   ? 'border-l-4 border-l-[#D81B43]' :
-                        incompleta  ? 'border-l-4 border-l-[#B45309] opacity-70' : ''
+                    <div key={o.id} onClick={() => abrirDrawer(o)}
+                      className={`bg-white rounded-xl border shadow-sm p-4 cursor-pointer active:bg-slate-50 transition-colors ${
+                        retrasada  ? 'border-l-4 border-l-[#D81B43] border-slate-200' :
+                        incompleta ? 'border-l-4 border-l-[#B45309] border-slate-200' : 'border-slate-200'
                       }`}>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{o.codigo || '—'}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-[13px] font-semibold text-slate-700 max-w-[150px] truncate">{o.cliente?.nombre || '—'}</div>
-                        <div className="text-[11px] text-slate-400">{o.cliente?.tipo_persona}</div>
-                      </td>
-                      <td className="px-4 py-3 text-[12.5px] text-slate-600">
-                        {nEquipos === 0 ? '—' : nEquipos === 1
-                          ? <span className="truncate max-w-[120px] block">{nombreEquipo(o.equipos[0]?.equipo)}</span>
-                          : `${nEquipos} equipos`}
-                      </td>
-                      <td className="px-4 py-3 text-[12.5px]">
-                        {o.repartidor?.nombre
-                          ? <span className="text-slate-500">{o.repartidor.nombre}</span>
-                          : <span className="text-[#B45309] text-[11.5px] font-medium flex items-center gap-1"><AlertTriangle size={10} /> Sin asignar</span>
-                        }
-                      </td>
-                      <td className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <span className="font-mono text-[12.5px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                            {o.codigo || '—'}
+                          </span>
+                          <div className="text-[13px] font-semibold text-slate-700 mt-1 truncate max-w-[200px]">
+                            {o.cliente?.nombre || '—'}
+                          </div>
+                        </div>
                         <EstadoBadge orden={o} retrasada={retrasada} />
-                      </td>
-                      <td className="px-4 py-3 min-w-[100px]"><TimelineBar estadoNombre={o.estado?.nombre} /></td>
-                      <td className="px-4 py-3">
-                        {o.fecha_entrega
-                          ? <span className={`text-[12px] font-mono flex items-center gap-1 ${retrasada ? 'text-[#D81B43] font-bold' : 'text-slate-400'}`}>
-                              {retrasada && <AlertTriangle size={10} />}
-                              {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          : <span className="text-[#B45309] text-[11.5px] font-medium">Sin programar</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        {o.fecha_vigencia
-                          ? <span className={`text-[12px] font-mono ${vencida ? 'text-red-500 font-bold' : 'text-slate-400'}`}>{o.fecha_vigencia}</span>
-                          : <span className="text-slate-300 text-[12px]">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="flex items-center gap-1 text-[12px] text-slate-400">
-                          <FileText size={12} />{o.plantillas?.length || 0}
-                        </span>
-                      </td>
-                    </tr>
+                      </div>
+                      <div className="flex items-center justify-between text-[11.5px] text-slate-400">
+                        <span>{o.repartidor?.nombre || <span className="text-[#B45309]">Sin repartidor</span>}</span>
+                        {o.fecha_entrega && (
+                          <span className={retrasada ? 'text-[#D81B43] font-semibold' : ''}>
+                            {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
+              </div>
+
+              {/* Tabla desktop */}
+              <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-slate-100">
+                      {['Cliente', 'Paciente', 'Equipo', 'Estado', 'Repartidor', 'Fecha entrega', 'Docs', ''].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ordenesFiltradas.map(o => {
+                      const nEquipos   = o.equipos?.length || 0
+                      const retrasada  = estaRetrasada(o)
+                      const incompleta = estaIncompleta(o)
+                      return (
+                        <tr key={o.id} onClick={() => abrirDrawer(o)}
+                          className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${
+                            retrasada  ? 'border-l-4 border-l-[#D81B43]' :
+                            incompleta ? 'border-l-4 border-l-[#B45309] opacity-70' : ''
+                          }`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-[#D81B43]/10 flex items-center justify-center text-[12px] font-bold text-[#D81B43] flex-shrink-0">
+                                {o.cliente?.nombre?.charAt(0)?.toUpperCase() || '?'}
+                              </div>
+                              <div>
+                                <div className="text-[13px] font-semibold text-slate-700">{o.cliente?.nombre || '—'}</div>
+                                <div className="text-[11px] font-mono text-slate-400">{o.codigo || '—'}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] text-slate-600">
+                            {o.paciente?.nombre
+                              ? <span className="truncate max-w-[120px] block">{o.paciente.nombre}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px] text-slate-600">
+                            {nEquipos === 0 ? <span className="text-slate-300">—</span> :
+                             nEquipos === 1 ? <span className="truncate max-w-[140px] block">{nombreEquipo(o.equipos[0]?.equipo)}</span> :
+                             `${nEquipos} equipos`}
+                          </td>
+                          <td className="px-4 py-3">
+                            <EstadoBadge orden={o} retrasada={retrasada} />
+                          </td>
+                          <td className="px-4 py-3 text-[12.5px]">
+                            {o.repartidor?.nombre
+                              ? <span className="text-slate-500">{o.repartidor.nombre}</span>
+                              : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            {o.fecha_entrega
+                              ? <span className={`text-[12px] font-mono ${retrasada ? 'text-[#D81B43] font-bold' : 'text-slate-400'}`}>
+                                  {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                </span>
+                              : <span className="text-[#B45309] text-[11.5px]">Sin programar</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="flex items-center gap-1 text-[12px] text-slate-400">
+                              <FileText size={12} />{o.plantillas?.length || 0}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-slate-300"><ChevronRight size={14} /></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -603,14 +677,18 @@ export default function OrdenesClient({
           <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
           <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[500px] bg-white z-30 flex flex-col shadow-2xl">
 
-            {/* Header */}
-            <div className={`px-6 py-4 border-b flex items-start justify-between flex-shrink-0 ${drawerRetrasada ? 'bg-[#D81B43]' : 'bg-[#D81B43]'}`}>
-              <div>
-                <div className="text-[11px] text-white/60">Orden de servicio</div>
-                <div className="text-[15px] font-bold text-white font-mono">{drawer.codigo}</div>
-                <div className="text-[12px] text-white/70 mt-0.5">{drawer.cliente?.nombre}</div>
+            {/* Header — blanco como Clientes */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#D81B43]/10 flex items-center justify-center text-[15px] font-bold text-[#D81B43] flex-shrink-0">
+                  {drawer.cliente?.nombre?.charAt(0)?.toUpperCase() || '?'}
+                </div>
+                <div>
+                  <div className="text-[15px] font-bold text-slate-800 leading-tight">{drawer.cliente?.nombre || '—'}</div>
+                  <div className="font-mono text-[11.5px] text-slate-400 mt-0.5">{drawer.codigo}</div>
+                </div>
               </div>
-              <button onClick={() => setDrawer(null)} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
+              <button onClick={() => setDrawer(null)} className="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100">
                 <X size={16} />
               </button>
             </div>
@@ -871,16 +949,9 @@ export default function OrdenesClient({
 
               <div className="flex-1 overflow-y-auto px-6 py-5" onChange={() => setFormDirty(true)}>
 
-                {/* PASO 1 — Tipo y cliente */}
+                {/* PASO 1 — Cliente + Paciente */}
                 {wizardPaso === 1 && (
                   <div className="space-y-4">
-                    <div>
-                      <label className={labelCls}>Tipo de orden <span className="text-[#D81B43]">*</span></label>
-                      <select value={wForm.tipo_orden_id} onChange={e => setWForm(f => ({ ...f, tipo_orden_id: e.target.value }))} className={inputCls}>
-                        <option value="">Seleccionar...</option>
-                        {tipos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                      </select>
-                    </div>
                     <div>
                       <label className={labelCls}>Cliente <span className="text-[#D81B43]">*</span></label>
                       <select value={wForm.cliente_id} onChange={e => setWForm(f => ({ ...f, cliente_id: e.target.value }))} className={inputCls}>
@@ -888,6 +959,91 @@ export default function OrdenesClient({
                         {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                       </select>
                     </div>
+
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={wForm.tiene_paciente}
+                          onChange={e => setWForm(f => ({ ...f, tiene_paciente: e.target.checked, paciente_id: e.target.checked ? f.paciente_id : '', pacienteNuevo: e.target.checked ? f.pacienteNuevo : { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))} />
+                        <span className="text-[13.5px] font-medium text-slate-700">¿Tiene paciente asociado?</span>
+                      </label>
+
+                      {wForm.tiene_paciente && (
+                        <div className="space-y-3">
+                          {!wForm.paciente_id ? (
+                            <>
+                              <div className="relative">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input value={pacienteFiltro} onChange={e => setPacienteFiltro(e.target.value)}
+                                  placeholder="Buscar paciente por nombre o cédula..."
+                                  className="w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] bg-white" />
+                              </div>
+                              {pacientesFiltrados.length > 0 && (
+                                <div className="border border-slate-200 rounded-[9px] bg-white shadow-sm max-h-[220px] overflow-y-auto">
+                                  {pacientesFiltrados.map(p => (
+                                    <button key={p.id} type="button" onClick={() => seleccionarPaciente(p)}
+                                      className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-slate-50">
+                                      <div className="text-[13px] font-semibold text-slate-800 truncate">{p.nombre}</div>
+                                      <div className="text-[11px] text-slate-500">{p.cedula || 'Sin cédula'}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              <button type="button" onClick={() => setWForm(f => ({ ...f, pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))}
+                                className="text-[13px] text-[#D81B43] font-semibold hover:underline">
+                                + Crear paciente nuevo
+                              </button>
+                            </>
+                          ) : (
+                            <div className="border border-slate-200 rounded-[9px] p-3 bg-slate-50">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-[13px] font-semibold text-slate-800">{pacienteSeleccionado?.nombre || 'Paciente seleccionado'}</div>
+                                  <div className="text-[11px] text-slate-500">{pacienteSeleccionado?.cedula || 'Sin cédula'}</div>
+                                </div>
+                                <button type="button" onClick={limpiarPacienteSeleccionado}
+                                  className="text-[12px] text-slate-500 hover:text-[#D81B43]">Cambiar</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {!wForm.paciente_id && (
+                            <div className="grid grid-cols-1 gap-3">
+                              <div>
+                                <label className={labelCls}>Nombre <span className="text-[#D81B43]">*</span></label>
+                                <input value={wForm.pacienteNuevo.nombre} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, nombre: e.target.value } }))}
+                                  type="text" className={inputCls} />
+                              </div>
+                              <div>
+                                <label className={labelCls}>Cédula</label>
+                                <input value={wForm.pacienteNuevo.cedula} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, cedula: e.target.value } }))}
+                                  type="text" className={inputCls} />
+                              </div>
+                              <div>
+                                <label className={labelCls}>Dirección <span className="text-[#D81B43]">*</span></label>
+                                <input value={wForm.pacienteNuevo.direccion} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, direccion: e.target.value } }))}
+                                  type="text" className={inputCls} />
+                              </div>
+                              <div>
+                                <label className={labelCls}>Ciudad</label>
+                                <input value={wForm.pacienteNuevo.ciudad} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, ciudad: e.target.value } }))}
+                                  type="text" className={inputCls} />
+                              </div>
+                              <div>
+                                <label className={labelCls}>Teléfono</label>
+                                <input value={wForm.pacienteNuevo.telefono} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, telefono: e.target.value } }))}
+                                  type="text" className={inputCls} />
+                              </div>
+                              <div>
+                                <label className={labelCls}>Correo</label>
+                                <input value={wForm.pacienteNuevo.correo} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, correo: e.target.value } }))}
+                                  type="email" className={inputCls} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     <div>
                       <label className={labelCls}>Observaciones</label>
                       <textarea value={wForm.observaciones} onChange={e => setWForm(f => ({ ...f, observaciones: e.target.value }))}
@@ -897,10 +1053,10 @@ export default function OrdenesClient({
                   </div>
                 )}
 
-                {/* PASO 2 — Equipos */}
+                {/* PASO 2 — Equipo */}
                 {wizardPaso === 2 && (
                   <div className="space-y-3">
-                    <label className={labelCls}>Equipos disponibles <span className="text-[#D81B43]">*</span></label>
+                    <label className={labelCls}>Equipo disponible <span className="text-[#D81B43]">*</span></label>
                     {equiposDisponibles.length === 0 ? (
                       <div className="text-[13px] text-slate-400 py-6 text-center border border-slate-200 rounded-[9px]">
                         No hay equipos disponibles en inventario
@@ -908,9 +1064,9 @@ export default function OrdenesClient({
                     ) : (
                       <div className="space-y-2 max-h-[340px] overflow-y-auto border border-slate-200 rounded-[9px] p-2">
                         {equiposDisponibles.map(eq => {
-                          const sel = wForm.equipos_ids.includes(eq.id)
+                          const sel = wForm.equipo_id === eq.id
                           return (
-                            <button key={eq.id} onClick={() => toggleEquipo(eq.id)}
+                            <button key={eq.id} onClick={() => seleccionarEquipo(eq.id)}
                               className={`w-full flex items-center gap-2.5 p-2.5 rounded-[8px] border-[1.5px] text-left transition-all ${sel ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 hover:border-slate-300'}`}>
                               <div className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center ${sel ? 'bg-[#D81B43]' : 'border-[1.5px] border-slate-300'}`}>
                                 {sel && <CheckCircle2 size={10} className="text-white" />}
@@ -925,78 +1081,41 @@ export default function OrdenesClient({
                         })}
                       </div>
                     )}
-                    {wForm.equipos_ids.length > 0 && (
+                    {wForm.equipo_id && (
                       <div className="text-[12px] text-[#D81B43] font-semibold">
-                        {wForm.equipos_ids.length} equipo{wForm.equipos_ids.length !== 1 ? 's' : ''} seleccionado{wForm.equipos_ids.length !== 1 ? 's' : ''}
+                        Equipo seleccionado
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* PASO 3 — Logística */}
+                {/* PASO 3 — Fecha y domicilio */}
                 {wizardPaso === 3 && (
                   <div className="space-y-4">
                     <div>
-                      <label className={labelCls}>Repartidor asignado</label>
-                      <select value={wForm.repartidor_id} onChange={e => setWForm(f => ({ ...f, repartidor_id: e.target.value }))} className={inputCls}>
-                        <option value="">Sin asignar (se puede asignar luego)</option>
-                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
-                      </select>
+                      <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
+                      <input type="date" value={wForm.fecha_inicio}
+                        onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
                     </div>
-                    <div>
-                      <label className={labelCls}>Recibido por</label>
-                      <input value={wForm.recibido_por} onChange={e => setWForm(f => ({ ...f, recibido_por: e.target.value }))}
-                        placeholder="Nombre de quien recibe" className={inputCls} />
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={wForm.domicilio}
+                          onChange={e => setWForm(f => ({ ...f, domicilio: e.target.checked, repartidor_id: e.target.checked ? f.repartidor_id : '' }))} />
+                        <span className="text-[13.5px] font-medium text-slate-700">¿Entrega a domicilio?</span>
+                      </label>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    {wForm.domicilio && (
                       <div>
-                        <label className={`${labelCls} min-h-[28px] flex items-end`}>Fecha y hora de entrega</label>
-                        <input type="datetime-local" value={wForm.fecha_entrega}
-                          onChange={e => setWForm(f => ({ ...f, fecha_entrega: e.target.value }))} className={inputCls} />
-                      </div>
-                      <div>
-                        <label className={`${labelCls} min-h-[28px] flex items-end`}>Fecha de vigencia</label>
-                        <input type="date" value={wForm.fecha_vigencia}
-                          onChange={e => setWForm(f => ({ ...f, fecha_vigencia: e.target.value }))} className={inputCls} />
-                      </div>
-                    </div>
-                    {wForm.fecha_vigencia && (
-                      <div className="flex items-center gap-2 text-[12px] text-[#0E86A0] bg-[#E8F7FB] px-3 py-2 rounded-[8px]">
-                        <Calendar size={13} />
-                        La orden se finalizará automáticamente el {wForm.fecha_vigencia}
+                        <label className={labelCls}>Repartidor <span className="text-[#D81B43]">*</span></label>
+                        <select value={wForm.repartidor_id} onChange={e => setWForm(f => ({ ...f, repartidor_id: e.target.value }))} className={inputCls}>
+                          <option value="">Seleccionar repartidor...</option>
+                          {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                        </select>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* PASO 4 — Documentos */}
-                {wizardPaso === 4 && (
-                  <div>
-                    <p className="text-[13px] text-slate-500 mb-4">Selecciona los documentos que aplican para esta orden.</p>
-                    {plantillas.length === 0 ? (
-                      <div className="text-center py-8 text-slate-400 border border-slate-200 rounded-[9px]">
-                        <FileText size={32} className="mx-auto mb-2 opacity-30" />
-                        <div className="text-[13px]">No hay plantillas configuradas</div>
-                        <div className="text-[12px] mt-1">Ve a Configuración → Plantillas</div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2">
-                        {plantillas.map(p => {
-                          const sel = wForm.plantillas_ids.includes(p.id)
-                          return (
-                            <button key={p.id} onClick={() => togglePlantilla(p.id)}
-                              className={`flex items-center gap-2.5 p-3 rounded-[9px] border-[1.5px] text-left transition-all ${sel ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 hover:border-slate-300'}`}>
-                              <div className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center ${sel ? 'bg-[#D81B43]' : 'border-[1.5px] border-slate-300'}`}>
-                                {sel && <CheckCircle2 size={10} className="text-white" />}
-                              </div>
-                              <span className="text-[12.5px] font-medium text-slate-700">{p.nombre}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
               <div className="px-6 py-4 border-t border-slate-200 flex justify-between flex-shrink-0 bg-white">
@@ -1007,7 +1126,7 @@ export default function OrdenesClient({
                 <button onClick={() => wizardPaso < PASOS.length ? setWizardPaso(p => p + 1) : crearOrden()}
                   disabled={saving}
                   className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
-                  {saving ? 'Creando...' : wizardPaso < PASOS.length ? 'Siguiente →' : '✓ Crear orden'}
+                  {saving ? 'Creando...' : wizardPaso < PASOS.length ? 'Siguiente →' : '✓ Crear préstamo'}
                 </button>
               </div>
             </div>
@@ -1067,6 +1186,8 @@ export default function OrdenesClient({
         onConfirmar={() => { setConfirmarSalirWizard(false); cerrarWizard() }}
         onCancelar={() => setConfirmarSalirWizard(false)}
       />
+      
     </div>
+
   )
 }

@@ -10,7 +10,9 @@ export default async function OrdenesPage() {
   const [
     { data: ordenes },
     { data: clientes },
+    { data: pacientes },
     { data: estados },
+    { data: estadosEquipo },
     { data: plantillas },
     { data: equipos },
     { data: usuarios },
@@ -19,6 +21,7 @@ export default async function OrdenesPage() {
     supabase.from('ordenes_servicio').select(`
       *,
       cliente:clientes(id, nombre, tipo_persona, nit_cc),
+      paciente:pacientes(id, nombre, cedula),
       estado:estados_orden(id, nombre),
       repartidor:usuarios!ordenes_servicio_repartidor_id_fkey(id, nombre),
       equipos:orden_equipos(
@@ -36,7 +39,9 @@ export default async function OrdenesPage() {
       )
     `).order('fecha_creacion', { ascending: false }),
     supabase.from('clientes').select('id, nombre, tipo_persona, nit_cc').eq('activo', true).order('nombre'),
+    supabase.from('pacientes').select('*').eq('activo', true).order('nombre'),
     supabase.from('estados_orden').select('*').order('nombre'),
+    supabase.from('estados_equipo').select('*').order('nombre'),
     supabase.from('plantillas_orden').select('id, nombre, descripcion').eq('activo', true).order('nombre'),
     supabase.from('equipos').select(`
       id, codigo, tipo_equipo_id,
@@ -53,7 +58,9 @@ export default async function OrdenesPage() {
     <OrdenesClient
       ordenesIniciales={ordenes || []}
       clientes={clientes || []}
+      pacientes={pacientes || []}
       estados={estados || []}
+      estadosEquipo={estadosEquipo || []}
       plantillas={plantillas || []}
       equiposDisponibles={equipos || []}
       usuarios={usuarios || []}
