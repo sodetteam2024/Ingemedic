@@ -426,7 +426,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       </div>`
 
     const contenedor = document.createElement('div')
-    contenedor.style.cssText = 'position:absolute;left:-9999px;top:0;width:680px'
+    contenedor.style.cssText = 'position:fixed;top:0;left:0;width:680px;opacity:0;pointer-events:none;z-index:-1'
     contenedor.innerHTML     = html
     document.body.appendChild(contenedor)
 
@@ -1091,13 +1091,14 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 flex gap-2 flex-shrink-0">
+            <div className="px-4 pt-3 border-t border-slate-200 flex flex-col sm:flex-row gap-2 flex-shrink-0"
+              style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}>
               <button onClick={abrirEditar}
-                className="flex items-center gap-1.5 px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
+                className="flex items-center justify-center gap-1.5 px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
                 <Edit3 size={13} /> Editar ficha
               </button>
               <button onClick={() => generarHojaVidaPDF(drawer)}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#152D54] transition-colors ml-auto">
+                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#152D54] transition-colors sm:ml-auto">
                 <FileText size={13} /> Hoja de vida PDF
               </button>
             </div>

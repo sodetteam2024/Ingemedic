@@ -28,8 +28,7 @@ const ESTADO_STYLES = {
 }
 
 const BUCKETS = {
-  nuevos:   ['Borrador', 'Programada', 'En reparto'],
-  en_curso: ['Entregada'],
+  en_curso: ['Borrador', 'Programada', 'En reparto', 'Entregada'],
   historial:['Finalizada'],
 }
 
@@ -163,7 +162,7 @@ export default function OrdenesClient({
   }, [])
   const [search, setSearch]             = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
-  const [tabPrincipal, setTabPrincipal] = useState('nuevos')
+  const [tabPrincipal, setTabPrincipal] = useState('en_curso')
   const [drawer, setDrawer]             = useState(null)
   const [editRepartidor, setEditRepartidor] = useState(false)
   const [nuevoRepartidor, setNuevoRepartidor] = useState('')
@@ -210,8 +209,7 @@ export default function OrdenesClient({
   }), [ordenes])
 
   const bucketCounts = useMemo(() => ({
-    nuevos:  stats.borrador + stats.programada + stats.enReparto,
-    en_curso: stats.entregada,
+    en_curso: stats.borrador + stats.programada + stats.enReparto + stats.entregada,
     historial: stats.finalizada,
   }), [stats])
 
@@ -495,10 +493,9 @@ export default function OrdenesClient({
           {/* Stats — solo desktop */}
           <div className="hidden md:grid md:grid-cols-4 gap-4 mb-5">
             {[
-              { label: 'Total préstamos',  value: stats.total,            color: '#1E293B' },
-              { label: 'Nuevos / En ruta', value: bucketCounts.nuevos,    color: '#1D4ED8' },
-              { label: 'Activos',          value: bucketCounts.en_curso,  color: '#0E86A0' },
-              { label: 'Finalizados',      value: bucketCounts.historial, color: '#0F7B55' },
+              { label: 'Total préstamos', value: stats.total,            color: '#1E293B' },
+              { label: 'En curso',        value: bucketCounts.en_curso,  color: '#1D4ED8' },
+              { label: 'Finalizados',     value: bucketCounts.historial, color: '#0F7B55' },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                 <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
@@ -518,7 +515,6 @@ export default function OrdenesClient({
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 overflow-x-auto flex-1">
                 {[
-                  { key: 'nuevos',    label: 'Nuevos'    },
                   { key: 'en_curso',  label: 'En curso'  },
                   { key: 'historial', label: 'Historial' },
                 ].map(t => (
@@ -548,15 +544,14 @@ export default function OrdenesClient({
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
                 <div className="font-semibold mb-1">
                   {search ? 'Sin resultados' : (
-                    tabPrincipal === 'nuevos' ? 'Sin préstamos nuevos' :
                     tabPrincipal === 'en_curso' ? 'Sin préstamos en curso' :
                     'Sin préstamos en historial'
                   )}
                 </div>
                 <div className="text-[13px]">
                   {search ? 'Intenta con otros filtros' :
-                   tabPrincipal === 'nuevos' ? 'Usa "Nuevo préstamo" para registrar uno' :
-                   'Los préstamos aparecerán aquí cuando cambien de estado'}
+                   tabPrincipal === 'en_curso' ? 'Usa "Nuevo préstamo" para registrar uno' :
+                   'Los préstamos finalizados aparecerán aquí'}
                 </div>
               </div>
             </div>
