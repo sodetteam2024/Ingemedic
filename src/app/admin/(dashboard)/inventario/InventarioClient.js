@@ -365,9 +365,16 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       doc.text(categoriaNombre, INFO_X, infoY)
       infoY += 5.5
     }
-    // Badge estado
-    doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(er, eg, eb)
-    doc.text(`●  ${estadoNombre}`, INFO_X, infoY)
+    // Badge estado: píldora (sin ● Unicode que corrompe jsPDF)
+    const [bbr, bbg, bbb] = hexRgb(estadoSty.bg || '#F1F5F9')
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+    const badgeEstW = doc.getTextWidth(estadoNombre) + 10
+    doc.setFillColor(bbr, bbg, bbb)
+    doc.roundedRect(INFO_X, infoY - 3.5, badgeEstW, 5.5, 1.5, 1.5, 'F')
+    doc.setFillColor(er, eg, eb)
+    doc.circle(INFO_X + 3, infoY - 0.7, 1.2, 'F')
+    doc.setTextColor(er, eg, eb)
+    doc.text(estadoNombre, INFO_X + 6, infoY)
 
     y = Math.max(y + IMG_SZ + 6, infoY + 10)
 
@@ -427,57 +434,90 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     // Construir y ordenar eventos (igual que en pantalla)
     const eventosP = []
     prestamosDrawer.forEach(p => {
-      const fE = p.fecha_entrega ? new Date(p.fecha_entrega) : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
-      const fD = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
+      const fE    = p.fecha_entrega    ? new Date(p.fecha_entrega)    : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
+      const fD    = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
       const activo = !fD
-      const cli = p.orden?.cliente?.nombre || 'Cliente desconocido'
-      const pac = p.orden?.paciente?.nombre
-      const cod = p.orden?.codigo
-      eventosP.push({ tipo: 'prestamo', fecha: fE, titulo: `Prestado a ${cli}`, sub: [pac ? `Paciente: ${pac}` : null, cod ? `Orden ${cod}` : null].filter(Boolean).join(' · ') || null, activo })
-      if (fD) eventosP.push({ tipo: 'devolucion', fecha: fD, titulo: 'Devuelto', sub: cod ? `Orden ${cod}` : null, activo: false })
+      const cli   = p.orden?.cliente?.nombre  || 'Cliente desconocido'
+      const pac   = p.orden?.paciente?.nombre || null
+      const cod   = p.orden?.codigo           || null
+      eventosP.push({
+        fecha:   fE,
+        entidad: cli,
+        badge:   activo
+          ? { text: 'En prestamo', bg: '#E8F7FB', color: '#0E86A0', dotRgb: [14, 134, 160], ring: true  }
+          : { text: 'Completado',  bg: '#ECFDF5', color: '#0F7B55', dotRgb: [15, 123, 85],  ring: false },
+        details: [pac ? `Paciente: ${pac}` : null, cod ? `Orden ${cod}` : null].filter(Boolean),
+      })
+      if (fD) eventosP.push({
+        fecha:   fD,
+        entidad: 'Equipo devuelto',
+        badge:   { text: 'Devuelto', bg: '#ECFDF5', color: '#0F7B55', dotRgb: [15, 123, 85], ring: false },
+        details: [cod ? `Orden ${cod}` : null].filter(Boolean),
+      })
     })
     eventosP.sort((a, b) => { if (!a.fecha && !b.fecha) return 0; if (!a.fecha) return 1; if (!b.fecha) return -1; return b.fecha - a.fecha })
 
-    const LINE_X = M + 4
-    eventosP.forEach((ev, idx) => {
-      if (y > 262) { doc.addPage(); y = M + 8 }
-      // Dot color
-      const dotRgb = ev.tipo === 'prestamo' && ev.activo ? [14, 134, 160]
-        : ev.tipo === 'devolucion' ? [15, 123, 85]
-        : ev.tipo === 'registro'   ? [37, 169, 224]
-        : [100, 116, 139]
-      doc.setFillColor(...dotRgb)
-      doc.circle(LINE_X, y, 1.8, 'F')
-      // Connector line to next
-      if (idx < eventosP.length - 1) {
-        doc.setDrawColor(220, 220, 220)
-        doc.line(LINE_X, y + 2, LINE_X, y + 14)
-      }
-      // Título
-      const TX = LINE_X + 5
-      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30)
-      doc.text(ev.titulo, TX, y + 0.5)
-      let dY = 5
-      // Subtítulo
-      if (ev.sub) {
-        doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100)
-        const subLines = doc.splitTextToSize(ev.sub, CW - TX + M - 2)
-        doc.text(subLines, TX, y + dY)
-        dY += subLines.length * 4
-      }
-      // Fecha
-      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(140, 140, 140)
-      let fStr = ev.fecha ? ev.fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Fecha no disponible'
-      if (ev.tipo === 'prestamo' && ev.activo) fStr += '  ·  Activo'
-      doc.text(fStr, TX, y + dY)
-      y += dY + 8
-    })
-
     if (eventosP.length === 0) {
       doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(160, 160, 160)
-      doc.text('Sin eventos registrados', M + 8, y)
+      doc.text('Sin actividad registrada', M + 8, y)
       y += 8
     }
+
+    const LINE_X = M + 4
+    eventosP.forEach((ev, idx) => {
+      if (y > 252) { doc.addPage(); y = M + 8 }
+      const TX      = LINE_X + 6
+      const yStart  = y
+      const [dr, dg, db] = ev.badge.dotRgb
+
+      // Dot: ring para activo, relleno para completado/devuelto
+      if (ev.badge.ring) {
+        doc.setFillColor(255, 255, 255); doc.setDrawColor(dr, dg, db)
+        doc.circle(LINE_X, y + 3, 2.2, 'FD')
+        doc.setFillColor(dr, dg, db)
+        doc.circle(LINE_X, y + 3, 1, 'F')
+      } else {
+        doc.setFillColor(dr, dg, db)
+        doc.circle(LINE_X, y + 3, 2, 'F')
+      }
+
+      // Badge píldora
+      const [bbr2, bbg2, bbb2] = hexRgb(ev.badge.bg)
+      const [bcr, bcg, bcb]    = hexRgb(ev.badge.color)
+      doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+      const bW = doc.getTextWidth(ev.badge.text) + 6
+      doc.setFillColor(bbr2, bbg2, bbb2)
+      doc.roundedRect(TX, y, bW, 4.5, 1, 1, 'F')
+      doc.setTextColor(bcr, bcg, bcb)
+      doc.text(ev.badge.text, TX + 3, y + 3.2)
+      y += 6
+
+      // Entidad (bold, prominent)
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30)
+      doc.text(ev.entidad, TX, y)
+      y += 5.5
+
+      // Detalles secundarios
+      ev.details.forEach(d => {
+        if (y > 270) { doc.addPage(); y = M + 8 }
+        doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(130, 130, 130)
+        doc.text(d, TX, y)
+        y += 4.5
+      })
+
+      // Fecha
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(165, 165, 165)
+      const fStr = ev.fecha ? ev.fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Fecha no disponible'
+      doc.text(fStr, TX, y)
+      y += 4
+
+      // Conector al siguiente evento
+      if (idx < eventosP.length - 1) {
+        doc.setDrawColor(225, 225, 225)
+        doc.line(LINE_X, yStart + 5.5, LINE_X, y + 2)
+      }
+      y += 6
+    })
 
     // ── PIE DE PÁGINA (todas las páginas) ──────────────────
     const totalPags = doc.internal.getNumberOfPages()
@@ -1032,40 +1072,39 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               <div className="p-6">
                 <div className="text-[13px] font-bold text-slate-700 mb-4">Hoja de vida · Línea de tiempo</div>
                 {(() => {
-                  // Construir lista de eventos mezclados y ordenados newest-first
                   const eventos = []
 
-                  // Eventos de préstamo
                   prestamosDrawer.forEach(p => {
                     const fechaEntrega    = p.fecha_entrega    ? new Date(p.fecha_entrega)    : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
                     const fechaDevolucion = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
-                    const activo         = !fechaDevolucion
-                    const cliente        = p.orden?.cliente?.nombre || 'Cliente desconocido'
-                    const paciente       = p.orden?.paciente?.nombre || null
-                    const codigo         = p.orden?.codigo || null
+                    const activo          = !fechaDevolucion
+                    const cliente         = p.orden?.cliente?.nombre  || 'Cliente desconocido'
+                    const paciente        = p.orden?.paciente?.nombre || null
+                    const codigo          = p.orden?.codigo           || null
 
                     eventos.push({
-                      key:    `prestamo-${p.id}`,
-                      fecha:  fechaEntrega,
-                      titulo: `Prestado a ${cliente}`,
-                      sub:    [paciente ? `Paciente: ${paciente}` : null, codigo ? `Orden ${codigo}` : null].filter(Boolean).join(' · ') || null,
-                      dot:    activo
-                        ? { bg: '#0E86A0', ring: true }       // activo: celeste con anillo
-                        : { bg: '#64748B', inner: false },    // cerrado: gris
+                      key:     `prestamo-${p.id}`,
+                      fecha:   fechaEntrega,
+                      entidad: cliente,
+                      badge:   activo
+                        ? { text: 'En préstamo', bg: '#E8F7FB', color: '#0E86A0' }
+                        : { text: 'Completado',  bg: '#ECFDF5', color: '#0F7B55' },
+                      details: [paciente ? `Paciente: ${paciente}` : null, codigo ? `Orden ${codigo}` : null].filter(Boolean),
+                      dot:     activo ? { bg: '#0E86A0', ring: true } : { bg: '#0F7B55', ring: false },
                     })
 
                     if (fechaDevolucion) {
                       eventos.push({
-                        key:    `devolucion-${p.id}`,
-                        fecha:  fechaDevolucion,
-                        titulo: 'Devuelto',
-                        sub:    codigo ? `Orden ${codigo}` : null,
-                        dot:    { bg: '#0F7B55', inner: false },
+                        key:     `devolucion-${p.id}`,
+                        fecha:   fechaDevolucion,
+                        entidad: 'Equipo devuelto',
+                        badge:   { text: 'Devuelto', bg: '#ECFDF5', color: '#0F7B55' },
+                        details: [codigo ? `Orden ${codigo}` : null].filter(Boolean),
+                        dot:     { bg: '#0F7B55', ring: false },
                       })
                     }
                   })
 
-                  // Ordenar newest-first (nulls al final)
                   eventos.sort((a, b) => {
                     if (!a.fecha && !b.fecha) return 0
                     if (!a.fecha) return 1
@@ -1082,38 +1121,40 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   }
 
                   return (
-                    <div className="relative">
-                      <div className="absolute left-[7px] top-2 bottom-0 w-[1.5px] bg-slate-100" />
-                      <div className="space-y-5">
-                        {eventos.map(ev => (
-                          <div key={ev.key} className="flex gap-3">
-                            {/* Dot */}
-                            <div className="w-4 h-4 rounded-full flex-shrink-0 mt-0.5 z-10 flex items-center justify-center"
+                    <div className="space-y-0">
+                      {eventos.map((ev, idx) => (
+                        <div key={ev.key} className="flex gap-3">
+                          {/* Columna dot + conector */}
+                          <div className="flex flex-col items-center flex-shrink-0">
+                            <div className="w-3.5 h-3.5 rounded-full mt-1 z-10 flex-shrink-0 flex items-center justify-center"
                               style={{
                                 backgroundColor: ev.dot.ring ? 'white' : ev.dot.bg,
-                                border: ev.dot.ring ? `2px solid ${ev.dot.bg}` : 'none',
-                                boxShadow: ev.dot.ring ? `0 0 0 3px ${ev.dot.bg}22` : 'none',
+                                border:     ev.dot.ring ? `2px solid ${ev.dot.bg}` : 'none',
+                                boxShadow:  ev.dot.ring ? `0 0 0 3px ${ev.dot.bg}22` : 'none',
                               }}>
-                              {ev.dot.inner && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                              {ev.dot.ring  && <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ev.dot.bg }} />}
+                              {ev.dot.ring && <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ev.dot.bg }} />}
                             </div>
-                            {/* Texto */}
-                            <div>
-                              <div className="text-[12.5px] font-semibold text-slate-700">{ev.titulo}</div>
-                              {ev.sub && <div className="text-[11px] text-slate-400 mt-0.5">{ev.sub}</div>}
-                              <div className="text-[11.5px] text-slate-400 mt-0.5 flex items-center gap-1">
-                                <Clock size={10} />
-                                {ev.fecha ? formatearFecha(ev.fecha.toISOString()) : 'Fecha no disponible'}
-                              </div>
+                            {idx < eventos.length - 1 && (
+                              <div className="w-[1.5px] flex-1 mt-1 min-h-[12px] bg-slate-100" />
+                            )}
+                          </div>
+                          {/* Contenido */}
+                          <div className="pb-4 flex-1 min-w-0">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold mb-1"
+                              style={{ background: ev.badge.bg, color: ev.badge.color }}>
+                              {ev.badge.text}
+                            </span>
+                            <div className="text-[13px] font-bold text-slate-800 leading-snug">{ev.entidad}</div>
+                            {ev.details.map((d, i) => (
+                              <div key={i} className="text-[11.5px] text-slate-400 mt-0.5">{d}</div>
+                            ))}
+                            <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                              <Clock size={9} />
+                              {ev.fecha ? formatearFecha(ev.fecha.toISOString()) : 'Fecha no disponible'}
                             </div>
                           </div>
-                        ))}
-                        {/* Placeholder mantenimientos */}
-                        <div className="flex gap-3 opacity-40">
-                          <div className="w-4 h-4 rounded-full border-2 border-dashed border-slate-300 flex-shrink-0 mt-0.5 z-10" />
-                          <div className="text-[12px] text-slate-400 italic">Los mantenimientos aparecerán aquí</div>
                         </div>
-                      </div>
+                      ))}
                     </div>
                   )
                 })()}
