@@ -55,8 +55,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   const [tipos, setTipos] = useState(tiposIniciales)
   const skipSyncUntil = useRef(0)
 
-  // Mantener el estado local sincronizado cuando el servidor manda datos frescos
-  // (esto se dispara después de router.refresh(), incluido el que llega por realtime)
   useEffect(() => {
     const t = setTimeout(() => {
       if (Date.now() < skipSyncUntil.current) return
@@ -73,9 +71,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     return () => clearTimeout(t)
   }, [tiposIniciales])
 
-  // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
-  // Sin esto, un dispositivo no se entera de cambios hechos en otro
-  // (ej. otro usuario registró un equipo nuevo) hasta recargar la página.
   useEffect(() => {
     let debounceTimer = null
     function refrescarConDebounce() {
@@ -295,7 +290,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     const { default: jsPDF }       = await import('jspdf')
     const { default: html2canvas } = await import('html2canvas')
 
-    // Pre-fetch imágenes como base64 para evitar CORS en html2canvas
     async function toB64(url) {
       const res  = await fetch(url)
       const blob = await res.blob()
@@ -310,7 +304,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     let imagenB64   = ''
     if (imagenUrl) { try { imagenB64 = await toB64(imagenUrl) } catch { /* sin imagen */ } }
 
-    // ── DATOS ────────────────────────────────────────────────
     const estadoNombre = equipo.estado?.nombre || '—'
     const estadoSty    = ESTADO_STYLES[estadoNombre] || { bg: '#F1F5F9', color: '#64748B' }
     const fechaHoy     = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -330,7 +323,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
             <div style="font-size:12.5px;color:#0F172A;margin-top:2px">${String(v)}</div>
           </div>`).join('')
 
-    // ── HISTORIAL ────────────────────────────────────────────
     const eventosH = []
     ;(prestamosDrawer || []).forEach(p => {
       const fE     = p.fecha_entrega    ? new Date(p.fecha_entrega)    : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
@@ -381,26 +373,19 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               <div style="flex:1;padding-top:2px">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <span style="font-size:13.5px;font-weight:700;color:#0F172A">${ev.titulo}</span>
-                  <span style="display:inline-flex;align-items:center;background:${ev.badge.bg};color:${ev.badge.color};font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px">${ev.badge.text}</span>
+                  <table style="display:inline-table;border-collapse:collapse;vertical-align:middle"><tr><td style="background:${ev.badge.bg};border-radius:20px;padding:0 10px;height:20px;color:${ev.badge.color};font-size:11px;font-weight:700;white-space:nowrap;vertical-align:middle;line-height:normal">${ev.badge.text}</td></tr></table>
                 </div>
                 ${ev.detalle ? `<div style="font-size:12px;color:#64748B;margin-top:4px">${ev.detalle}</div>` : ''}
               </div>
             </div>`
         }).join('')
 
-    // ── HTML PLANTILLA ───────────────────────────────────────
     const html = `
       <div style="max-width:680px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
 
         <div style="display:flex;align-items:stretch">
-          <div style="flex:1;padding:20px 24px;display:flex;align-items:center;gap:14px">
-            <div style="width:52px;height:52px;border-radius:10px;background:#FFF0F3;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
-              ${logoB64 ? `<img src="${logoB64}" style="max-width:48px;max-height:48px;object-fit:contain">` : ''}
-            </div>
-            <div>
-              <div style="font-size:20px;font-weight:700;color:#1B3A6B;line-height:1.1">INGEMEDIC</div>
-              <div style="font-size:13px;font-weight:700;color:#2EB5D4;letter-spacing:.01em">De Colombia</div>
-            </div>
+          <div style="flex:1;padding:20px 24px;display:flex;align-items:center">
+            ${logoB64 ? `<img src="${logoB64}" style="height:56px;width:auto;object-fit:contain">` : ''}
           </div>
           <div style="background:#1B3A6B;padding:20px 26px;flex-shrink:0;min-width:250px">
             <div style="color:#fff;font-size:13px;font-weight:700;letter-spacing:.02em">HOJA DE VIDA DEL EQUIPO</div>
@@ -410,13 +395,13 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         </div>
 
         <div style="padding:20px 24px;display:flex;gap:20px">
-          <div style="width:150px;flex-shrink:0">
+          <div style="width:150px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-start">
             <div style="width:150px;height:120px;border-radius:8px;background:#F8FAFC;border:0.5px solid #E2E8F0;display:flex;align-items:center;justify-content:center;margin-bottom:10px;overflow:hidden">
               ${imagenB64 ? `<img src="${imagenB64}" style="max-width:140px;max-height:110px;object-fit:contain">` : ''}
             </div>
             <div style="font-size:15px;font-weight:700;color:#0F172A">${tipo?.nombre || '—'}</div>
-            <div style="display:inline-flex;align-items:center;gap:5px;background:${estadoSty.bg};color:${estadoSty.color};font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;margin-top:6px">
-              <span style="width:5px;height:5px;border-radius:50%;background:${estadoSty.color};display:inline-block"></span>${estadoNombre}
+            <div style="margin-top:6px">
+              <table style="display:inline-table;border-collapse:collapse"><tr><td style="background:${estadoSty.bg};border-radius:20px;padding:0 10px;height:22px;color:${estadoSty.color};font-size:11px;font-weight:700;white-space:nowrap;vertical-align:middle;line-height:normal">${estadoNombre}</td></tr></table>
             </div>
           </div>
           <div style="flex:1;display:flex;flex-direction:column;gap:10px">
@@ -433,19 +418,13 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
           </div>
         </div>
 
-        <div style="padding:0 24px 20px">
+        <div style="padding:0 24px 24px">
           <div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em;margin-bottom:14px">HISTORIAL — LÍNEA DE TIEMPO</div>
           ${timelineHTML}
         </div>
 
-        <div style="background:#F8FAFC;padding:12px 24px;border-top:0.5px solid #EEF2F6;display:flex;justify-content:space-between">
-          <div style="font-size:10px;color:#94A3B8">Ingemedic de Colombia S.A.S. · Valledupar, Cesar</div>
-          <div style="font-size:10px;color:#94A3B8">Generado el ${fechaHoy}</div>
-        </div>
-
       </div>`
 
-    // ── CAPTURAR CON html2canvas ─────────────────────────────
     const contenedor = document.createElement('div')
     contenedor.style.cssText = 'position:absolute;left:-9999px;top:0;width:680px'
     contenedor.innerHTML     = html
@@ -457,6 +436,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       const anchoPDF    = 210
       const pageHeightPx = Math.round(canvas.width * (297 / 210))
 
+      const totalPages = Math.ceil(canvas.height / pageHeightPx)
       let position = 0, pageNum = 0
       while (position < canvas.height) {
         if (pageNum > 0) pdf.addPage()
@@ -466,6 +446,12 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         slice.height = sliceH
         slice.getContext('2d').drawImage(canvas, 0, -position)
         pdf.addImage(slice.toDataURL('image/png'), 'PNG', 0, 0, anchoPDF, (sliceH / canvas.width) * anchoPDF)
+        pdf.setDrawColor(238, 242, 246)
+        pdf.line(0, 282, 210, 282)
+        pdf.setFontSize(8)
+        pdf.setTextColor(148, 163, 184)
+        pdf.text('Ingemedic de Colombia S.A.S. · Valledupar, Cesar', 12, 288)
+        pdf.text(`Página ${pageNum + 1} de ${totalPages}`, 198, 288, { align: 'right' })
         position += pageHeightPx
         pageNum++
       }
@@ -475,7 +461,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     } finally {
       document.body.removeChild(contenedor)
     }
-
   }
 
   function abrirModalTipo() {
