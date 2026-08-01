@@ -292,245 +292,190 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
   // ── GENERAR HOJA DE VIDA PDF ─────────────────────────────
   async function generarHojaVidaPDF(equipo) {
-    const { default: jsPDF } = await import('jspdf')
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const W = 210, M = 15, CW = W - M * 2
-    const HEADER_H = 28
-    let logoEndX = M
+    const { default: jsPDF }       = await import('jspdf')
+    const { default: html2canvas } = await import('html2canvas')
 
-    // Helpers
-    function hexRgb(hex) {
-      return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
-    }
-    async function fetchBase64(url) {
-      const res = await fetch(url)
+    // Pre-fetch imágenes como base64 para evitar CORS en html2canvas
+    async function toB64(url) {
+      const res  = await fetch(url)
       const blob = await res.blob()
-      const b64 = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
-      const dims = await new Promise(r => { const img = new window.Image(); img.onload = () => r({ w: img.naturalWidth, h: img.naturalHeight }); img.src = b64 })
-      return { b64, dims }
+      return new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
     }
 
-    // ── LOGO ────────────────────────────────────────────────
-    try {
-      const { b64, dims } = await fetchBase64(LOGO_URL)
-      const ratio = HEADER_H / dims.h
-      const logoW = dims.w * ratio
-      doc.addImage(b64, 'PNG', M + 2, M, logoW, HEADER_H)
-      logoEndX = M + logoW + 6
-    } catch { logoEndX = M + 4 }
+    let logoB64 = ''
+    try { logoB64 = await toB64(LOGO_URL) } catch { /* continuar sin logo */ }
 
-    // ── HEADER (franja azul) ─────────────────────────────────
-    doc.setFillColor(27, 58, 107) // #1B3A6B
-    doc.rect(logoEndX, M, W - M - logoEndX, HEADER_H, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(10.5); doc.setFont('helvetica', 'bold')
-    doc.text('HOJA DE VIDA DEL EQUIPO', logoEndX + 3, M + 9)
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-    doc.text('Ingemedic de Colombia S.A.S.', logoEndX + 3, M + 16)
-    doc.text(`Generado: ${new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}`, W - M - 2, M + 23, { align: 'right' })
-
-    let y = M + HEADER_H + 8
-
-    // ── BLOQUE IDENTIFICACIÓN ────────────────────────────────
-    const tipo = equipo.tipo_equipo
+    const tipo      = equipo.tipo_equipo
     const imagenUrl = tipo?.imagen_url && !tipo.imagen_url.startsWith('icono:') ? tipo.imagen_url : null
-    const IMG_SZ = 34
-    const INFO_X = imagenUrl ? M + IMG_SZ + 6 : M
-    const INFO_W = imagenUrl ? CW - IMG_SZ - 6 : CW
+    let imagenB64   = ''
+    if (imagenUrl) { try { imagenB64 = await toB64(imagenUrl) } catch { /* sin imagen */ } }
 
-    if (imagenUrl) {
-      try {
-        const { b64, dims } = await fetchBase64(imagenUrl)
-        const ratio = Math.min(IMG_SZ / dims.w, IMG_SZ / dims.h)
-        const iW = dims.w * ratio, iH = dims.h * ratio
-        doc.setDrawColor(220, 220, 220)
-        doc.roundedRect(M, y, IMG_SZ, IMG_SZ, 2, 2)
-        doc.addImage(b64, 'PNG', M + (IMG_SZ - iW) / 2, y + (IMG_SZ - iH) / 2, iW, iH, undefined, 'FAST')
-      } catch { }
-    }
-
-    const nombreTipoEq = tipo?.nombre || '—'
-    const categoriaNombre = tipo?.categoria?.nombre || ''
+    // ── DATOS ────────────────────────────────────────────────
     const estadoNombre = equipo.estado?.nombre || '—'
-    const estadoSty = ESTADO_STYLES[estadoNombre] || { color: '#64748B' }
-    const [er, eg, eb] = hexRgb(estadoSty.color)
+    const estadoSty    = ESTADO_STYLES[estadoNombre] || { bg: '#F1F5F9', color: '#64748B' }
+    const fechaHoy     = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+    const fechaReg     = equipo.fecha_creacion
+      ? new Date(equipo.fecha_creacion).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '—'
 
-    doc.setTextColor(30, 30, 30); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-    const titleLines = doc.splitTextToSize(nombreTipoEq, INFO_W - 4)
-    doc.text(titleLines, INFO_X, y + 8)
-    let infoY = y + 8 + titleLines.length * 6
-
-    if (categoriaNombre) {
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120)
-      doc.text(categoriaNombre, INFO_X, infoY)
-      infoY += 5.5
-    }
-    // Badge estado: píldora (sin ● Unicode que corrompe jsPDF)
-    const [bbr, bbg, bbb] = hexRgb(estadoSty.bg || '#F1F5F9')
-    doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-    const badgeEstW = doc.getTextWidth(estadoNombre) + 10
-    doc.setFillColor(bbr, bbg, bbb)
-    doc.roundedRect(INFO_X, infoY - 3.5, badgeEstW, 5.5, 1.5, 1.5, 'F')
-    doc.setFillColor(er, eg, eb)
-    doc.circle(INFO_X + 3, infoY - 0.7, 1.2, 'F')
-    doc.setTextColor(er, eg, eb)
-    doc.text(estadoNombre, INFO_X + 6, infoY)
-
-    y = Math.max(y + IMG_SZ + 6, infoY + 10)
-
-    // Fila 3 columnas: Código · Serie · Fecha registro
-    doc.setFillColor(240, 242, 245)
-    doc.rect(M, y, CW, 6, 'F')
-    doc.setTextColor(30, 30, 30); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-    doc.text('IDENTIFICACIÓN', M + 2, y + 4)
-    y += 9
-
-    const C3 = CW / 3
-    const id3 = [
-      ['Código',      equipo.codigo || '—'],
-      ['Serie',       equipo.atributos?.serie || '—'],
-      ['Registrado',  equipo.fecha_creacion ? new Date(equipo.fecha_creacion).toLocaleDateString('es-CO') : '—'],
-    ]
-    id3.forEach(([lbl, val], i) => {
-      const cx = M + i * C3 + 2
-      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120)
-      doc.text(lbl, cx, y)
-      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30)
-      doc.text(String(val), cx, y + 5.5)
-    })
-    y += 14
-
-    // Características técnicas (atributos del tipo + unidad)
     const atrsAll = { ...(tipo?.atributos || {}), ...(equipo.atributos || {}) }
-    delete atrsAll.serie   // ya en la fila de identificación
+    delete atrsAll.serie
     const atrsEntries = Object.entries(atrsAll).filter(([, v]) => v != null && v !== '')
-    if (atrsEntries.length > 0) {
-      if (y > 245) { doc.addPage(); y = M }
-      doc.setFillColor(240, 242, 245); doc.rect(M, y, CW, 6, 'F')
-      doc.setTextColor(30, 30, 30); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-      doc.text('CARACTERÍSTICAS TÉCNICAS', M + 2, y + 4)
-      y += 9
-      const colW = CW / 2
-      atrsEntries.forEach(([k, v], i) => {
-        if (y > 255) { doc.addPage(); y = M }
-        const cx = M + (i % 2) * colW + 2
-        if (i % 2 === 0 && i > 0) y += 5.5
-        doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120)
-        doc.text(`${k}:`, cx, y)
-        doc.setTextColor(30, 30, 30)
-        doc.text(String(v).slice(0, 30), cx + 24, y)
-      })
-      if (atrsEntries.length % 2 !== 0) y += 5.5
-      y += 5
-    }
 
-    // ── LÍNEA DE TIEMPO ──────────────────────────────────────
-    if (y > 240) { doc.addPage(); y = M }
-    doc.setFillColor(240, 242, 245); doc.rect(M, y, CW, 6, 'F')
-    doc.setTextColor(30, 30, 30); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-    doc.text('HISTORIAL — LÍNEA DE TIEMPO', M + 2, y + 4)
-    y += 10
+    const caracteristicasHTML = atrsEntries.length === 0
+      ? '<div style="font-size:12px;color:#94A3B8;grid-column:span 2">Sin características registradas</div>'
+      : atrsEntries.map(([k, v]) => `
+          <div>
+            <div style="font-size:10px;color:#94A3B8">${k}</div>
+            <div style="font-size:12.5px;color:#0F172A;margin-top:2px">${String(v)}</div>
+          </div>`).join('')
 
-    // Construir y ordenar eventos (igual que en pantalla)
-    const eventosP = []
-    prestamosDrawer.forEach(p => {
-      const fE    = p.fecha_entrega    ? new Date(p.fecha_entrega)    : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
-      const fD    = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
+    // ── HISTORIAL ────────────────────────────────────────────
+    const eventosH = []
+    ;(prestamosDrawer || []).forEach(p => {
+      const fE     = p.fecha_entrega    ? new Date(p.fecha_entrega)    : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
+      const fD     = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
       const activo = !fD
-      const cli   = p.orden?.cliente?.nombre  || 'Cliente desconocido'
-      const pac   = p.orden?.paciente?.nombre || null
-      const cod   = p.orden?.codigo           || null
-      eventosP.push({
-        fecha:   fE,
-        entidad: cli,
-        badge:   activo
-          ? { text: 'En prestamo', bg: '#E8F7FB', color: '#0E86A0', dotRgb: [14, 134, 160], ring: true  }
-          : { text: 'Completado',  bg: '#ECFDF5', color: '#0F7B55', dotRgb: [15, 123, 85],  ring: false },
-        details: [pac ? `Paciente: ${pac}` : null, cod ? `Orden ${cod}` : null].filter(Boolean),
+      const cli    = p.orden?.cliente?.nombre  || 'Cliente desconocido'
+      const pac    = p.orden?.paciente?.nombre || null
+      const cod    = p.orden?.codigo           || null
+      eventosH.push({
+        fecha:    fE,
+        titulo:   `Préstamo — ${cli}`,
+        badge:    activo
+          ? { text: 'En préstamo', bg: '#E8F7FB', color: '#0E7490' }
+          : { text: 'Completado',  bg: '#ECFDF5', color: '#0F7B55' },
+        detalle:  [pac ? `Paciente: ${pac}` : null, cod ? `Orden: ${cod}` : null].filter(Boolean).join('  ·  '),
+        dotColor: activo ? '#0E86A0' : '#0F7B55',
       })
-      if (fD) eventosP.push({
-        fecha:   fD,
-        entidad: 'Equipo devuelto',
-        badge:   { text: 'Devuelto', bg: '#ECFDF5', color: '#0F7B55', dotRgb: [15, 123, 85], ring: false },
-        details: [cod ? `Orden ${cod}` : null].filter(Boolean),
+      if (fD) eventosH.push({
+        fecha:    fD,
+        titulo:   'Devolución',
+        badge:    { text: 'Devuelto', bg: '#ECFDF5', color: '#0F7B55' },
+        detalle:  cod ? `Orden: ${cod}` : '',
+        dotColor: '#0F7B55',
       })
     })
-    eventosP.sort((a, b) => { if (!a.fecha && !b.fecha) return 0; if (!a.fecha) return 1; if (!b.fecha) return -1; return b.fecha - a.fecha })
-
-    if (eventosP.length === 0) {
-      doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(160, 160, 160)
-      doc.text('Sin actividad registrada', M + 8, y)
-      y += 8
-    }
-
-    const LINE_X = M + 4
-    eventosP.forEach((ev, idx) => {
-      if (y > 252) { doc.addPage(); y = M + 8 }
-      const TX      = LINE_X + 6
-      const yStart  = y
-      const [dr, dg, db] = ev.badge.dotRgb
-
-      // Dot: ring para activo, relleno para completado/devuelto
-      if (ev.badge.ring) {
-        doc.setFillColor(255, 255, 255); doc.setDrawColor(dr, dg, db)
-        doc.circle(LINE_X, y + 3, 2.2, 'FD')
-        doc.setFillColor(dr, dg, db)
-        doc.circle(LINE_X, y + 3, 1, 'F')
-      } else {
-        doc.setFillColor(dr, dg, db)
-        doc.circle(LINE_X, y + 3, 2, 'F')
-      }
-
-      // Badge píldora
-      const [bbr2, bbg2, bbb2] = hexRgb(ev.badge.bg)
-      const [bcr, bcg, bcb]    = hexRgb(ev.badge.color)
-      doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-      const bW = doc.getTextWidth(ev.badge.text) + 6
-      doc.setFillColor(bbr2, bbg2, bbb2)
-      doc.roundedRect(TX, y, bW, 4.5, 1, 1, 'F')
-      doc.setTextColor(bcr, bcg, bcb)
-      doc.text(ev.badge.text, TX + 3, y + 3.2)
-      y += 6
-
-      // Entidad (bold, prominent)
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30)
-      doc.text(ev.entidad, TX, y)
-      y += 5.5
-
-      // Detalles secundarios
-      ev.details.forEach(d => {
-        if (y > 270) { doc.addPage(); y = M + 8 }
-        doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(130, 130, 130)
-        doc.text(d, TX, y)
-        y += 4.5
-      })
-
-      // Fecha
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(165, 165, 165)
-      const fStr = ev.fecha ? ev.fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Fecha no disponible'
-      doc.text(fStr, TX, y)
-      y += 4
-
-      // Conector al siguiente evento
-      if (idx < eventosP.length - 1) {
-        doc.setDrawColor(225, 225, 225)
-        doc.line(LINE_X, yStart + 5.5, LINE_X, y + 2)
-      }
-      y += 6
+    eventosH.sort((a, b) => {
+      if (!a.fecha && !b.fecha) return 0
+      if (!a.fecha) return 1
+      if (!b.fecha) return -1
+      return b.fecha - a.fecha
     })
 
-    // ── PIE DE PÁGINA (todas las páginas) ──────────────────
-    const totalPags = doc.internal.getNumberOfPages()
-    for (let p = 1; p <= totalPags; p++) {
-      doc.setPage(p)
-      doc.setDrawColor(220, 220, 220); doc.line(M, 282, W - M, 282)
-      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(160, 160, 160)
-      doc.text('Ingemedic de Colombia S.A.S.  ·  Valledupar, Cesar', M, 287)
-      doc.text(`Página ${p} de ${totalPags}`, W - M, 287, { align: 'right' })
+    const timelineHTML = eventosH.length === 0
+      ? '<div style="font-size:13px;color:#94A3B8">Sin actividad registrada</div>'
+      : eventosH.map((ev, idx) => {
+          const isLast = idx === eventosH.length - 1
+          const dia    = ev.fecha ? ev.fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) : '—'
+          const anio   = ev.fecha ? ev.fecha.getFullYear() : ''
+          return `
+            <div style="display:flex;gap:14px;padding-bottom:${isLast ? '0' : '16px'};border-bottom:${isLast ? 'none' : '0.5px solid #F1F5F9'};margin-bottom:${isLast ? '0' : '16px'}">
+              <div style="width:78px;flex-shrink:0;text-align:right;padding-top:2px">
+                <div style="font-size:15px;font-weight:700;color:#1B3A6B;line-height:1.2">${dia}</div>
+                <div style="font-size:11px;font-weight:700;color:#64748B">${anio}</div>
+              </div>
+              <div style="width:1.5px;background:#E2E8F0;position:relative;flex-shrink:0">
+                <div style="width:11px;height:11px;border-radius:50%;background:${ev.dotColor};border:2px solid #fff;box-shadow:0 0 0 2px ${ev.dotColor}55;position:absolute;left:50%;top:4px;transform:translateX(-50%)"></div>
+              </div>
+              <div style="flex:1;padding-top:2px">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:13.5px;font-weight:700;color:#0F172A">${ev.titulo}</span>
+                  <span style="display:inline-flex;align-items:center;background:${ev.badge.bg};color:${ev.badge.color};font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px">${ev.badge.text}</span>
+                </div>
+                ${ev.detalle ? `<div style="font-size:12px;color:#64748B;margin-top:4px">${ev.detalle}</div>` : ''}
+              </div>
+            </div>`
+        }).join('')
+
+    // ── HTML PLANTILLA ───────────────────────────────────────
+    const html = `
+      <div style="max-width:680px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+
+        <div style="display:flex;align-items:stretch">
+          <div style="flex:1;padding:20px 24px;display:flex;align-items:center;gap:14px">
+            <div style="width:52px;height:52px;border-radius:10px;background:#FFF0F3;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+              ${logoB64 ? `<img src="${logoB64}" style="max-width:48px;max-height:48px;object-fit:contain">` : ''}
+            </div>
+            <div>
+              <div style="font-size:20px;font-weight:700;color:#1B3A6B;line-height:1.1">INGEMEDIC</div>
+              <div style="font-size:13px;font-weight:700;color:#2EB5D4;letter-spacing:.01em">De Colombia</div>
+            </div>
+          </div>
+          <div style="background:#1B3A6B;padding:20px 26px;flex-shrink:0;min-width:250px">
+            <div style="color:#fff;font-size:13px;font-weight:700;letter-spacing:.02em">HOJA DE VIDA DEL EQUIPO</div>
+            <div style="color:#AFC1DE;font-size:11px;margin-top:3px">Ingemedic de Colombia S.A.S.</div>
+            <div style="color:#7C93BE;font-size:10px;margin-top:10px">Generado: ${fechaHoy}</div>
+          </div>
+        </div>
+
+        <div style="padding:20px 24px;display:flex;gap:20px">
+          <div style="width:150px;flex-shrink:0">
+            <div style="width:150px;height:120px;border-radius:8px;background:#F8FAFC;border:0.5px solid #E2E8F0;display:flex;align-items:center;justify-content:center;margin-bottom:10px;overflow:hidden">
+              ${imagenB64 ? `<img src="${imagenB64}" style="max-width:140px;max-height:110px;object-fit:contain">` : ''}
+            </div>
+            <div style="font-size:15px;font-weight:700;color:#0F172A">${tipo?.nombre || '—'}</div>
+            <div style="display:inline-flex;align-items:center;gap:5px;background:${estadoSty.bg};color:${estadoSty.color};font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;margin-top:6px">
+              <span style="width:5px;height:5px;border-radius:50%;background:${estadoSty.color};display:inline-block"></span>${estadoNombre}
+            </div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+            <div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em">IDENTIFICACIÓN</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 2px">
+              <div><div style="font-size:10px;color:#94A3B8">Código</div><div style="font-size:13px;font-weight:700;color:#0F172A;margin-top:2px">${equipo.codigo || '—'}</div></div>
+              <div><div style="font-size:10px;color:#94A3B8">Serie</div><div style="font-size:13px;color:#0F172A;margin-top:2px">${equipo.atributos?.serie || '—'}</div></div>
+              <div><div style="font-size:10px;color:#94A3B8">Registrado</div><div style="font-size:13px;color:#0F172A;margin-top:2px">${fechaReg}</div></div>
+            </div>
+            <div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em;margin-top:4px">CARACTERÍSTICAS TÉCNICAS</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 2px">
+              ${caracteristicasHTML}
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:0 24px 20px">
+          <div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em;margin-bottom:14px">HISTORIAL — LÍNEA DE TIEMPO</div>
+          ${timelineHTML}
+        </div>
+
+        <div style="background:#F8FAFC;padding:12px 24px;border-top:0.5px solid #EEF2F6;display:flex;justify-content:space-between">
+          <div style="font-size:10px;color:#94A3B8">Ingemedic de Colombia S.A.S. · Valledupar, Cesar</div>
+          <div style="font-size:10px;color:#94A3B8">Generado el ${fechaHoy}</div>
+        </div>
+
+      </div>`
+
+    // ── CAPTURAR CON html2canvas ─────────────────────────────
+    const contenedor = document.createElement('div')
+    contenedor.style.cssText = 'position:absolute;left:-9999px;top:0;width:680px'
+    contenedor.innerHTML     = html
+    document.body.appendChild(contenedor)
+
+    try {
+      const canvas      = await html2canvas(contenedor, { scale: 2, useCORS: true, allowTaint: false, backgroundColor: '#ffffff', logging: false })
+      const pdf         = new jsPDF('p', 'mm', 'a4')
+      const anchoPDF    = 210
+      const pageHeightPx = Math.round(canvas.width * (297 / 210))
+
+      let position = 0, pageNum = 0
+      while (position < canvas.height) {
+        if (pageNum > 0) pdf.addPage()
+        const sliceH = Math.min(pageHeightPx, canvas.height - position)
+        const slice  = document.createElement('canvas')
+        slice.width  = canvas.width
+        slice.height = sliceH
+        slice.getContext('2d').drawImage(canvas, 0, -position)
+        pdf.addImage(slice.toDataURL('image/png'), 'PNG', 0, 0, anchoPDF, (sliceH / canvas.width) * anchoPDF)
+        position += pageHeightPx
+        pageNum++
+      }
+
+      pdf.save(`HojaVida_${equipo.codigo || 'equipo'}.pdf`)
+      showToast('PDF generado')
+    } finally {
+      document.body.removeChild(contenedor)
     }
 
-    doc.save(`HojaVida_${equipo.codigo || 'equipo'}.pdf`)
-    showToast('PDF generado')
   }
 
   function abrirModalTipo() {
