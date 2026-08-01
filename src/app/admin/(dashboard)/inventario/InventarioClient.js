@@ -426,7 +426,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
     // Construir y ordenar eventos (igual que en pantalla)
     const eventosP = []
-    eventosP.push({ tipo: 'registro', fecha: equipo.fecha_creacion ? new Date(equipo.fecha_creacion) : null, titulo: 'Equipo registrado en el sistema', sub: null, activo: false })
     prestamosDrawer.forEach(p => {
       const fE = p.fecha_entrega ? new Date(p.fecha_entrega) : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
       const fD = p.fecha_devolucion ? new Date(p.fecha_devolucion) : null
@@ -1036,15 +1035,6 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   // Construir lista de eventos mezclados y ordenados newest-first
                   const eventos = []
 
-                  // Evento de registro (siempre presente, el más antiguo)
-                  eventos.push({
-                    key:    'registro',
-                    fecha:  drawer.fecha_creacion ? new Date(drawer.fecha_creacion) : null,
-                    titulo: 'Equipo registrado en el sistema',
-                    sub:    null,
-                    dot:    { bg: '#25A9E0', inner: true },
-                  })
-
                   // Eventos de préstamo
                   prestamosDrawer.forEach(p => {
                     const fechaEntrega    = p.fecha_entrega    ? new Date(p.fecha_entrega)    : (p.orden?.fecha_creacion ? new Date(p.orden.fecha_creacion) : null)
@@ -1082,6 +1072,14 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                     if (!b.fecha) return -1
                     return b.fecha - a.fecha
                   })
+
+                  if (eventos.length === 0) {
+                    return (
+                      <div className="text-[12px] text-slate-400 italic py-2">
+                        Sin actividad registrada aún
+                      </div>
+                    )
+                  }
 
                   return (
                     <div className="relative">
