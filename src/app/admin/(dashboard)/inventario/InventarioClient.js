@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriangle, Clock, CheckCircle2, Box, Hash, Tag, Layers, SlidersHorizontal } from 'lucide-react'
+import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriangle, Clock, CheckCircle2, Box, Hash, Tag, Layers, SlidersHorizontal, Loader2 } from 'lucide-react'
 import { IconoEquipo, GaleriaIconos } from '@/components/inventario/IconosEquipo'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -106,6 +106,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   const [formDirty, setFormDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [exportando, setExportando] = useState(false)
+  const [pdfGenerando, setPdfGenerando] = useState(false)
   const [toast, setToast] = useState(null)
   const [formUnidad, setFormUnidad] = useState({ estado_id: '', atributos: {} })
   const [formTipo, setFormTipo] = useState({ icono: '', atributos: {} })
@@ -287,6 +288,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
   // ── GENERAR HOJA DE VIDA PDF ─────────────────────────────
   async function generarHojaVidaPDF(equipo) {
+    setPdfGenerando(true)
     const { default: jsPDF }       = await import('jspdf')
     const { default: html2canvas } = await import('html2canvas')
 
@@ -426,12 +428,13 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       </div>`
 
     const contenedor = document.createElement('div')
-    contenedor.style.cssText = 'position:fixed;top:0;left:0;width:680px;opacity:0;pointer-events:none;z-index:-1'
+    contenedor.style.cssText = 'position:fixed;top:0;left:-680px;width:680px;pointer-events:none'
     contenedor.innerHTML     = html
     document.body.appendChild(contenedor)
 
     try {
-      const canvas      = await html2canvas(contenedor, { scale: 2, useCORS: true, allowTaint: false, backgroundColor: '#ffffff', logging: false })
+      const isMobile    = typeof window !== 'undefined' && window.innerWidth < 768
+      const canvas      = await html2canvas(contenedor, { scale: isMobile ? 1 : 2, useCORS: true, allowTaint: false, backgroundColor: '#ffffff', logging: false })
       const pdf         = new jsPDF('p', 'mm', 'a4')
       const anchoPDF    = 210
       const pageHeightPx = Math.round(canvas.width * (297 / 210))
@@ -460,6 +463,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       showToast('PDF generado')
     } finally {
       document.body.removeChild(contenedor)
+      setPdfGenerando(false)
     }
   }
 
@@ -1097,9 +1101,11 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 className="flex items-center justify-center gap-1.5 px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
                 <Edit3 size={13} /> Editar ficha
               </button>
-              <button onClick={() => generarHojaVidaPDF(drawer)}
-                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#152D54] transition-colors sm:ml-auto">
-                <FileText size={13} /> Hoja de vida PDF
+              <button onClick={() => generarHojaVidaPDF(drawer)} disabled={pdfGenerando}
+                className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#1B3A6B] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#152D54] transition-colors sm:ml-auto disabled:opacity-70 disabled:cursor-not-allowed">
+                {pdfGenerando
+                  ? <><Loader2 size={13} className="animate-spin" /> Generando PDF…</>
+                  : <><FileText size={13} /> Hoja de vida PDF</>}
               </button>
             </div>
           </div>
