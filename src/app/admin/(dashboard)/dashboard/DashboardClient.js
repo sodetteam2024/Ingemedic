@@ -160,24 +160,26 @@ export default function DashboardClient({
         {/* ── BANNER ENTREGA EN CURSO — solo aparece si hay entregas activas, en cualquier tamaño de pantalla ── */}
         <EntregaEnCursoBanner />
 
-        {/* ── FILA 1 (MÓVIL): 3 KPIs esenciales — Disponibles / En préstamo / Mantenimientos ── */}
-        <div className="grid grid-cols-3 gap-2 md:hidden">
-          {[
-            { label: 'Mantenimiento', value: mantenimientosActivos.length, color: '#B45309', icon: Wrench },
-            { label: 'Disponibles', value: disponibles, color: '#0F7B55', icon: CheckCircle2 },
-            { label: 'En préstamo', value: enPrestamo, color: '#0E86A0', icon: ArrowUpRight },
-          ].map(s => {
-            const Icon = s.icon
-            return (
-              <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-2" style={{ background: s.color + '15' }}>
-                  <Icon size={13} style={{ color: s.color }} />
+        {/* ── FILA 1 (MÓVIL): tarjeta consolidada de flota ── */}
+        <div className="md:hidden bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-2.5">
+            <span className="text-[12px] font-semibold text-slate-500">Resumen de Equipos</span>
+            <span className="text-[12px] font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200">
+              {totalEquipos} equipos
+            </span>
+          </div>
+          <div className="flex gap-4 items-center flex-wrap">
+            {Object.entries(estadosEquipo)
+              .filter(([, cantidad]) => cantidad > 0)
+              .map(([nombre, cantidad], i, arr) => (
+                <div key={nombre} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: ESTADO_EQUIPO_STYLES[nombre]?.dot || '#94A3B8' }} />
+                  <span className="text-[15px] font-bold text-slate-800 tabular-nums">{cantidad}</span>
+                  <span className="text-[11px] text-slate-500">{nombre}</span>
+                  {i < arr.length - 1 && <span className="w-px h-4 bg-slate-200 ml-2 flex-shrink-0" />}
                 </div>
-                <div className="text-lg font-extrabold tabular-nums leading-none" style={{ color: s.color }}>{s.value}</div>
-                <div className="text-[10.5px] font-semibold text-slate-500 mt-1 leading-tight">{s.label}</div>
-              </div>
-            )
-          })}
+              ))}
+          </div>
         </div>
 
         {/* ── FILA 1 (DESKTOP): 5 KPIs ── */}
@@ -213,16 +215,30 @@ export default function DashboardClient({
             <div className="text-[14px] font-bold text-[#0F172A]">Top clientes con más equipos</div>
             <div className="text-[11.5px] text-slate-400 mt-0.5 mb-3">Equipos actualmente en préstamo por cliente</div>
             {topClientes.length === 0 ? (
-              <div className="h-[220px] flex items-center justify-center text-slate-300 text-[13px]">Sin datos</div>
+              <div className="h-[160px] flex items-center justify-center text-slate-300 text-[13px]">Sin datos</div>
             ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={topClientes} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
-                  <XAxis type="number" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis type="category" dataKey="nombre" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={110} />
-                  <Tooltip formatter={(v) => [v + ' equipos', 'Cantidad']} />
-                  <Bar dataKey="cantidad" fill="#1B3A6B" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <>
+                <div className="md:hidden">
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={topClientes.slice(0, 4)} layout="vertical" barSize={12} margin={{ top: 2, right: 12, left: 4, bottom: 0 }}>
+                      <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <YAxis type="category" dataKey="nombre" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={100} />
+                      <Tooltip formatter={(v) => [v + ' equipos', 'Cantidad']} />
+                      <Bar dataKey="cantidad" fill="#1B3A6B" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="hidden md:block">
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={topClientes} layout="vertical" barSize={16} margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+                      <XAxis type="number" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <YAxis type="category" dataKey="nombre" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={110} />
+                      <Tooltip formatter={(v) => [v + ' equipos', 'Cantidad']} />
+                      <Bar dataKey="cantidad" fill="#1B3A6B" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
             )}
           </div>
 
@@ -231,20 +247,38 @@ export default function DashboardClient({
             <div className="text-[14px] font-bold text-[#0F172A]">Distribución por estado</div>
             <div className="text-[11.5px] text-slate-400 mt-0.5 mb-3">Estado actual del inventario</div>
             {distribucionEstados.length === 0 ? (
-              <div className="h-[220px] flex items-center justify-center text-slate-300 text-[13px]">Sin datos</div>
+              <div className="h-[150px] flex items-center justify-center text-slate-300 text-[13px]">Sin datos</div>
             ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie data={distribucionEstados} dataKey="cantidad" nameKey="nombre"
-                    innerRadius={55} outerRadius={85} paddingAngle={2}>
-                    {distribucionEstados.map((entry, i) => (
-                      <Cell key={i} fill={COLOR_POR_ESTADO[entry.nombre] || COLORES_DONA[i % COLORES_DONA.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v, n) => [v + ' uds.', n]} />
-                  <Legend layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: 11 }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <>
+                <div className="md:hidden">
+                  <ResponsiveContainer width="100%" height={150}>
+                    <PieChart>
+                      <Pie data={distribucionEstados} dataKey="cantidad" nameKey="nombre"
+                        innerRadius={35} outerRadius={55} paddingAngle={2}>
+                        {distribucionEstados.map((entry, i) => (
+                          <Cell key={i} fill={COLOR_POR_ESTADO[entry.nombre] || COLORES_DONA[i % COLORES_DONA.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v, n) => [v + ' uds.', n]} />
+                      <Legend layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: 10 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="hidden md:block">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={distribucionEstados} dataKey="cantidad" nameKey="nombre"
+                        innerRadius={55} outerRadius={85} paddingAngle={2}>
+                        {distribucionEstados.map((entry, i) => (
+                          <Cell key={i} fill={COLOR_POR_ESTADO[entry.nombre] || COLORES_DONA[i % COLORES_DONA.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v, n) => [v + ' uds.', n]} />
+                      <Legend layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: 11 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
             )}
           </div>
         </div>
