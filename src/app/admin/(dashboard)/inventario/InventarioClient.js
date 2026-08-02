@@ -96,7 +96,9 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   const [catActual, setCatActual] = useState(null)
   const [tipoActual, setTipoActual] = useState(null)
   const [search, setSearch] = useState('')
+  const [buscarUnidad, setBuscarUnidad] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
+  const [filtroDisponibilidad, setFiltroDisponibilidad] = useState('todos')
   const [filtrosCampos, setFiltrosCampos] = useState({})
   const [drawer, setDrawer] = useState(null)
   const [modalNueva, setModalNueva] = useState(false)
@@ -178,6 +180,29 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     return map
   }, [equipos])
 
+  const tiposFiltrados = useMemo(() => {
+    return tiposDeCat.filter(t => {
+      if (search && !nombreTipo(t).toLowerCase().includes(search.toLowerCase())) return false
+      if (filtroDisponibilidad !== 'todos') {
+        const stock = stockPorTipo[t.id] || { disponibles: 0 }
+        if (filtroDisponibilidad === 'con_disponibles' && stock.disponibles === 0) return false
+        if (filtroDisponibilidad === 'sin_disponibles' && stock.disponibles > 0) return false
+      }
+      return true
+    })
+  }, [tiposDeCat, search, filtroDisponibilidad, stockPorTipo])
+
+  const resultadosUnidad = useMemo(() => {
+    if (!buscarUnidad.trim()) return []
+    const q = buscarUnidad.trim().toLowerCase()
+    return equipos.filter(e => {
+      if (!tiposDeCat.some(t => t.id === e.tipo_equipo_id)) return false
+      const codigoMatch = e.codigo?.toLowerCase().includes(q)
+      const atrsMatch   = Object.values(e.atributos || {}).some(v => v?.toString().toLowerCase().includes(q))
+      return codigoMatch || atrsMatch
+    })
+  }, [buscarUnidad, equipos, tiposDeCat])
+
   const baseUnidadesDeTipo = useMemo(() =>
     tipoActual ? equipos.filter(e => e.tipo_equipo_id === tipoActual.id) : [],
     [equipos, tipoActual]
@@ -218,20 +243,23 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   function irACat(cat) {
     setCatActual(categorias.find(c => c.id === cat.id) || cat)
     setSearch('')
+    setBuscarUnidad('')
+    setFiltroDisponibilidad('todos')
     setVista('tipos')
   }
 
   function irATipo(tipo) {
     setTipoActual(tipo)
     setSearch('')
+    setBuscarUnidad('')
     setFiltroEstado('')
     setFiltrosCampos({})
     setVista('unidades')
   }
 
   function volver() {
-    if (vista === 'unidades') { setVista('tipos'); setTipoActual(null) }
-    else if (vista === 'tipos') { setVista('categorias'); setCatActual(null) }
+    if (vista === 'unidades') { setVista('tipos'); setTipoActual(null); setBuscarUnidad('') }
+    else if (vista === 'tipos') { setVista('categorias'); setCatActual(null); setBuscarUnidad('') }
   }
 
   function abrirEditar() {
@@ -713,16 +741,67 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         {vista === 'tipos' && (
           <div>
             {tiposDeCat.length > 0 && (
-              <div className="flex items-center gap-3 mb-4">
-                <div className="relative flex-1 md:max-w-[280px]">
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                {/* Buscador de tipo (marca) */}
+                <div className="relative flex-1 min-w-[160px] md:max-w-[220px]">
                   <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     value={search} onChange={e => setSearch(e.target.value)}
                     placeholder="Buscar tipo..."
-                    className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white" />
+                    className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white h-[38px]" />
                 </div>
-                <div className="text-[12px] text-slate-400 flex-shrink-0">
-                  {tiposDeCat.filter(t => !search || nombreTipo(t).toLowerCase().includes(search.toLowerCase())).length} tipo{tiposDeCat.length !== 1 ? 's' : ''}
+                {/* Buscador de unidad (código / serie) */}
+                <div className="relative flex-1 min-w-[180px] md:max-w-[260px]">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={buscarUnidad} onChange={e => setBuscarUnidad(e.target.value)}
+                    onBlur={() => setTimeout(() => setBuscarUnidad(''), 200)}
+                    placeholder="Buscar por código o serie..."
+                    className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white h-[38px]" />
+                  {resultadosUnidad.length > 0 && (
+                    <div className="absolute z-20 left-0 top-full mt-1 w-full min-w-[260px] bg-white border border-slate-200 rounded-[9px] shadow-lg overflow-hidden">
+                      {resultadosUnidad.slice(0, 8).map(eq => {
+                        const tipo = tiposDeCat.find(t => t.id === eq.tipo_equipo_id)
+                        const estSty = ESTADO_STYLES[eq.estado?.nombre] || {}
+                        return (
+                          <div key={eq.id}
+                            onMouseDown={e => { e.preventDefault(); irATipo(tipo); setDrawer(eq); setBuscarUnidad('') }}
+                            className="px-3 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0 flex items-center gap-2.5">
+                            <div className="w-6 h-6 rounded-md bg-[#D81B43]/8 flex items-center justify-center flex-shrink-0">
+                              <Package size={12} className="text-[#D81B43]" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12.5px] font-bold text-slate-800 truncate">{nombreTipo(tipo)}</div>
+                              <div className="text-[11px] text-slate-400">{eq.codigo || '—'}</div>
+                            </div>
+                            <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                              style={{ background: estSty.bg, color: estSty.color }}>
+                              {eq.estado?.nombre || '—'}
+                            </span>
+                          </div>
+                        )
+                      })}
+                      {resultadosUnidad.length > 8 && (
+                        <div className="px-3 py-2 text-[11px] text-slate-400 bg-slate-50 text-center">
+                          +{resultadosUnidad.length - 8} más — escribe más caracteres para afinar
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {buscarUnidad.trim() && resultadosUnidad.length === 0 && (
+                    <div className="absolute z-20 left-0 top-full mt-1 w-full min-w-[220px] bg-white border border-slate-200 rounded-[9px] shadow-lg px-3 py-3 text-[12px] text-slate-400">
+                      Sin resultados en esta categoría
+                    </div>
+                  )}
+                </div>
+                <select value={filtroDisponibilidad} onChange={e => setFiltroDisponibilidad(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white h-[38px] text-slate-600">
+                  <option value="todos">Todos</option>
+                  <option value="con_disponibles">Con disponibles</option>
+                  <option value="sin_disponibles">Sin disponibles</option>
+                </select>
+                <div className="text-[12px] text-slate-400 flex-shrink-0 ml-auto">
+                  {tiposFiltrados.length} tipo{tiposFiltrados.length !== 1 ? 's' : ''}
                 </div>
               </div>
             )}
@@ -734,9 +813,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              {tiposDeCat
-                .filter(t => !search || nombreTipo(t).toLowerCase().includes(search.toLowerCase()))
-                .map(tipo => {
+              {tiposFiltrados.map(tipo => {
                   const stock = stockPorTipo[tipo.id] || { total: 0, disponibles: 0 }
                   const campos = camposTipo.filter(c => c.clave !== 'nombre').slice(0, 2)
                   return (

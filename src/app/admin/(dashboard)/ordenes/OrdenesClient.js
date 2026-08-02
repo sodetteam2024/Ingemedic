@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import {
   Plus, X, Search, FileText, CheckCircle2, Package,
-  AlertTriangle, Calendar, Clock, User, Edit3, Truck, ChevronRight
+  AlertTriangle, Calendar, Clock, User, Edit3, Truck, ChevronRight,
+  Building, Box, Layers
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
@@ -160,9 +161,12 @@ export default function OrdenesClient({
     return () => { supabase.removeChannel(canal) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const [search, setSearch]             = useState('')
-  const [filtroEstado, setFiltroEstado] = useState('')
-  const [tabPrincipal, setTabPrincipal] = useState('en_curso')
+  const [search, setSearch]                           = useState('')
+  const [tabPrincipal, setTabPrincipal]               = useState('en_curso')
+  const [filtroEstadoDetalle, setFiltroEstadoDetalle] = useState('')
+  const [filtroCliente, setFiltroCliente]             = useState('')
+  const [filtroMarca, setFiltroMarca]                 = useState('')
+  const [filtroCategoria, setFiltroCategoria]         = useState('')
   const [drawer, setDrawer]             = useState(null)
   const [editRepartidor, setEditRepartidor] = useState(false)
   const [nuevoRepartidor, setNuevoRepartidor] = useState('')
@@ -209,6 +213,7 @@ export default function OrdenesClient({
   }), [ordenes])
 
   const bucketCounts = useMemo(() => ({
+    todos:    stats.total,
     en_curso: stats.borrador + stats.programada + stats.enReparto + stats.entregada,
     historial: stats.finalizada,
   }), [stats])
@@ -225,16 +230,52 @@ export default function OrdenesClient({
       .some(v => v?.toLowerCase().includes(q)))
   }, [pacientesLocal, pacienteFiltro])
 
-  const ordenesFiltradas = useMemo(() => {
+  // Reset filtros detalle al cambiar de pestaña
+  useEffect(() => {
+    let cancelled = false
+    const t = setTimeout(() => {
+      if (!cancelled) { setFiltroEstadoDetalle(''); setFiltroCliente(''); setFiltroMarca(''); setFiltroCategoria('') }
+    }, 0)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [tabPrincipal])
+
+  // Órdenes de la pestaña activa (para calcular opciones de selects)
+  const ordenesPorTab = useMemo(() => {
+    if (tabPrincipal === 'todos') return ordenes
     const bucket = BUCKETS[tabPrincipal] || []
+    return ordenes.filter(o => bucket.includes(o.estado?.nombre))
+  }, [ordenes, tabPrincipal])
+
+  const opcionesEstado     = useMemo(() => [...new Set(ordenesPorTab.map(o => o.estado?.nombre).filter(Boolean))].sort(), [ordenesPorTab])
+  const opcionesCliente    = useMemo(() => [...new Set(ordenesPorTab.map(o => o.cliente?.nombre).filter(Boolean))].sort(), [ordenesPorTab])
+  const opcionesMarca      = useMemo(() => [...new Set(ordenesPorTab.flatMap(o => (o.equipos || []).map(oe => oe.equipo?.tipo_equipo?.nombre).filter(Boolean)))].sort(), [ordenesPorTab])
+  const opcionesCategoria  = useMemo(() => [...new Set(ordenesPorTab.flatMap(o => (o.equipos || []).map(oe => oe.equipo?.tipo_equipo?.categoria?.nombre).filter(Boolean)))].sort(), [ordenesPorTab])
+
+  const ordenesFiltradas = useMemo(() => {
     return ordenes.filter(o => {
-      const mq = !search || [o.codigo, o.cliente?.nombre, o.repartidor?.nombre]
-        .some(v => v?.toLowerCase().includes(search.toLowerCase()))
-      const mb = bucket.length === 0 || bucket.includes(o.estado?.nombre)
-      const me = !filtroEstado || o.estado?.nombre === filtroEstado
-      return mq && mb && me
+      if (tabPrincipal !== 'todos') {
+        const bucket = BUCKETS[tabPrincipal] || []
+        if (!bucket.includes(o.estado?.nombre)) return false
+      }
+      if (search) {
+        const q = search.toLowerCase()
+        const pasa = [o.codigo, o.cliente?.nombre, o.paciente?.nombre, o.repartidor?.nombre]
+          .some(v => v?.toLowerCase().includes(q))
+        if (!pasa) return false
+      }
+      if (filtroEstadoDetalle && o.estado?.nombre !== filtroEstadoDetalle) return false
+      if (filtroCliente      && o.cliente?.nombre !== filtroCliente)        return false
+      if (filtroMarca) {
+        const tiene = (o.equipos || []).some(oe => oe.equipo?.tipo_equipo?.nombre === filtroMarca)
+        if (!tiene) return false
+      }
+      if (filtroCategoria) {
+        const tiene = (o.equipos || []).some(oe => oe.equipo?.tipo_equipo?.categoria?.nombre === filtroCategoria)
+        if (!tiene) return false
+      }
+      return true
     })
-  }, [ordenes, search, filtroEstado, tabPrincipal])
+  }, [ordenes, search, tabPrincipal, filtroEstadoDetalle, filtroCliente, filtroMarca, filtroCategoria])
 
   // ── ABRIR DRAWER ────────────────────────────────────────
   function abrirDrawer(orden) {
@@ -491,15 +532,21 @@ export default function OrdenesClient({
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="p-3 md:p-6 pb-3 md:pb-4 flex-shrink-0">
           {/* Stats — solo desktop */}
-          <div className="hidden md:grid md:grid-cols-4 gap-4 mb-5">
+          <div className="hidden md:grid md:grid-cols-3 gap-4 mb-5">
             {[
-              { label: 'Total préstamos', value: stats.total,            color: '#1E293B' },
-              { label: 'En curso',        value: bucketCounts.en_curso,  color: '#1D4ED8' },
-              { label: 'Finalizados',     value: bucketCounts.historial, color: '#0F7B55' },
+              { label: 'Total préstamos', value: stats.total,            color: '#1E293B', iconBg: '#F1F5F9', icon: <Box size={16} color="#64748B" /> },
+              { label: 'En curso',        value: bucketCounts.en_curso,  color: '#1D4ED8', iconBg: '#EFF6FF', icon: <Clock size={16} color="#1D4ED8" /> },
+              { label: 'Finalizados',     value: bucketCounts.historial, color: '#0F7B55', iconBg: '#ECFDF5', icon: <CheckCircle2 size={16} color="#0F7B55" /> },
             ].map(s => (
-              <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-                <div className="text-2xl font-extrabold tabular-nums" style={{ color: s.color }}>{s.value}</div>
-                <div className="text-[11.5px] text-slate-400 mt-1">{s.label}</div>
+              <div key={s.label} className="bg-white rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 p-4"
+                style={{ borderLeft: `3px solid ${s.color}` }}>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: s.iconBg }}>
+                  {s.icon}
+                </div>
+                <div>
+                  <div className="text-2xl font-extrabold tabular-nums leading-none" style={{ color: s.color }}>{s.value}</div>
+                  <div className="text-[11.5px] text-slate-400 mt-1">{s.label}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -515,8 +562,9 @@ export default function OrdenesClient({
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 overflow-x-auto flex-1">
                 {[
-                  { key: 'en_curso',  label: 'En curso'  },
-                  { key: 'historial', label: 'Historial' },
+                  { key: 'todos',    label: 'Todos'    },
+                  { key: 'en_curso', label: 'En curso' },
+                  { key: 'historial',label: 'Historial'},
                 ].map(t => (
                   <button key={t.key} onClick={() => setTabPrincipal(t.key)}
                     className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-all whitespace-nowrap ${
@@ -533,6 +581,30 @@ export default function OrdenesClient({
                 {ordenesFiltradas.length} préstamo{ordenesFiltradas.length !== 1 ? 's' : ''}
               </div>
             </div>
+
+            {/* Panel de filtros */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+              <select value={filtroEstadoDetalle} onChange={e => setFiltroEstadoDetalle(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[12.5px] text-slate-700 outline-none focus:border-[#D81B43] bg-white h-[38px]">
+                <option value="">Estado</option>
+                {opcionesEstado.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+              <select value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[12.5px] text-slate-700 outline-none focus:border-[#D81B43] bg-white h-[38px]">
+                <option value="">Cliente</option>
+                {opcionesCliente.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={filtroMarca} onChange={e => setFiltroMarca(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[12.5px] text-slate-700 outline-none focus:border-[#D81B43] bg-white h-[38px]">
+                <option value="">Tipo de equipo</option>
+                {opcionesMarca.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select value={filtroCategoria} onChange={e => setFiltroCategoria(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-[9px] text-[12.5px] text-slate-700 outline-none focus:border-[#D81B43] bg-white h-[38px]">
+                <option value="">Categoría</option>
+                {opcionesCategoria.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -543,13 +615,15 @@ export default function OrdenesClient({
               <div className="text-center py-16 text-slate-400">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
                 <div className="font-semibold mb-1">
-                  {search ? 'Sin resultados' : (
+                  {search || filtroEstadoDetalle || filtroCliente || filtroMarca ? 'Sin resultados' : (
+                    tabPrincipal === 'todos'    ? 'Sin préstamos registrados' :
                     tabPrincipal === 'en_curso' ? 'Sin préstamos en curso' :
                     'Sin préstamos en historial'
                   )}
                 </div>
                 <div className="text-[13px]">
-                  {search ? 'Intenta con otros filtros' :
+                  {search || filtroEstadoDetalle || filtroCliente || filtroMarca ? 'Intenta con otros filtros' :
+                   tabPrincipal === 'todos'    ? 'Usa "Nuevo préstamo" para registrar uno' :
                    tabPrincipal === 'en_curso' ? 'Usa "Nuevo préstamo" para registrar uno' :
                    'Los préstamos finalizados aparecerán aquí'}
                 </div>
@@ -597,7 +671,7 @@ export default function OrdenesClient({
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b-2 border-slate-100">
-                      {['Cliente', 'Paciente', 'Equipo', 'Estado', 'Repartidor', 'Fecha entrega', 'Docs', ''].map(h => (
+                      {['Cliente', 'Paciente', 'Equipo', 'Estado', 'Dirección', 'Fecha entrega', 'Docs', ''].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -624,22 +698,30 @@ export default function OrdenesClient({
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-[12.5px] text-slate-600">
+                          <td className="px-4 py-3">
                             {o.paciente?.nombre
-                              ? <span className="truncate max-w-[120px] block">{o.paciente.nombre}</span>
-                              : <span className="text-slate-300">—</span>}
+                              ? <span className="text-[12.5px] font-semibold text-slate-700 leading-snug">{o.paciente.nombre}</span>
+                              : <span className="text-slate-300 text-[12.5px]">—</span>}
                           </td>
-                          <td className="px-4 py-3 text-[12.5px] text-slate-600">
-                            {nEquipos === 0 ? <span className="text-slate-300">—</span> :
-                             nEquipos === 1 ? <span className="truncate max-w-[140px] block">{nombreEquipo(o.equipos[0]?.equipo)}</span> :
-                             `${nEquipos} equipos`}
+                          <td className="px-4 py-3">
+                            {nEquipos === 0 ? <span className="text-slate-300 text-[12.5px]">—</span> :
+                             nEquipos === 1 ? (
+                               <div>
+                                 <div className="text-[12.5px] font-semibold text-slate-700 leading-tight">{nombreEquipo(o.equipos[0]?.equipo)}</div>
+                                 <div className="text-[11px] text-slate-400 mt-0.5">
+                                   {[o.equipos[0]?.equipo?.tipo_equipo?.nombre, o.equipos[0]?.equipo?.codigo].filter(Boolean).join(' · ')}
+                                 </div>
+                               </div>
+                             ) : (
+                               <span className="text-[12.5px] text-slate-500">{nEquipos} equipos</span>
+                             )}
                           </td>
                           <td className="px-4 py-3">
                             <EstadoBadge orden={o} retrasada={retrasada} />
                           </td>
                           <td className="px-4 py-3 text-[12.5px]">
-                            {o.repartidor?.nombre
-                              ? <span className="text-slate-500">{o.repartidor.nombre}</span>
+                            {o.paciente?.direccion
+                              ? <span className="text-slate-500 leading-snug">{o.paciente.direccion}</span>
                               : <span className="text-slate-300">—</span>}
                           </td>
                           <td className="px-4 py-3">
@@ -669,8 +751,8 @@ export default function OrdenesClient({
       {/* ── DRAWER DETALLE OS ── */}
       {drawer && (
         <>
-          <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[500px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed inset-0 bg-black/30 z-[45] backdrop-blur-sm" onClick={() => setDrawer(null)} />
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[500px] bg-white z-[50] flex flex-col shadow-2xl">
 
             {/* Header — blanco como Clientes */}
             <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">

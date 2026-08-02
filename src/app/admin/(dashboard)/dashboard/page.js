@@ -19,6 +19,7 @@ export default async function DashboardPage() {
     { data: vigenciasProximas },
     { data: ordenesRetrasadas },
     { data: actividadReciente },
+    { data: equiposConCliente },
   ] = await Promise.all([
     supabase.from('equipos').select('estado:estados_equipo(id, nombre)'),
 
@@ -79,6 +80,10 @@ export default async function DashboardPage() {
     `)
     .order('fecha_creacion', { ascending: false })
     .limit(5),
+
+    supabase.from('equipos')
+      .select('cliente_actual:clientes(id, nombre)')
+      .not('cliente_actual_id', 'is', null),
   ])
 
   const estadosEquipo = {}
@@ -86,6 +91,17 @@ export default async function DashboardPage() {
     const n = e.estado?.nombre || 'Sin estado'
     estadosEquipo[n] = (estadosEquipo[n] || 0) + 1
   })
+
+  const topClientes = Object.values(
+    (equiposConCliente || []).reduce((acc, e) => {
+      const id     = e.cliente_actual?.id
+      const nombre = e.cliente_actual?.nombre
+      if (!id) return acc
+      acc[id] = acc[id] || { nombre, cantidad: 0 }
+      acc[id].cantidad++
+      return acc
+    }, {})
+  ).sort((a, b) => b.cantidad - a.cantidad).slice(0, 8)
 
   return (
     <DashboardClient
@@ -97,6 +113,7 @@ export default async function DashboardPage() {
       vigenciasProximas={vigenciasProximas || []}
       ordenesRetrasadas={ordenesRetrasadas || []}
       actividadReciente={actividadReciente || []}
+      topClientes={topClientes}
     />
   )
 }

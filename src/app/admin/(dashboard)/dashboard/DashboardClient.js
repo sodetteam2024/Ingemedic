@@ -7,7 +7,10 @@ import {
   Clock, CheckCircle2, TrendingUp, Calendar, ChevronRight,
   ArrowUpRight, Users, X
 } from 'lucide-react'
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import EntregaEnCursoBanner from '@/components/dashboard/EntregaEnCursoBanner'
+
+const COLORES_DONA = ['#1B3A6B', '#D81B43', '#2EB5D4', '#0F7B55', '#B45309', '#6D28D9', '#0E86A0', '#94A3B8']
 
 const ESTADO_EQUIPO_STYLES = {
   'Disponible': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
@@ -16,6 +19,8 @@ const ESTADO_EQUIPO_STYLES = {
   'Con novedad': { bg: '#FEF2F2', color: '#D81B43', dot: '#D81B43' },
   'Baja': { bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' },
 }
+
+const COLOR_POR_ESTADO = Object.fromEntries(Object.entries(ESTADO_EQUIPO_STYLES).map(([k, v]) => [k, v.dot]))
 
 const ESTADO_OS_STYLES = {
   'Borrador': { bg: '#F1F5F9', color: '#64748B' },
@@ -49,7 +54,8 @@ export default function DashboardClient({
   totalEquipos, estadosEquipo,
   ordenesActivas, mantenimientosActivos,
   entregasHoy, vigenciasProximas,
-  ordenesRetrasadas, actividadReciente
+  ordenesRetrasadas, actividadReciente,
+  topClientes = []
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -84,6 +90,10 @@ export default function DashboardClient({
   const enMant = estadosEquipo['En mantenimiento'] || 0
   const conNovedad = estadosEquipo['Con novedad'] || 0
   const baja = estadosEquipo['Baja'] || 0
+
+  const distribucionEstados = Object.entries(estadosEquipo)
+    .map(([nombre, cantidad]) => ({ nombre, cantidad }))
+    .sort((a, b) => b.cantidad - a.cantidad)
 
   const entregasPendientes = entregasHoy.filter(e => e.estado?.nombre !== 'Completada').length
   const entregasCompletadas = entregasHoy.filter(e => e.estado?.nombre === 'Completada').length
@@ -170,14 +180,13 @@ export default function DashboardClient({
           })}
         </div>
 
-        {/* ── FILA 1 (DESKTOP): 6 KPIs completos ── */}
-        <div className="hidden md:grid md:grid-cols-6 gap-3">
+        {/* ── FILA 1 (DESKTOP): 5 KPIs ── */}
+        <div className="hidden md:grid md:grid-cols-5 gap-3">
           {[
             { label: 'Total equipos', value: totalEquipos, color: '#1E293B', icon: Package, sub: 'en inventario' },
             { label: 'Disponibles', value: disponibles, color: '#0F7B55', icon: CheckCircle2, sub: 'listos para préstamo' },
             { label: 'En préstamo', value: enPrestamo, color: '#0E86A0', icon: ArrowUpRight, sub: 'fuera del almacén' },
             { label: 'Mantenimiento', value: enMant, color: '#B45309', icon: Wrench, sub: 'en servicio técnico' },
-            { label: 'Con novedad', value: conNovedad, color: '#D81B43', icon: AlertTriangle, sub: 'requieren atención' },
             { label: 'Baja', value: baja, color: '#64748B', icon: Package, sub: 'fuera de servicio' },
           ].map(s => {
             const Icon = s.icon
@@ -194,6 +203,50 @@ export default function DashboardClient({
               </div>
             )
           })}
+        </div>
+
+        {/* ── FILA 2: Gráficos ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          {/* Top clientes con más equipos */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="text-[14px] font-bold text-[#0F172A]">Top clientes con más equipos</div>
+            <div className="text-[11.5px] text-slate-400 mt-0.5 mb-3">Equipos actualmente en préstamo por cliente</div>
+            {topClientes.length === 0 ? (
+              <div className="h-[220px] flex items-center justify-center text-slate-300 text-[13px]">Sin datos</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={topClientes} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+                  <XAxis type="number" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="nombre" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={110} />
+                  <Tooltip formatter={(v) => [v + ' equipos', 'Cantidad']} />
+                  <Bar dataKey="cantidad" fill="#1B3A6B" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Distribución por estado de inventario */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="text-[14px] font-bold text-[#0F172A]">Distribución por estado</div>
+            <div className="text-[11.5px] text-slate-400 mt-0.5 mb-3">Estado actual del inventario</div>
+            {distribucionEstados.length === 0 ? (
+              <div className="h-[220px] flex items-center justify-center text-slate-300 text-[13px]">Sin datos</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={distribucionEstados} dataKey="cantidad" nameKey="nombre"
+                    innerRadius={55} outerRadius={85} paddingAngle={2}>
+                    {distribucionEstados.map((entry, i) => (
+                      <Cell key={i} fill={COLOR_POR_ESTADO[entry.nombre] || COLORES_DONA[i % COLORES_DONA.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v, n) => [v + ' uds.', n]} />
+                  <Legend layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
 
         {/* ── ENTREGAS HOY — ahora primero, es lo más urgente del día a día ── */}

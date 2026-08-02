@@ -21,7 +21,7 @@ export default async function OrdenesPage() {
     supabase.from('ordenes_servicio').select(`
       *,
       cliente:clientes(id, nombre, tipo_persona, nit_cc),
-      paciente:pacientes(id, nombre, cedula),
+      paciente:pacientes(id, nombre, cedula, direccion),
       estado:estados_orden(id, nombre),
       repartidor:usuarios!ordenes_servicio_repartidor_id_fkey(id, nombre),
       equipos:orden_equipos(

@@ -6,9 +6,12 @@ import { registrarBitacora } from '@/lib/bitacora'
 import {
   Plus, X, Edit3, Search, Building2, User,
   Phone, Mail, MapPin, FileText, AlertTriangle, ChevronRight,
-  Package, Truck, Clock, ArrowDownLeft, ArrowUpRight, Download, UserPlus
+  Package, Truck, Clock, ArrowDownLeft, ArrowUpRight, Download, UserPlus, Loader2
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
 
 const inputCls = 'w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] text-slate-800 outline-none focus:border-[#D81B43] bg-white transition-colors placeholder:text-slate-400'
 const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500 mb-1.5'
@@ -69,6 +72,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   const [municipiosFiltrados, setMunicipiosFiltrados] = useState([])
   const [historial, setHistorial] = useState({ loading: false, ordenes: [], entregas: [] })
   const [tabHoja, setTabHoja] = useState('prestamo') // 'prestamo' | 'ordenes' | 'linea'
+  const [pdfGenerando, setPdfGenerando] = useState(false)
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
@@ -179,47 +183,144 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
     devolucion: { icon: <ArrowDownLeft size={13} />, color: '#B45309', bg: '#FEF3E2' },
   }
 
-  // ── EXPORTAR HOJA DE VIDA A CSV ──
-  function exportarHojaDeVida() {
-    const filas = []
-    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+  // ── EXPORTAR HOJA DE VIDA A PDF ──
+  async function exportarHojaDeVida() {
+    setPdfGenerando(true)
+    const contenedor = document.createElement('div')
+    contenedor.style.cssText = 'position:fixed;top:0;left:-680px;width:680px;pointer-events:none'
+    document.body.appendChild(contenedor)
+    try {
+      const { default: jsPDF }       = await import('jspdf')
+      const { default: html2canvas } = await import('html2canvas')
 
-    filas.push(['HOJA DE VIDA DEL CLIENTE'])
-    filas.push(['Nombre', drawer.nombre])
-    filas.push(['Tipo persona', drawer.tipo_persona])
-    filas.push(['NIT/CC', drawer.nit_cc])
-    filas.push(['Teléfono', drawer.telefono])
-    filas.push(['Email', drawer.email])
-    filas.push(['Dirección', drawer.direccion])
-    filas.push(['Ubicación', drawer.municipio ? `${drawer.municipio.nombre}, ${drawer.departamento?.nombre}` : ''])
-    filas.push(['Cliente desde', drawer.fecha_creacion ? new Date(drawer.fecha_creacion).toLocaleDateString('es-CO') : ''])
-    filas.push([])
+      async function toB64(url) {
+        const res  = await fetch(url)
+        const blob = await res.blob()
+        return new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+      }
+      let logoB64 = ''
+      try { logoB64 = await toB64(LOGO_URL) } catch (_) { /* sin logo */ }
 
-    filas.push(['EQUIPOS ACTUALMENTE EN PRÉSTAMO'])
-    filas.push(['Equipo', 'Código', 'Orden', 'Desde'])
-    equiposEnPrestamo.forEach(oe => filas.push([
-      oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || '',
-      oe.equipo?.codigo || '', oe.orden?.codigo || '',
-      oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '',
-    ]))
-    filas.push([])
+      const fechaHoy   = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+      const fechaDesde = drawer.fecha_creacion
+        ? new Date(drawer.fecha_creacion).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '—'
+      const ubicacion  = drawer.municipio
+        ? drawer.municipio.nombre + ', ' + (drawer.departamento?.nombre || '')
+        : '—'
+      const tipoColor  = drawer.tipo_persona === 'Jurídica'
+        ? { bg: '#E8F7FB', color: '#0E86A0' }
+        : { bg: '#F1F5F9', color: '#475569' }
+      const inicial    = (drawer.nombre || '?').charAt(0).toUpperCase()
 
-    filas.push(['LÍNEA DE TIEMPO'])
-    filas.push(['Fecha', 'Evento', 'Detalle'])
-    lineaTiempo.forEach(ev => filas.push([
-      new Date(ev.fecha).toLocaleString('es-CO'), ev.label, ev.sub || '',
-    ]))
+      const infoRows = [
+        ['NIT / CC', drawer.nit_cc ? (drawer.nit_cc + (drawer.digito_verificacion ? '-' + drawer.digito_verificacion : '')) : '—'],
+        ['Teléfono', drawer.telefono || '—'],
+        ['Email', drawer.email || '—'],
+        ['Dirección', drawer.direccion || '—'],
+        ['Ubicación', ubicacion],
+        ['Cliente desde', fechaDesde],
+      ]
 
-    const csv = filas.map(fila => fila.map(esc).join(',')).join('\n')
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `HojaDeVida_${drawer.nombre?.replace(/\s+/g, '_')}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+      const identificacionHTML = infoRows.map(([k, v]) =>
+        '<div><div style="font-size:10px;color:#94A3B8">' + k + '</div>' +
+        '<div style="font-size:12.5px;color:#0F172A;margin-top:2px">' + v + '</div></div>'
+      ).join('')
+
+      const thStyle = 'text-align:left;padding:5px 8px;font-size:9.5px;color:#94A3B8;font-weight:600'
+      const prestamosHTML = equiposEnPrestamo.length === 0
+        ? '<div style="font-size:12px;color:#94A3B8;padding:8px 0">Sin equipos en préstamo activos</div>'
+        : '<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11.5px"><tr style="background:#F8FAFC">' +
+          ['EQUIPO', 'CÓDIGO', 'ORDEN', 'DESDE'].map(h => '<th style="' + thStyle + '">' + h + '</th>').join('') + '</tr>' +
+          equiposEnPrestamo.map(oe =>
+            '<tr style="border-top:0.5px solid #F1F5F9">' +
+            '<td style="padding:6px 8px;color:#0F172A">' + (oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || '—') + '</td>' +
+            '<td style="padding:6px 8px;font-weight:600;color:#0F172A">' + (oe.equipo?.codigo || '—') + '</td>' +
+            '<td style="padding:6px 8px;color:#64748B">' + (oe.orden?.codigo || '—') + '</td>' +
+            '<td style="padding:6px 8px;color:#64748B">' + (oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '—') + '</td></tr>'
+          ).join('') + '</table>'
+
+      const ordenesHTML = historial.ordenes.length === 0
+        ? '<div style="font-size:12px;color:#94A3B8;padding:8px 0">Sin órdenes registradas</div>'
+        : '<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11.5px"><tr style="background:#F8FAFC">' +
+          ['CÓDIGO', 'TIPO', 'ESTADO', 'FECHA', 'EQUIPOS'].map(h => '<th style="' + thStyle + '">' + h + '</th>').join('') + '</tr>' +
+          historial.ordenes.map(o =>
+            '<tr style="border-top:0.5px solid #F1F5F9">' +
+            '<td style="padding:6px 8px;font-weight:600;color:#0F172A">' + (o.codigo || '—') + '</td>' +
+            '<td style="padding:6px 8px;color:#64748B">' + (o.tipo?.nombre || '—') + '</td>' +
+            '<td style="padding:6px 8px;color:#64748B">' + (o.estado?.nombre || '—') + '</td>' +
+            '<td style="padding:6px 8px;color:#64748B">' + (o.fecha_creacion ? new Date(o.fecha_creacion).toLocaleDateString('es-CO') : '—') + '</td>' +
+            '<td style="padding:6px 8px;color:#64748B">' + (o.equipos || []).length + '</td></tr>'
+          ).join('') + '</table>'
+
+      const DOT_COLORS = { cliente: '#64748B', orden: '#1B3A6B', entrega: '#0F7B55', devolucion: '#B45309' }
+      const timelineHTML = lineaTiempo.length === 0
+        ? '<div style="font-size:12px;color:#94A3B8;padding:8px 0">Sin actividad registrada</div>'
+        : lineaTiempo.map((ev, idx) => {
+            const dot    = DOT_COLORS[ev.tipo] || '#64748B'
+            const isLast = idx === lineaTiempo.length - 1
+            const fecha  = new Date(ev.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+            return '<div style="display:flex;gap:14px;padding-bottom:' + (isLast ? '0' : '14px') + ';margin-bottom:' + (isLast ? '0' : '14px') + ';border-bottom:' + (isLast ? 'none' : '0.5px solid #F1F5F9') + '">' +
+              '<div style="width:1.5px;background:#E2E8F0;position:relative;flex-shrink:0">' +
+              '<div style="width:10px;height:10px;border-radius:50%;background:' + dot + ';border:2px solid #fff;position:absolute;left:50%;top:3px;transform:translateX(-50%)"></div></div>' +
+              '<div style="flex:1"><div style="font-size:12.5px;font-weight:600;color:#0F172A">' + ev.label + '</div>' +
+              '<div style="font-size:11px;color:#64748B;margin-top:3px">' + fecha + (ev.sub ? ' · ' + ev.sub : '') + '</div></div></div>'
+          }).join('')
+
+      const logoHtml = logoB64 ? '<img src="' + logoB64 + '" style="height:52px;width:auto;object-fit:contain">' : ''
+      contenedor.innerHTML =
+        '<div style="max-width:680px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">' +
+        '<div style="display:flex;align-items:stretch">' +
+        '<div style="flex:1;padding:20px 24px;display:flex;align-items:center">' + logoHtml + '</div>' +
+        '<div style="background:#1B3A6B;padding:20px 26px;flex-shrink:0;min-width:250px">' +
+        '<div style="color:#fff;font-size:13px;font-weight:700;letter-spacing:.02em">HOJA DE VIDA DEL CLIENTE</div>' +
+        '<div style="color:#AFC1DE;font-size:11px;margin-top:3px">Ingemedic de Colombia S.A.S.</div>' +
+        '<div style="color:#7C93BE;font-size:10px;margin-top:10px">Generado: ' + fechaHoy + '</div></div></div>' +
+        '<div style="padding:20px 24px;display:flex;gap:20px">' +
+        '<div style="width:130px;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-start">' +
+        '<div style="width:64px;height:64px;border-radius:50%;background:' + tipoColor.bg + ';color:' + tipoColor.color + ';display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700">' + inicial + '</div>' +
+        '<div style="font-size:14px;font-weight:700;color:#0F172A;margin-top:10px;line-height:1.3">' + drawer.nombre + '</div>' +
+        '<div style="margin-top:6px"><span style="display:inline-flex;align-items:center;background:' + tipoColor.bg + ';color:' + tipoColor.color + ';font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px">Persona ' + drawer.tipo_persona + '</span></div></div>' +
+        '<div style="flex:1;display:flex;flex-direction:column;gap:10px">' +
+        '<div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em">INFORMACIÓN DEL CLIENTE</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 2px">' + identificacionHTML + '</div></div></div>' +
+        '<div style="padding:0 24px 18px"><div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em;margin-bottom:4px">EQUIPOS EN PRÉSTAMO ACTIVO</div>' + prestamosHTML + '</div>' +
+        '<div style="padding:0 24px 18px"><div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em;margin-bottom:4px">HISTORIAL DE ÓRDENES</div>' + ordenesHTML + '</div>' +
+        '<div style="padding:0 24px 24px"><div style="background:#F1F5F9;padding:6px 10px;font-size:10.5px;font-weight:700;color:#334155;letter-spacing:.04em;margin-bottom:14px">LÍNEA DE TIEMPO</div>' + timelineHTML + '</div></div>'
+
+      const isMobile     = typeof window !== 'undefined' && window.innerWidth < 768
+      const canvas       = await html2canvas(contenedor, { scale: isMobile ? 1 : 2, useCORS: true, allowTaint: false, backgroundColor: '#ffffff', logging: false })
+      const pdf          = new jsPDF('p', 'mm', 'a4')
+      const anchoPDF     = 210
+      const pageHeightPx = Math.round(canvas.width * (297 / 210))
+      const totalPages   = Math.ceil(canvas.height / pageHeightPx)
+
+      let position = 0, pageNum = 0
+      while (position < canvas.height) {
+        if (pageNum > 0) pdf.addPage()
+        const sliceH = Math.min(pageHeightPx, canvas.height - position)
+        const slice  = document.createElement('canvas')
+        slice.width  = canvas.width
+        slice.height = sliceH
+        slice.getContext('2d').drawImage(canvas, 0, -position)
+        pdf.addImage(slice.toDataURL('image/png'), 'PNG', 0, 0, anchoPDF, (sliceH / canvas.width) * anchoPDF)
+        pdf.setDrawColor(238, 242, 246)
+        pdf.line(0, 282, 210, 282)
+        pdf.setFontSize(8)
+        pdf.setTextColor(148, 163, 184)
+        pdf.text('Ingemedic de Colombia S.A.S. · Valledupar, Cesar', 12, 288)
+        pdf.text('Página ' + (pageNum + 1) + ' de ' + totalPages, 198, 288, { align: 'right' })
+        position += pageHeightPx
+        pageNum++
+      }
+
+      pdf.save('HojaDeVida_' + (drawer.nombre?.replace(/\s+/g, '_') || 'cliente') + '.pdf')
+      showToast('PDF generado')
+    } finally {
+      document.body.removeChild(contenedor)
+      setPdfGenerando(false)
+    }
   }
-
   const clientesFiltrados = useMemo(() => {
     let result = clientes
     if (search) {
@@ -486,8 +587,8 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
       {/* ── DRAWER ── */}
       {drawer && (
         <>
-          <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm" onClick={() => setDrawer(null)} />
-          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[420px] bg-white z-30 flex flex-col shadow-2xl">
+          <div className="fixed inset-0 bg-black/30 z-[45] backdrop-blur-sm" onClick={() => setDrawer(null)} />
+          <div className="fixed inset-x-0 bottom-0 h-[92vh] rounded-t-2xl md:rounded-none md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:w-[420px] bg-white z-[50] flex flex-col shadow-2xl">
             <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-[15px] font-bold flex-shrink-0"
@@ -537,10 +638,10 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                       </button>
                     ))}
                   </div>
-                  <button onClick={exportarHojaDeVida}
-                    title="Exportar hoja de vida a CSV"
-                    className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 rounded-[8px] text-[11.5px] font-medium text-slate-500 hover:border-[#D81B43] hover:text-[#D81B43] transition-all mb-2">
-                    <Download size={12} /> CSV
+                  <button onClick={exportarHojaDeVida} disabled={pdfGenerando}
+                    title="Exportar hoja de vida a PDF"
+                    className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 bg-[#1B3A6B] text-white rounded-[8px] text-[11.5px] font-semibold hover:bg-[#152D54] transition-all mb-2 disabled:opacity-70 disabled:cursor-not-allowed">
+                    {pdfGenerando ? <><Loader2 size={12} className="animate-spin" /> Generando…</> : <><Download size={12} /> PDF</>}
                   </button>
                 </div>
 
