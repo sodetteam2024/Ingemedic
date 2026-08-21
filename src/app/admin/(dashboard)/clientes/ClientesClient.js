@@ -6,7 +6,7 @@ import { registrarBitacora } from '@/lib/bitacora'
 import {
   Plus, X, Edit3, Search, Building2, User,
   Phone, Mail, MapPin, FileText, AlertTriangle, ChevronRight,
-  Package, Truck, Clock, ArrowDownLeft, ArrowUpRight, Download, UserPlus, Loader2
+  Package, Truck, Clock, ArrowDownLeft, ArrowUpRight, Download, UserPlus, Loader2, CheckCircle2
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
@@ -21,15 +21,18 @@ const TIPO_STYLES = {
   'Natural': { bg: '#F1F5F9', color: '#475569', icon: <User size={14} /> },
 }
 
-export default function ClientesClient({ clientesIniciales, departamentos, municipios }) {
+function msNow() { return Date.now() }
+
+export default function ClientesClient({ clientesIniciales, clientesInactivosIniciales = [], departamentos, municipios }) {
   const router = useRouter()
   const supabase = createClient()
   const skipSyncUntil = useRef(0)
 
   const [clientes, setClientes] = useState(clientesIniciales)
+  const [clientesInactivos, setClientesInactivos] = useState(clientesInactivosIniciales)
+  const [mostrarInactivos, setMostrarInactivos] = useState(false)
 
   // Mantener el estado local sincronizado cuando el servidor manda datos frescos
-  // (esto se dispara después de router.refresh(), incluido el que llega por realtime)
   useEffect(() => {
     const t = setTimeout(() => {
       if (Date.now() < skipSyncUntil.current) return
@@ -37,6 +40,14 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
     }, 0)
     return () => clearTimeout(t)
   }, [clientesIniciales])
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (Date.now() < skipSyncUntil.current) return
+      setClientesInactivos(clientesInactivosIniciales)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [clientesInactivosIniciales])
 
   // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
   // Sin esto, un dispositivo no se entera de cambios hechos en otro
@@ -92,7 +103,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
         nit_cc: cliente.nit_cc || '',
         digito_verificacion: cliente.digito_verificacion || '',
         direccion: cliente.direccion || '',
-        telefono: cliente.telefono || '',
+        telefono: (cliente.telefono || '').replace(/\D/g, '').slice(0, 12),
         email: cliente.email || '',
         departamento_id: cliente.departamento_id || '',
         municipio_id: cliente.municipio_id || '',
@@ -339,12 +350,13 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
   async function guardarCliente() {
     if (!form.nombre?.trim()) { showToast('El nombre es requerido', 'error'); return }
     if (!form.tipo_persona) { showToast('El tipo de persona es requerido', 'error'); return }
+    if (form.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { showToast('El email no tiene un formato válido', 'error'); return }
     setSaving(true)
     const payload = {
       tipo_persona: form.tipo_persona,
       nombre: form.nombre.trim(),
       nit_cc: form.nit_cc?.trim() || null,
-      digito_verificacion: form.digito_verificacion?.trim() || null,
+      digito_verificacion: form.tipo_persona !== 'Natural' ? (form.digito_verificacion?.trim() || null) : null,
       direccion: form.direccion?.trim() || null,
       telefono: form.telefono?.trim() || null,
       email: form.email?.trim() || null,
@@ -381,16 +393,37 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
     setSaving(false); cerrarModal()
   }
 
-  async function eliminarCliente(id) {
-    const { error } = await supabase.from('clientes').update({ activo: false }).eq('id', id)
+  async function toggleActivo(id, nuevoActivo) {
+    const { error } = await supabase.from('clientes').update({ activo: nuevoActivo }).eq('id', id)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
-    const cliente = clientes.find(c => c.id === id)
-    skipSyncUntil.current = Date.now() + 2500
-    setClientes(prev => prev.filter(c => c.id !== id))
-    if (drawer?.id === id) setDrawer(null)
-    setModalEliminar(null)
-    showToast('Cliente eliminado')
-    registrarBitacora({ modulo: 'clientes', accion: 'eliminar', entidad: 'cliente', entidad_id: id, detalle: { nombre: cliente?.nombre } })
+    skipSyncUntil.current = msNow() + 2500
+
+    // Buscar el cliente en cualquiera de los dos arrays (por si estuviera en el lado incorrecto)
+    const clienteRef = clientes.find(c => c.id === id) || clientesInactivos.find(c => c.id === id)
+
+    if (!nuevoActivo) {
+      // Siempre quitar de AMBOS arrays antes de agregar al destino → evita duplicados
+      setClientes(prev => prev.filter(c => c.id !== id))
+      setClientesInactivos(prev => {
+        const limpio = prev.filter(c => c.id !== id)
+        if (!clienteRef) return limpio
+        return [...limpio, { ...clienteRef, activo: false }].sort((a, b) => a.nombre.localeCompare(b.nombre))
+      })
+      if (drawer?.id === id) setDrawer(null)
+      setModalEliminar(null)
+      showToast('Cliente desactivado')
+      registrarBitacora({ modulo: 'clientes', accion: 'desactivar', entidad: 'cliente', entidad_id: id, detalle: { nombre: clienteRef?.nombre } })
+    } else {
+      setClientesInactivos(prev => prev.filter(c => c.id !== id))
+      setClientes(prev => {
+        const limpio = prev.filter(c => c.id !== id)
+        if (!clienteRef) return limpio
+        return [...limpio, { ...clienteRef, activo: true }].sort((a, b) => a.nombre.localeCompare(b.nombre))
+      })
+      if (drawer?.id === id) setDrawer(prev => ({ ...prev, activo: true }))
+      showToast('Cliente activado')
+      registrarBitacora({ modulo: 'clientes', accion: 'activar', entidad: 'cliente', entidad_id: id, detalle: { nombre: clienteRef?.nombre } })
+    }
   }
 
   const estiloTipo = c => TIPO_STYLES[c.tipo_persona] || TIPO_STYLES['Jurídica']
@@ -581,6 +614,108 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
               </div>
             </>
           )}
+          {/* ── CLIENTES INACTIVOS ── */}
+          {clientesInactivos.length > 0 && (
+            <div className="mt-4">
+              <button
+                onClick={() => setMostrarInactivos(v => !v)}
+                className="flex items-center gap-2 text-[12px] font-semibold text-slate-400 hover:text-slate-500 transition-colors mb-2 select-none">
+                <ChevronRight size={14} className={`transition-transform duration-200 ${mostrarInactivos ? 'rotate-90' : ''}`} />
+                Clientes inactivos ({clientesInactivos.length})
+              </button>
+
+              {mostrarInactivos && (
+                <>
+                  {/* Mobile cards */}
+                  <div className="md:hidden space-y-2">
+                    {clientesInactivos.map(c => {
+                      const st = estiloTipo(c)
+                      return (
+                        <div key={c.id} onClick={() => abrirDrawer(c)}
+                          className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 cursor-pointer opacity-60 hover:opacity-80 transition-opacity">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center text-[14px] font-bold flex-shrink-0"
+                              style={{ background: st.bg, color: st.color }}>
+                              {c.nombre?.charAt(0)?.toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[14px] font-semibold text-slate-600 truncate">{c.nombre}</div>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold mt-0.5"
+                                style={{ background: st.bg, color: st.color }}>
+                                {st.icon} {c.tipo_persona || '—'}
+                              </span>
+                            </div>
+                            <button
+                              onClick={e => { e.stopPropagation(); toggleActivo(c.id, true) }}
+                              className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 border border-green-200 text-[#0F7B55] rounded-[8px] text-[11.5px] font-semibold hover:bg-green-50 transition-colors">
+                              <CheckCircle2 size={12} /> Activar
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Desktop table */}
+                  <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden opacity-70">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b-2 border-slate-100">
+                          {['Cliente', 'Tipo', 'NIT / CC', 'Contacto', ''].map(h => (
+                            <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientesInactivos.map(c => {
+                          const st = estiloTipo(c)
+                          return (
+                            <tr key={c.id} onClick={() => abrirDrawer(c)}
+                              className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-[12px] font-bold"
+                                    style={{ background: st.bg, color: st.color }}>
+                                    {c.nombre?.charAt(0)?.toUpperCase()}
+                                  </div>
+                                  <span className="text-[13px] font-semibold text-slate-500">{c.nombre}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold"
+                                  style={{ background: st.bg, color: st.color }}>
+                                  {st.icon} {c.tipo_persona || '—'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                {c.nit_cc
+                                  ? <span className="font-mono text-[12.5px] text-slate-500">{c.nit_cc}{c.digito_verificacion ? `-${c.digito_verificacion}` : ''}</span>
+                                  : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="space-y-0.5">
+                                  {c.telefono && <div className="flex items-center gap-1.5 text-[12px] text-slate-400"><Phone size={11} className="text-slate-300" />{c.telefono}</div>}
+                                  {c.email && <div className="flex items-center gap-1.5 text-[12px] text-slate-400"><Mail size={11} className="text-slate-300" />{c.email}</div>}
+                                  {!c.telefono && !c.email && <span className="text-slate-300 text-[12px]">—</span>}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                                <button
+                                  onClick={() => toggleActivo(c.id, true)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 border border-green-200 text-[#0F7B55] rounded-[8px] text-[11.5px] font-semibold hover:bg-green-50 transition-colors whitespace-nowrap">
+                                  <CheckCircle2 size={12} /> Activar
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -747,10 +882,17 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                 className="flex items-center gap-1.5 px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300 transition-all">
                 <Edit3 size={13} /> Editar
               </button>
-              <button onClick={() => setModalEliminar(drawer)}
-                className="flex items-center gap-1.5 px-4 py-2.5 border border-red-200 text-red-400 rounded-[9px] text-[13px] font-medium hover:bg-red-50 transition-all ml-auto">
-                <X size={13} /> Eliminar
-              </button>
+              {drawer.activo === false ? (
+                <button onClick={() => toggleActivo(drawer.id, true)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 border border-green-200 text-[#0F7B55] rounded-[9px] text-[13px] font-medium hover:bg-green-50 transition-all ml-auto">
+                  <CheckCircle2 size={13} /> Activar
+                </button>
+              ) : (
+                <button onClick={() => setModalEliminar(drawer)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 border border-red-200 text-red-400 rounded-[9px] text-[13px] font-medium hover:bg-red-50 transition-all ml-auto">
+                  <X size={13} /> Desactivar
+                </button>
+              )}
             </div>
           </div>
         </>
@@ -775,7 +917,7 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                   <div className="grid grid-cols-2 gap-3">
                     {['Jurídica', 'Natural'].map(tipo => (
                       <button key={tipo} type="button"
-                        onClick={() => setForm(f => ({ ...f, tipo_persona: tipo }))}
+                        onClick={() => setForm(f => ({ ...f, tipo_persona: tipo, ...(tipo === 'Natural' ? { digito_verificacion: '' } : {}) }))}
                         className={`flex items-center gap-2 px-4 py-3 rounded-[9px] border-2 text-[13px] font-semibold transition-all ${form.tipo_persona === tipo
                           ? 'border-[#D81B43] bg-[#D81B43]/5 text-[#D81B43]'
                           : 'border-slate-200 text-slate-500 hover:border-slate-300'
@@ -795,30 +937,44 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
                 </div>
 
                 {/* NIT / CC */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2">
-                    <label className={labelCls}>NIT / CC</label>
-                    <input value={form.nit_cc || ''} onChange={e => setForm(f => ({ ...f, nit_cc: e.target.value }))}
-                      placeholder="900123456" className={inputCls} />
+                <div className={`grid gap-3 ${form.tipo_persona !== 'Natural' ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                  <div className={form.tipo_persona !== 'Natural' ? 'col-span-2' : ''}>
+                    <label className={labelCls}>{form.tipo_persona === 'Natural' ? 'CC' : 'NIT'}</label>
+                    <input value={form.nit_cc || ''}
+                      onChange={e => setForm(f => ({ ...f, nit_cc: e.target.value.replace(/[^0-9]/g, '') }))}
+                      placeholder={form.tipo_persona === 'Natural' ? '1234567890' : '900123456'}
+                      inputMode="numeric" className={inputCls} />
                   </div>
-                  <div>
-                    <label className={labelCls}>Dígito verif.</label>
-                    <input value={form.digito_verificacion || ''} onChange={e => setForm(f => ({ ...f, digito_verificacion: e.target.value }))}
-                      placeholder="5" maxLength={1} className={inputCls} />
-                  </div>
+                  {form.tipo_persona !== 'Natural' && (
+                    <div>
+                      <label className={labelCls}>Dígito verif.</label>
+                      <input value={form.digito_verificacion || ''}
+                        onChange={e => setForm(f => ({ ...f, digito_verificacion: e.target.value.replace(/[^0-9]/g, '') }))}
+                        placeholder="5" maxLength={1} inputMode="numeric" className={inputCls} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Contacto */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>Teléfono</label>
-                    <input value={form.telefono || ''} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))}
-                      placeholder="300 000 0000" className={inputCls} />
+                    <div className="flex">
+                      <span className="inline-flex items-center px-3 border border-r-0 border-slate-200 rounded-l-[9px] text-[13px] text-slate-500 bg-slate-50 select-none whitespace-nowrap">+57</span>
+                      <input value={form.telefono || ''}
+                        onChange={e => setForm(f => ({ ...f, telefono: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
+                        placeholder="3001234567" inputMode="numeric"
+                        className={`${inputCls} rounded-l-none border-l-0`} />
+                    </div>
                   </div>
                   <div>
                     <label className={labelCls}>Email</label>
                     <input value={form.email || ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                      type="email" placeholder="correo@empresa.com" className={inputCls} />
+                      type="email" placeholder="correo@empresa.com"
+                      className={inputCls + (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ? ' !border-red-300 focus:!border-red-400' : '')} />
+                    {form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) && (
+                      <p className="text-[11px] text-red-400 mt-1">Formato inválido</p>
+                    )}
                   </div>
                 </div>
 
@@ -863,12 +1019,12 @@ export default function ClientesClient({ clientesIniciales, departamentos, munic
 
       <ConfirmDialog
         abierto={!!modalEliminar}
-        titulo="¿Eliminar cliente?"
-        mensaje={modalEliminar ? `"${modalEliminar.nombre}" quedará desactivado. Esta acción no se puede deshacer.` : ''}
-        textoConfirmar="Sí, eliminar"
+        titulo="¿Desactivar cliente?"
+        mensaje={modalEliminar ? `"${modalEliminar.nombre}" pasará a la sección de inactivos. Podrás reactivarlo en cualquier momento.` : ''}
+        textoConfirmar="Sí, desactivar"
         textoCancelar="Cancelar"
         tipo="peligro"
-        onConfirmar={() => eliminarCliente(modalEliminar.id)}
+        onConfirmar={() => toggleActivo(modalEliminar.id, false)}
         onCancelar={() => setModalEliminar(null)}
       />
 

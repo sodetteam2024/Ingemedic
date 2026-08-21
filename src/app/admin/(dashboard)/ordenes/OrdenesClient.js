@@ -193,10 +193,13 @@ export default function OrdenesClient({
   const [formDirty, setFormDirty]           = useState(false)
   const [confirmarSalirWizard, setConfirmarSalirWizard] = useState(false)
   const [wForm, setWForm] = useState({
-    cliente_id: '', equipo_id: '', tiene_paciente: false, paciente_id: '',
+    cliente_id: '', equipos_ids: [], tiene_paciente: false, paciente_id: '',
     pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
     fecha_inicio: '', domicilio: false, repartidor_id: '', observaciones: '',
+    fecha_entrega_domicilio: '', fechaInicioDistinta: false,
   })
+  const [devolucionActivo, setDevolucionActivo] = useState(null) // id de orden_equipos con picker abierto
+  const [devolucionFecha, setDevolucionFecha]   = useState('')
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
@@ -247,7 +250,10 @@ export default function OrdenesClient({
   }, [ordenes, tabPrincipal])
 
   const opcionesEstado     = useMemo(() => [...new Set(ordenesPorTab.map(o => o.estado?.nombre).filter(Boolean))].sort(), [ordenesPorTab])
-  const opcionesCliente    = useMemo(() => [...new Set(ordenesPorTab.map(o => o.cliente?.nombre).filter(Boolean))].sort(), [ordenesPorTab])
+  const opcionesCliente    = useMemo(() => {
+    const activos = new Set(clientes.map(c => c.nombre))
+    return [...new Set(ordenesPorTab.map(o => o.cliente?.nombre).filter(n => n && activos.has(n)))].sort()
+  }, [ordenesPorTab, clientes])
   const opcionesMarca      = useMemo(() => [...new Set(ordenesPorTab.flatMap(o => (o.equipos || []).map(oe => oe.equipo?.tipo_equipo?.nombre).filter(Boolean)))].sort(), [ordenesPorTab])
   const opcionesCategoria  = useMemo(() => [...new Set(ordenesPorTab.flatMap(o => (o.equipos || []).map(oe => oe.equipo?.tipo_equipo?.categoria?.nombre).filter(Boolean)))].sort(), [ordenesPorTab])
 
@@ -284,6 +290,8 @@ export default function OrdenesClient({
     setNuevoRepartidor(orden.repartidor_id || '')
     setEditFecha(false)
     setNuevaFecha(orden.fecha_entrega ? isoToLocalBogotaInput(orden.fecha_entrega) : '')
+    setDevolucionActivo(null)
+    setDevolucionFecha('')
   }
 
   // ── AVANZAR ESTADO ──────────────────────────────────────
@@ -358,9 +366,10 @@ export default function OrdenesClient({
   // ── WIZARD ──────────────────────────────────────────────
   function abrirWizard() {
     setWForm({
-      cliente_id: '', equipo_id: '', tiene_paciente: false, paciente_id: '',
+      cliente_id: '', equipos_ids: [], tiene_paciente: false, paciente_id: '',
       pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
       fecha_inicio: '', domicilio: false, repartidor_id: '', observaciones: '',
+      fecha_entrega_domicilio: '', fechaInicioDistinta: false,
     })
     setPacienteFiltro('')
     setWizardPaso(1)
@@ -371,8 +380,19 @@ export default function OrdenesClient({
   function cerrarWizard() { setWizardOpen(false); setFormDirty(false) }
   function intentarCerrarWizard() { if (formDirty) setConfirmarSalirWizard(true); else cerrarWizard() }
 
-  function seleccionarEquipo(id) {
-    setWForm(f => ({ ...f, equipo_id: id }))
+  function agregarEquipo(id) {
+    setWForm(f => f.equipos_ids.includes(id) ? f : { ...f, equipos_ids: [...f.equipos_ids, id] })
+  }
+
+  function quitarEquipo(id) {
+    setWForm(f => ({ ...f, equipos_ids: f.equipos_ids.filter(e => e !== id) }))
+  }
+
+  function siguientePaso() {
+    if (wizardPaso === 2 && wForm.equipos_ids.length === 0) {
+      showToast('Agrega al menos un equipo', 'error'); return
+    }
+    setWizardPaso(p => p + 1)
   }
 
   function seleccionarPaciente(paciente) {
@@ -392,11 +412,14 @@ export default function OrdenesClient({
     if (!wForm.cliente_id) {
       showToast('Selecciona un cliente', 'error'); return
     }
-    if (!wForm.equipo_id) {
-      showToast('Selecciona un equipo', 'error'); return
+    if (wForm.equipos_ids.length === 0) {
+      showToast('Agrega al menos un equipo', 'error'); return
     }
-    if (!wForm.fecha_inicio) {
-      showToast('Ingresa la fecha de inicio', 'error'); return
+    if (wForm.domicilio) {
+      if (!wForm.fecha_entrega_domicilio) { showToast('Ingresa la fecha de entrega del equipo', 'error'); return }
+      if (wForm.fechaInicioDistinta && !wForm.fecha_inicio) { showToast('Ingresa la fecha de inicio del préstamo', 'error'); return }
+    } else {
+      if (!wForm.fecha_inicio) { showToast('Ingresa la fecha de inicio del préstamo', 'error'); return }
     }
     if (wForm.tiene_paciente && !wForm.paciente_id && !wForm.pacienteNuevo.nombre.trim()) {
       showToast('Completa los datos del paciente o desmarca la casilla', 'error'); return
@@ -449,6 +472,9 @@ export default function OrdenesClient({
       setSaving(false); return
     }
     const estadoInicial = wForm.domicilio ? estadoProgramada.id : estadoEntregada.id
+    const notaInicio = wForm.domicilio && wForm.fechaInicioDistinta && wForm.fecha_inicio
+      ? `[Inicio: ${wForm.fecha_inicio}]${wForm.observaciones ? ' ' + wForm.observaciones : ''}`
+      : wForm.observaciones || null
 
     const { data: orden, error: errOrden } = await supabase.from('ordenes_servicio')
       .insert({
@@ -457,40 +483,75 @@ export default function OrdenesClient({
         paciente_id:   pacienteId,
         estado_id:     estadoInicial,
         repartidor_id: wForm.domicilio ? wForm.repartidor_id : null,
-        fecha_entrega: wForm.fecha_inicio,
-        observaciones: wForm.observaciones || null,
+        fecha_entrega: localBogotaToISO(wForm.domicilio ? wForm.fecha_entrega_domicilio : wForm.fecha_inicio),
+        observaciones: notaInicio,
       }).select('id').single()
 
     if (errOrden) { showToast('Error: ' + errOrden.message, 'error'); setSaving(false); return }
 
-    const { error: errEq } = await supabase.from('orden_equipos').insert({
-      orden_id: orden.id,
-      equipo_id: wForm.equipo_id,
-      fecha_entrega: wForm.domicilio ? null : wForm.fecha_inicio,
-    })
-    if (errEq) { showToast('Error vinculando equipo: ' + errEq.message, 'error'); setSaving(false); return }
+    for (const equipoId of wForm.equipos_ids) {
+      const { error: errEq } = await supabase.from('orden_equipos').insert({
+        orden_id: orden.id,
+        equipo_id: equipoId,
+        fecha_entrega: wForm.domicilio ? null : localBogotaToISO(wForm.fecha_inicio),
+      })
+      if (errEq) { showToast('Error vinculando equipo: ' + errEq.message, 'error'); setSaving(false); return }
 
-    if (!wForm.domicilio) {
-      const estadoPrestamo = (estadosEquipo || estados).find(e => e.nombre === 'En préstamo')
-      if (!estadoPrestamo) {
-        showToast('No se encontró el estado "En préstamo" en estados_equipo — revisa el nombre exacto', 'error')
-      } else {
-        await supabase.from('equipos').update({
-          estado_id:         estadoPrestamo.id,
-          paciente_actual_id: pacienteId,
-          cliente_actual_id:  wForm.cliente_id,
-        }).eq('id', wForm.equipo_id)
+      if (!wForm.domicilio) {
+        const estadoPrestamo = (estadosEquipo || estados).find(e => e.nombre === 'En préstamo')
+        if (estadoPrestamo) {
+          await supabase.from('equipos').update({
+            estado_id:          estadoPrestamo.id,
+            paciente_actual_id: pacienteId,
+            cliente_actual_id:  wForm.cliente_id,
+          }).eq('id', equipoId)
+        }
       }
     }
 
     registrarBitacora({
       modulo: 'ordenes', accion: 'crear', entidad: 'préstamo', entidad_id: orden.id,
-      detalle: { cliente_id: wForm.cliente_id, equipo_id: wForm.equipo_id, con_domicilio: wForm.domicilio }
+      detalle: { cliente_id: wForm.cliente_id, equipos_ids: wForm.equipos_ids, con_domicilio: wForm.domicilio }
     })
 
     showToast(wForm.domicilio ? 'Préstamo creado — pendiente de entrega' : 'Préstamo registrado y activo')
     setSaving(false)
     setWizardOpen(false)
+    router.refresh()
+  }
+
+  async function devolverEquipo(ordenEquipoId, equipoId, fechaDevolucion) {
+    const { error } = await supabase.from('orden_equipos')
+      .update({ fecha_devolucion: fechaDevolucion })
+      .eq('id', ordenEquipoId)
+    if (error) { showToast('Error: ' + error.message, 'error'); return }
+
+    const estadoDisponible = (estadosEquipo || []).find(e => e.nombre === 'Disponible')
+    if (estadoDisponible) {
+      await supabase.from('equipos').update({
+        estado_id:          estadoDisponible.id,
+        paciente_actual_id: null,
+        cliente_actual_id:  null,
+      }).eq('id', equipoId)
+    }
+
+    const { data: todos } = await supabase.from('orden_equipos')
+      .select('fecha_devolucion').eq('orden_id', drawer.id)
+    const todosDevueltos = todos?.every(oe => oe.fecha_devolucion !== null) ?? false
+
+    if (todosDevueltos) {
+      const estadoFinalizada = estados.find(e => e.nombre === 'Finalizada')
+      if (estadoFinalizada) {
+        await supabase.from('ordenes_servicio')
+          .update({ estado_id: estadoFinalizada.id }).eq('id', drawer.id)
+      }
+      showToast('Todos los equipos devueltos — préstamo finalizado')
+    } else {
+      showToast('Equipo devuelto')
+    }
+
+    setDevolucionActivo(null)
+    setDevolucionFecha('')
     router.refresh()
   }
 
@@ -713,7 +774,12 @@ export default function OrdenesClient({
                                  </div>
                                </div>
                              ) : (
-                               <span className="text-[12.5px] text-slate-500">{nEquipos} equipos</span>
+                               <div>
+                                 <div className="text-[12.5px] font-semibold text-slate-700 leading-tight">{nEquipos} equipos</div>
+                                 <div className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[160px]">
+                                   {o.equipos.map(oe => nombreEquipo(oe.equipo)).join(', ')}
+                                 </div>
+                               </div>
                              )}
                           </td>
                           <td className="px-4 py-3">
@@ -963,15 +1029,61 @@ export default function OrdenesClient({
                 {!drawer.equipos?.length
                   ? <div className="text-[13px] text-slate-400">Sin equipos asociados</div>
                   : <div className="space-y-2">
-                      {drawer.equipos.map(oe => (
-                        <div key={oe.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-[9px] border border-slate-200">
-                          <Package size={14} className="text-slate-400 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(oe.equipo)}</div>
-                            <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.codigo}</div>
+                      {drawer.equipos.map(oe => {
+                        const devuelto  = !!oe.fecha_devolucion
+                        const mostrando = devolucionActivo === oe.id
+                        return (
+                          <div key={oe.id} className="p-3 bg-slate-50 rounded-[9px] border border-slate-200">
+                            <div className="flex items-center gap-3">
+                              <Package size={14} className="text-slate-400 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(oe.equipo)}</div>
+                                <div className="text-[11px] font-mono text-slate-400">{oe.equipo?.codigo}</div>
+                              </div>
+                              {devuelto ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-[#ECFDF5] text-[#0F7B55] flex-shrink-0">
+                                  <CheckCircle2 size={9} /> Devuelto
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-[#E8F7FB] text-[#0E86A0] flex-shrink-0">
+                                  Activo
+                                </span>
+                              )}
+                            </div>
+                            {devuelto && (
+                              <div className="text-[11px] text-slate-400 mt-1.5 ml-[26px]">
+                                Devuelto el {new Date(oe.fecha_devolucion).toLocaleDateString('es-CO')}
+                              </div>
+                            )}
+                            {!devuelto && (
+                              <div className="mt-2 ml-[26px]">
+                                {!mostrando ? (
+                                  <button type="button"
+                                    onClick={() => { setDevolucionActivo(oe.id); setDevolucionFecha(isoToLocalBogotaInput(new Date().toISOString()).slice(0, 10)) }}
+                                    className="text-[11.5px] text-[#D81B43] font-semibold hover:underline">
+                                    Marcar como devuelto
+                                  </button>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <input type="date" value={devolucionFecha}
+                                      onChange={e => setDevolucionFecha(e.target.value)}
+                                      className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-[7px] text-[12.5px] outline-none focus:border-[#D81B43] bg-white" />
+                                    <button type="button" disabled={!devolucionFecha}
+                                      onClick={() => devolverEquipo(oe.id, oe.equipo_id || oe.equipo?.id, devolucionFecha)}
+                                      className="px-3 py-1.5 bg-[#D81B43] text-white rounded-[7px] text-[12px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
+                                      Confirmar
+                                    </button>
+                                    <button type="button" onClick={() => setDevolucionActivo(null)}
+                                      className="px-2 py-1.5 text-slate-400 hover:text-slate-600 text-[12px]">
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                 }
               </div>
@@ -1130,37 +1242,58 @@ export default function OrdenesClient({
                   </div>
                 )}
 
-                {/* PASO 2 — Equipo */}
+                {/* PASO 2 — Equipos (carrito) */}
                 {wizardPaso === 2 && (
-                  <div className="space-y-3">
-                    <label className={labelCls}>Equipo disponible <span className="text-[#D81B43]">*</span></label>
-                    {equiposDisponibles.length === 0 ? (
-                      <div className="text-[13px] text-slate-400 py-6 text-center border border-slate-200 rounded-[9px]">
-                        No hay equipos disponibles en inventario
-                      </div>
-                    ) : (
-                      <div className="space-y-2 max-h-[340px] overflow-y-auto border border-slate-200 rounded-[9px] p-2">
-                        {equiposDisponibles.map(eq => {
-                          const sel = wForm.equipo_id === eq.id
-                          return (
-                            <button key={eq.id} onClick={() => seleccionarEquipo(eq.id)}
-                              className={`w-full flex items-center gap-2.5 p-2.5 rounded-[8px] border-[1.5px] text-left transition-all ${sel ? 'border-[#D81B43] bg-[#D81B43]/5' : 'border-slate-200 hover:border-slate-300'}`}>
-                              <div className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center ${sel ? 'bg-[#D81B43]' : 'border-[1.5px] border-slate-300'}`}>
-                                {sel && <CheckCircle2 size={10} className="text-white" />}
-                              </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className={labelCls}>Equipos disponibles <span className="text-[#D81B43]">*</span></label>
+                      {equiposDisponibles.length === 0 ? (
+                        <div className="text-[13px] text-slate-400 py-6 text-center border border-slate-200 rounded-[9px]">
+                          No hay equipos disponibles en inventario
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-[240px] overflow-y-auto border border-slate-200 rounded-[9px] p-2">
+                          {equiposDisponibles.filter(eq => !wForm.equipos_ids.includes(eq.id)).map(eq => (
+                            <div key={eq.id} className="flex items-center gap-2.5 p-2.5 rounded-[8px] border border-slate-200 hover:border-slate-300 transition-all">
                               <div className="flex-1 min-w-0">
                                 <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
-                                <div className="text-[11px] font-mono text-slate-400">{eq.codigo}</div>
+                                <div className="text-[11px] font-mono text-slate-400">{eq.codigo} · {eq.tipo_equipo?.categoria?.nombre}</div>
                               </div>
-                              <div className="text-[11px] text-slate-400 flex-shrink-0">{eq.tipo_equipo?.categoria?.nombre}</div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {wForm.equipo_id && (
-                      <div className="text-[12px] text-[#D81B43] font-semibold">
-                        Equipo seleccionado
+                              <button type="button" onClick={() => agregarEquipo(eq.id)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-[#D81B43]/10 text-[#D81B43] rounded-[7px] text-[12px] font-semibold hover:bg-[#D81B43]/20 flex-shrink-0 transition-colors">
+                                <Plus size={12} strokeWidth={2.5} /> Agregar
+                              </button>
+                            </div>
+                          ))}
+                          {equiposDisponibles.filter(eq => !wForm.equipos_ids.includes(eq.id)).length === 0 && (
+                            <div className="text-[12.5px] text-slate-400 py-3 text-center">Todos los equipos disponibles han sido agregados</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {wForm.equipos_ids.length > 0 && (
+                      <div>
+                        <div className={labelCls}>Equipos seleccionados ({wForm.equipos_ids.length})</div>
+                        <div className="space-y-2">
+                          {wForm.equipos_ids.map(id => {
+                            const eq = equiposDisponibles.find(e => e.id === id)
+                            if (!eq) return null
+                            return (
+                              <div key={id} className="flex items-center gap-2.5 p-2.5 rounded-[8px] border border-[#D81B43]/30 bg-[#D81B43]/5">
+                                <Package size={14} className="text-[#D81B43] flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
+                                  <div className="text-[11px] font-mono text-slate-400">{eq.codigo}</div>
+                                </div>
+                                <button type="button" onClick={() => quitarEquipo(id)}
+                                  className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0">
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1169,26 +1302,49 @@ export default function OrdenesClient({
                 {/* PASO 3 — Fecha y domicilio */}
                 {wizardPaso === 3 && (
                   <div className="space-y-4">
-                    <div>
-                      <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
-                      <input type="date" value={wForm.fecha_inicio}
-                        onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
-                    </div>
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={wForm.domicilio}
-                          onChange={e => setWForm(f => ({ ...f, domicilio: e.target.checked, repartidor_id: e.target.checked ? f.repartidor_id : '' }))} />
+                          onChange={e => setWForm(f => ({ ...f, domicilio: e.target.checked, repartidor_id: '', fecha_entrega_domicilio: '', fechaInicioDistinta: false, fecha_inicio: '' }))} />
                         <span className="text-[13.5px] font-medium text-slate-700">¿Entrega a domicilio?</span>
                       </label>
                     </div>
-                    {wForm.domicilio && (
+
+                    {!wForm.domicilio && (
                       <div>
-                        <label className={labelCls}>Repartidor <span className="text-[#D81B43]">*</span></label>
-                        <select value={wForm.repartidor_id} onChange={e => setWForm(f => ({ ...f, repartidor_id: e.target.value }))} className={inputCls}>
-                          <option value="">Seleccionar repartidor...</option>
-                          {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
-                        </select>
+                        <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
+                        <input type="datetime-local" value={wForm.fecha_inicio}
+                          onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
                       </div>
+                    )}
+
+                    {wForm.domicilio && (
+                      <>
+                        <div>
+                          <label className={labelCls}>Repartidor <span className="text-[#D81B43]">*</span></label>
+                          <select value={wForm.repartidor_id} onChange={e => setWForm(f => ({ ...f, repartidor_id: e.target.value }))} className={inputCls}>
+                            <option value="">Seleccionar repartidor...</option>
+                            {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelCls}>Fecha y hora de entrega del equipo <span className="text-[#D81B43]">*</span></label>
+                          <input type="datetime-local" value={wForm.fecha_entrega_domicilio}
+                            onChange={e => setWForm(f => ({ ...f, fecha_entrega_domicilio: e.target.value }))} className={inputCls} />
+                        </div>
+                        <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+                          <input type="checkbox" checked={wForm.fechaInicioDistinta}
+                            onChange={e => setWForm(f => ({ ...f, fechaInicioDistinta: e.target.checked, fecha_inicio: '' }))} />
+                          La fecha de inicio del préstamo es diferente a la fecha de entrega
+                        </label>
+                        {wForm.fechaInicioDistinta && (
+                          <div>
+                            <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
+                            <input type="datetime-local" value={wForm.fecha_inicio}
+                              onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -1200,7 +1356,7 @@ export default function OrdenesClient({
                   className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
                   {wizardPaso === 1 ? 'Cancelar' : '← Anterior'}
                 </button>
-                <button onClick={() => wizardPaso < PASOS.length ? setWizardPaso(p => p + 1) : crearOrden()}
+                <button onClick={() => wizardPaso < PASOS.length ? siguientePaso() : crearOrden()}
                   disabled={saving}
                   className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
                   {saving ? 'Creando...' : wizardPaso < PASOS.length ? 'Siguiente →' : '✓ Crear préstamo'}

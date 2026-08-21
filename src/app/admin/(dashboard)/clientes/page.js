@@ -9,12 +9,17 @@ export default async function ClientesPage() {
 
   const [
     { data: clientes },
+    { data: clientesInactivos },
     { data: departamentos },
     { data: municipios },
   ] = await Promise.all([
     supabase.from('clientes')
       .select('*, municipio:municipios(id, nombre), departamento:departamentos(id, nombre)')
       .eq('activo', true)
+      .order('nombre'),
+    supabase.from('clientes')
+      .select('*, municipio:municipios(id, nombre), departamento:departamentos(id, nombre)')
+      .eq('activo', false)
       .order('nombre'),
     supabase.from('departamentos').select('*').eq('activo', true).order('nombre'),
     supabase.from('municipios').select('*').eq('activo', true).order('nombre'),
@@ -23,6 +28,7 @@ export default async function ClientesPage() {
   return (
     <ClientesClient
       clientesIniciales={clientes || []}
+      clientesInactivosIniciales={clientesInactivos || []}
       departamentos={departamentos || []}
       municipios={municipios || []}
     />
