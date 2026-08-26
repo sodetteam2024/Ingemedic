@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Search, Filter, Download, User, Clock } from 'lucide-react'
+import { formatear, paraGuardar, hoyBogota } from '@/lib/fechas'
 
 const ACCION_STYLES = {
   'crear': { bg: '#ECFDF5', color: '#0F7B55', label: 'CREACIÓN' },
@@ -25,15 +26,6 @@ const MODULO_LABELS = {
   servicios: 'Servicios',
   configuracion: 'Configuración',
   auth: 'Autenticación',
-}
-
-function fmtFecha(f) {
-  if (!f) return '—'
-  const d = new Date(f)
-  return d.toLocaleString('es-CO', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  })
 }
 
 export default function BitacoraClient({ registrosIniciales }) {
@@ -81,8 +73,8 @@ export default function BitacoraClient({ registrosIniciales }) {
       const mm = !filtroModulo || r.modulo === filtroModulo
       const ma = !filtroAccion || r.accion === filtroAccion
       const fecha = new Date(r.fecha)
-      const md = !desde || fecha >= new Date(desde)
-      const mh = !hasta || fecha <= new Date(hasta + 'T23:59:59')
+      const md = !desde || fecha >= new Date(paraGuardar(desde))
+      const mh = !hasta || fecha <= new Date(paraGuardar(`${hasta}T23:59`))
       return mq && mm && ma && md && mh
     })
   }, [registrosIniciales, search, filtroModulo, filtroAccion, desde, hasta])
@@ -90,7 +82,7 @@ export default function BitacoraClient({ registrosIniciales }) {
   function exportarCSV() {
     const header = ['Fecha', 'Usuario', 'Módulo', 'Acción', 'Entidad', 'Detalle']
     const rows = filtrados.map(r => [
-      fmtFecha(r.fecha),
+      formatear(r.fecha, { month: '2-digit', hour: '2-digit', minute: '2-digit' }),
       r.usuario?.nombre || '—',
       MODULO_LABELS[r.modulo] || r.modulo || '—',
       r.accion || '—',
@@ -103,7 +95,7 @@ export default function BitacoraClient({ registrosIniciales }) {
     ).join('\n')
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
-    a.download = `bitacora_${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `bitacora_${hoyBogota()}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -198,7 +190,7 @@ export default function BitacoraClient({ registrosIniciales }) {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5 text-[12px] font-mono text-slate-500">
                           <Clock size={11} className="text-slate-400" />
-                          {fmtFecha(r.fecha)}
+                          {formatear(r.fecha, { month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -250,7 +242,7 @@ export default function BitacoraClient({ registrosIniciales }) {
                     <div>
                       <div className="text-[13px] font-semibold text-slate-700">{r.usuario?.nombre || '—'}</div>
                       <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-1">
-                        <Clock size={9} />{fmtFecha(r.fecha)}
+                        <Clock size={9} />{formatear(r.fecha, { month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
                   </div>

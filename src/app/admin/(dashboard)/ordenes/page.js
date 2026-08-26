@@ -17,6 +17,8 @@ export default async function OrdenesPage() {
     { data: equipos },
     { data: usuarios },
     { data: tipos },
+    { data: categorias },
+    { data: tiposEquipo },
   ] = await Promise.all([
     supabase.from('ordenes_servicio').select(`
       *,
@@ -44,14 +46,16 @@ export default async function OrdenesPage() {
     supabase.from('estados_equipo').select('*').order('nombre'),
     supabase.from('plantillas_orden').select('id, nombre, descripcion').eq('activo', true).order('nombre'),
     supabase.from('equipos').select(`
-      id, codigo, tipo_equipo_id,
+      id, codigo, tipo_equipo_id, atributos,
       tipo_equipo:tipos_equipo(id, nombre, atributos,
         categoria:categorias_equipo(id, nombre)
       ),
       estado:estados_equipo(id, nombre)
-    `).eq('estado_id', 'f33e7c6f-0f81-484e-9f0a-93fd28f9c414').order('codigo'),
+    `).order('codigo'),
     supabase.from('usuarios').select('id, nombre').eq('activo', true).eq('rol_id', '17cd4f56-cae6-4efd-971b-2f8875f1f633').order('nombre'),
     supabase.from('tipos_orden').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('categorias_equipo').select('id, nombre, imagen_url').eq('activo', true).order('nombre'),
+    supabase.from('tipos_equipo').select('id, nombre, atributos, categoria_id, imagen_url').eq('activo', true).order('nombre'),
   ])
 
   return (
@@ -62,9 +66,11 @@ export default async function OrdenesPage() {
       estados={estados || []}
       estadosEquipo={estadosEquipo || []}
       plantillas={plantillas || []}
-      equiposDisponibles={equipos || []}
+      equipos={equipos || []}
       usuarios={usuarios || []}
       tipos={tipos || []}
+      categorias={categorias || []}
+      tiposEquipo={tiposEquipo || []}
     />
   )
 }

@@ -9,6 +9,7 @@ import {
   Package, Truck, Clock, ArrowDownLeft, ArrowUpRight, Download, UserPlus, Loader2, CheckCircle2
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { formatear, formatearSoloFecha } from '@/lib/fechas'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
@@ -212,10 +213,8 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
       let logoB64 = ''
       try { logoB64 = await toB64(LOGO_URL) } catch (_) { /* sin logo */ }
 
-      const fechaHoy   = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
-      const fechaDesde = drawer.fecha_creacion
-        ? new Date(drawer.fecha_creacion).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
-        : '—'
+      const fechaHoy   = formatear(new Date().toISOString(), { month: 'long' })
+      const fechaDesde = formatear(drawer.fecha_creacion)
       const ubicacion  = drawer.municipio
         ? drawer.municipio.nombre + ', ' + (drawer.departamento?.nombre || '')
         : '—'
@@ -248,7 +247,7 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
             '<td style="padding:6px 8px;color:#0F172A">' + (oe.equipo?.tipo_equipo?.atributos?.nombre || oe.equipo?.tipo_equipo?.nombre || '—') + '</td>' +
             '<td style="padding:6px 8px;font-weight:600;color:#0F172A">' + (oe.equipo?.codigo || '—') + '</td>' +
             '<td style="padding:6px 8px;color:#64748B">' + (oe.orden?.codigo || '—') + '</td>' +
-            '<td style="padding:6px 8px;color:#64748B">' + (oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '—') + '</td></tr>'
+            '<td style="padding:6px 8px;color:#64748B">' + formatear(oe.fecha_entrega) + '</td></tr>'
           ).join('') + '</table>'
 
       const ordenesHTML = historial.ordenes.length === 0
@@ -260,7 +259,7 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
             '<td style="padding:6px 8px;font-weight:600;color:#0F172A">' + (o.codigo || '—') + '</td>' +
             '<td style="padding:6px 8px;color:#64748B">' + (o.tipo?.nombre || '—') + '</td>' +
             '<td style="padding:6px 8px;color:#64748B">' + (o.estado?.nombre || '—') + '</td>' +
-            '<td style="padding:6px 8px;color:#64748B">' + (o.fecha_creacion ? new Date(o.fecha_creacion).toLocaleDateString('es-CO') : '—') + '</td>' +
+            '<td style="padding:6px 8px;color:#64748B">' + formatear(o.fecha_creacion) + '</td>' +
             '<td style="padding:6px 8px;color:#64748B">' + (o.equipos || []).length + '</td></tr>'
           ).join('') + '</table>'
 
@@ -270,7 +269,7 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
         : lineaTiempo.map((ev, idx) => {
             const dot    = DOT_COLORS[ev.tipo] || '#64748B'
             const isLast = idx === lineaTiempo.length - 1
-            const fecha  = new Date(ev.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+            const fecha  = formatear(ev.fecha)
             return '<div style="display:flex;gap:14px;padding-bottom:' + (isLast ? '0' : '14px') + ';margin-bottom:' + (isLast ? '0' : '14px') + ';border-bottom:' + (isLast ? 'none' : '0.5px solid #F1F5F9') + '">' +
               '<div style="width:1.5px;background:#E2E8F0;position:relative;flex-shrink:0">' +
               '<div style="width:10px;height:10px;border-radius:50%;background:' + dot + ';border:2px solid #fff;position:absolute;left:50%;top:3px;transform:translateX(-50%)"></div></div>' +
@@ -799,7 +798,7 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
                                   Código: {oe.equipo?.codigo || '—'}
                                 </div>
                                 <div className="text-[11px] text-slate-400 mt-0.5">
-                                  OS {oe.orden?.codigo} · desde {oe.fecha_entrega ? new Date(oe.fecha_entrega).toLocaleDateString('es-CO') : '—'}
+                                  OS {oe.orden?.codigo} · desde {formatear(oe.fecha_entrega)}
                                 </div>
                               </div>
                             </div>
@@ -825,8 +824,8 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
                                 <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{o.estado?.nombre || '—'}</span>
                               </div>
                               <div className="text-[11px] text-slate-400 mt-1">
-                                {o.tipo?.nombre || '—'} · {new Date(o.fecha_creacion).toLocaleDateString('es-CO')}
-                                {o.fecha_vigencia && ` · vigente hasta ${new Date(o.fecha_vigencia).toLocaleDateString('es-CO')}`}
+                                {o.tipo?.nombre || '—'} · {formatear(o.fecha_creacion)}
+                                {o.fecha_vigencia && ` · vigente hasta ${formatearSoloFecha(o.fecha_vigencia)}`}
                               </div>
                               <div className="text-[11px] text-slate-400 mt-0.5">{(o.equipos || []).length} equipo(s)</div>
                             </div>
@@ -857,7 +856,7 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
                                   <div className="min-w-0 flex-1">
                                     <div className="text-[12px] font-semibold text-slate-700">{ev.label}</div>
                                     <div className="text-[10.5px] text-slate-400 mt-0.5">
-                                      {new Date(ev.fecha).toLocaleString('es-CO')} {ev.sub && `· ${ev.sub}`}
+                                      {formatear(ev.fecha, { hour: '2-digit', minute: '2-digit' })} {ev.sub && `· ${ev.sub}`}
                                     </div>
                                   </div>
                                 </div>

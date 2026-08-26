@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import EntregaEnCursoBanner from '@/components/dashboard/EntregaEnCursoBanner'
+import { formatear } from '@/lib/fechas'
 
 const COLORES_DONA = ['#1B3A6B', '#D81B43', '#2EB5D4', '#0F7B55', '#B45309', '#6D28D9', '#0E86A0', '#94A3B8']
 
@@ -38,16 +39,6 @@ function diasRestantes(fecha) {
   if (!fecha) return null
   const diff = Math.ceil((new Date(fecha) - new Date()) / 86400000)
   return diff
-}
-
-function formatFecha(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
-}
-
-function formatHora(iso) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
 }
 
 export default function DashboardClient({
@@ -430,7 +421,7 @@ export default function DashboardClient({
                     {o.fecha_entrega && (
                       <span className={`flex items-center gap-1 text-[11px] ${retrasada ? 'text-[#D81B43] font-bold' : 'text-slate-400'}`}>
                         {retrasada && <AlertTriangle size={10} />}
-                        {formatFecha(o.fecha_entrega)}
+                        {formatear(o.fecha_entrega, { year: undefined })}
                       </span>
                     )}
                   </div>
@@ -473,9 +464,7 @@ export default function DashboardClient({
                         </span>
                       </div>
                       <div className="text-[11.5px] text-slate-400 mt-0.5">
-                        {o.fecha_creacion ? new Date(o.fecha_creacion).toLocaleString('es-CO', {
-                          day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-                        }) : '—'}
+                        {formatear(o.fecha_creacion, { year: undefined, hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
                   </div>

@@ -1,16 +1,13 @@
 'use client'
 import { useState, useMemo, Fragment } from 'react'
 import { Search, Download, ToggleLeft, ToggleRight, Calendar } from 'lucide-react'
+import { hoyBogota } from '@/lib/fechas'
 
 export default function ServiciosClient({ serviciosIniciales }) {
   const [search, setSearch]       = useState('')
   const [filtroEstado, setFiltroEstado] = useState('todos')
-  const [desde, setDesde]         = useState(() => {
-    const hoy = new Date()
-    const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-    return inicio.toISOString().split('T')[0]
-  })
-  const [hasta, setHasta]         = useState(() => new Date().toISOString().split('T')[0])
+  const [desde, setDesde]         = useState(() => hoyBogota().slice(0, 7) + '-01')
+  const [hasta, setHasta]         = useState(() => hoyBogota())
   const [agrupado, setAgrupado]   = useState(false)
 
   const filtrados = useMemo(() => {
@@ -74,7 +71,7 @@ export default function ServiciosClient({ serviciosIniciales }) {
     const a   = document.createElement('a')
     a.href    = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
     const periodo = desde && hasta ? `_${desde}_${hasta}` : ''
-    a.download = `servicios_prestados${periodo}_${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `servicios_prestados${periodo}_${hoyBogota()}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
   }

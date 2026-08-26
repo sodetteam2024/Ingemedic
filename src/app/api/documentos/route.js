@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { formatear, formatearSoloFecha } from '@/lib/fechas'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,9 +15,7 @@ function reemplazarVariables(html, variables) {
 }
 
 function formatearFecha(fecha) {
-  if (!fecha) return ''
-  const d = new Date(fecha)
-  return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  return fecha ? formatear(fecha, { month: '2-digit' }) : ''
 }
 
 export async function POST(request) {
@@ -129,7 +128,7 @@ export async function POST(request) {
       variables = {
         ...variables,
         mant_codigo:     mant.codigo || '',
-        mant_fecha:      formatearFecha(mant.fecha_cierre_real || mant.fecha_apertura),
+        mant_fecha:      formatearSoloFecha(mant.fecha_cierre_real || mant.fecha_apertura),
         mant_tipo:       mant.tipo?.nombre || '',
         mant_estado:     mant.estado?.nombre || '',
         mant_tecnico:    mant.tecnico || '',

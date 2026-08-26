@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriangle, Clock, CheckCircle2, Box, Hash, Tag, Layers, SlidersHorizontal, Loader2 } from 'lucide-react'
 import { IconoEquipo, GaleriaIconos } from '@/components/inventario/IconosEquipo'
+import { IconoTipo } from '@/components/inventario/IconoTipo'
+import { formatear, hoyBogota } from '@/lib/fechas'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
@@ -40,11 +42,6 @@ function formatearValor(valor, tipo) {
   if (!valor && valor !== 0) return '—'
   if (tipo === 'numero' && !isNaN(valor)) return Number(valor).toLocaleString('es-CO')
   return valor
-}
-
-function formatearFecha(iso) {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function InventarioClient({ categorias: catsIniciales, tipos: tiposIniciales, equipos, estados }) {
@@ -305,7 +302,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       const blob = await res.blob()
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = `inventario_${nivel}_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.download = `inventario_${nivel}_${hoyBogota()}.xlsx`
       a.click()
     } catch (e) {
       showToast('Error exportando', 'error')
@@ -336,10 +333,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
     const estadoNombre = equipo.estado?.nombre || '—'
     const estadoSty    = ESTADO_STYLES[estadoNombre] || { bg: '#F1F5F9', color: '#64748B' }
-    const fechaHoy     = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
-    const fechaReg     = equipo.fecha_creacion
-      ? new Date(equipo.fecha_creacion).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
-      : '—'
+    const fechaHoy     = formatear(new Date().toISOString(), { month: 'long' })
+    const fechaReg     = formatear(equipo.fecha_creacion)
 
     const atrsAll = { ...(tipo?.atributos || {}), ...(equipo.atributos || {}) }
     delete atrsAll.serie
@@ -389,8 +384,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       ? '<div style="font-size:13px;color:#94A3B8">Sin actividad registrada</div>'
       : eventosH.map((ev, idx) => {
           const isLast = idx === eventosH.length - 1
-          const dia    = ev.fecha ? ev.fecha.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) : '—'
-          const anio   = ev.fecha ? ev.fecha.getFullYear() : ''
+          const dia    = ev.fecha ? formatear(ev.fecha, { year: undefined }) : '—'
+          const anio   = ev.fecha ? formatear(ev.fecha, { day: undefined, month: undefined }) : ''
           return `
             <div style="display:flex;gap:14px;padding-bottom:${isLast ? '0' : '16px'};border-bottom:${isLast ? 'none' : '0.5px solid #F1F5F9'};margin-bottom:${isLast ? '0' : '16px'}">
               <div style="width:78px;flex-shrink:0;text-align:right;padding-top:2px">
@@ -581,24 +576,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   }
 
   function renderIconoTipo(tipo, size = 48) {
-    if (tipo?.imagen_url && !tipo.imagen_url.startsWith('icono:')) {
-      return <img src={tipo.imagen_url} alt={nombreTipo(tipo)}
-        style={{ width: size, height: size, objectFit: 'contain', padding: 0 }} />
-    }
-    if (tipo?.imagen_url?.startsWith('icono:')) {
-      return <IconoEquipo clave={tipo.imagen_url.replace('icono:', '')} size={size} color="#D81B43" />
-    }
-    const cat = categorias.find(c => c.id === tipo?.categoria_id || c.id === tipo?.categoria?.id)
-    const iconoCat = cat?.imagen_url?.startsWith('icono:') ? cat.imagen_url.replace('icono:', '') : null
-    if (iconoCat) return <IconoEquipo clave={iconoCat} size={size} color="#D81B43" />
-    return (
-      <div style={{ width: size * 0.88, height: size * 0.88 }}
-        className="rounded-2xl bg-[#D81B43]/10 flex items-center justify-center flex-shrink-0">
-        <span style={{ fontSize: size * 0.44 }} className="font-black text-[#D81B43]/35 leading-none select-none">
-          {nombreTipo(tipo).charAt(0).toUpperCase()}
-        </span>
-      </div>
-    )
+    return <IconoTipo tipo={tipo} categorias={categorias} size={size} />
   }
 
   return (
@@ -1161,7 +1139,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                             ))}
                             <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
                               <Clock size={9} />
-                              {ev.fecha ? formatearFecha(ev.fecha.toISOString()) : 'Fecha no disponible'}
+                              {ev.fecha ? formatear(ev.fecha) : 'Fecha no disponible'}
                             </div>
                           </div>
                         </div>

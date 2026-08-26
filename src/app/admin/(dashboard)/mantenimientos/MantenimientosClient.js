@@ -9,6 +9,7 @@ import {
   FileText, Download, Paperclip, Eye
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { formatear, formatearSoloFecha, hoyBogota } from '@/lib/fechas'
 
 const ESTADOS = {
   Abierto: '9c71ba4d-e82d-4714-b2fb-4cc242cd47be',
@@ -173,7 +174,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       tipo_mantenimiento_id: form.tipo_mantenimiento_id,
       estado_id: ESTADOS.EnProceso, // directo a En proceso
       tecnico: form.tecnico || null,
-      fecha_apertura: new Date().toISOString().split('T')[0],
+      fecha_apertura: hoyBogota(),
       observaciones_cliente: form.observaciones_cliente || null,
       en_curso: true,
     })
@@ -322,8 +323,8 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       en_curso: false,
       actividades: cierreForm.actividades,
       tecnico: cierreForm.tecnico || modalCierre.tecnico || null,
-      fecha_cierre: cierreForm.fecha_cierre || new Date().toISOString().split('T')[0],
-      fecha_cierre_real: new Date().toISOString().split('T')[0],
+      fecha_cierre: cierreForm.fecha_cierre || hoyBogota(),
+      fecha_cierre_real: hoyBogota(),
     }).eq('id', modalCierre.id)
 
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
@@ -336,7 +337,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
       estado: nuevoEstado, en_curso: false,
       actividades_texto: cierreForm.actividades,
       tecnico: cierreForm.tecnico || modalCierre.tecnico,
-      fecha_cierre: cierreForm.fecha_cierre || new Date().toISOString().split('T')[0],
+      fecha_cierre: cierreForm.fecha_cierre || hoyBogota(),
     }
     skipSyncUntil.current = Date.now() + 2500
     setMantenimientos(prev => prev.map(m => m.id === modalCierre.id ? { ...m, ...updCambios } : m))
@@ -394,7 +395,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
     doc.text('REPORTE TECNICO EQUIPOS BIOMEDICOS', logoEndX + 3, M + 9)
     doc.setFontSize(8.5); doc.setFont('helvetica', 'normal')
     doc.text(`N\u00b0 ${m.codigo}`, logoEndX + 3, M + 16)
-    doc.text(`Fecha: ${m.fecha_apertura || new Date().toISOString().split('T')[0]}`, W - M - 2, M + 16, { align: 'right' })
+    doc.text(`Fecha: ${formatearSoloFecha(m.fecha_apertura || hoyBogota())}`, W - M - 2, M + 16, { align: 'right' })
     doc.text(m.tipo?.nombre || '', logoEndX + 3, M + 23)
 
     let y = M + HEADER_H + 7
@@ -653,7 +654,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
               </div>
               <div className="flex justify-end" onClick={e => e.stopPropagation()}>
                 {m.estado?.nombre === 'En proceso' && (
-                  <button onClick={() => { const mc = mantenimientos.find(x => x.id === m.id) || m; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: new Date().toISOString().split('T')[0], resultado: 'disponible' }) }}
+                  <button onClick={() => { const mc = mantenimientos.find(x => x.id === m.id) || m; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: hoyBogota(), resultado: 'disponible' }) }}
                     className="px-3 py-1.5 bg-[#D81B43] text-white text-[11px] font-bold rounded-[7px] hover:bg-[#B0172F]">
                     🛠 Cerrar
                   </button>
@@ -711,7 +712,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         {m.estado?.nombre === 'En proceso' && (
-                          <button onClick={() => { const mc = mantenimientos.find(x => x.id === m.id) || m; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: new Date().toISOString().split('T')[0], resultado: 'disponible' }) }}
+                          <button onClick={() => { const mc = mantenimientos.find(x => x.id === m.id) || m; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: hoyBogota(), resultado: 'disponible' }) }}
                             className="px-2.5 py-1 bg-[#D81B43] text-white text-[11px] font-bold rounded-[7px] hover:bg-[#B0172F]">
                             🛠 Cerrar
                           </button>
@@ -761,7 +762,7 @@ export default function MantenimientosClient({ mantenimientosIniciales, tipos, e
                 <div className="flex items-center justify-between mb-3">
                   <EstadoBadge nombre={drawer.estado?.nombre} />
                   {drawer.estado?.nombre === 'En proceso' && (
-                    <button onClick={() => { const mc = mantenimientos.find(x => x.id === drawer.id) || drawer; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: new Date().toISOString().split('T')[0], resultado: 'disponible' }) }}
+                    <button onClick={() => { const mc = mantenimientos.find(x => x.id === drawer.id) || drawer; setModalCierre(mc); setCierreForm({ actividades: mc.actividades_texto || '', tecnico: mc.tecnico || '', fecha_cierre: hoyBogota(), resultado: 'disponible' }) }}
                       className="px-3 py-1.5 bg-[#D81B43] text-white text-[12px] font-semibold rounded-[7px] hover:bg-[#B0172F]">
                       🛠 Cerrar mantenimiento
                     </button>
@@ -1115,7 +1116,7 @@ function ActividadItem({ act, cerrado, uploading, onToggle, onObservacion, onAdj
             <div className="text-[11.5px] text-slate-500 mt-0.5 italic">{act.observaciones}</div>
           )}
           {act.fecha && (
-            <div className="text-[10.5px] text-slate-400 mt-0.5">{new Date(act.fecha).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+            <div className="text-[10.5px] text-slate-400 mt-0.5">{formatear(act.fecha, { month: '2-digit', year: undefined, hour: '2-digit', minute: '2-digit' })}</div>
           )}
           {/* Adjuntos */}
           {act.adjuntos?.length > 0 && (

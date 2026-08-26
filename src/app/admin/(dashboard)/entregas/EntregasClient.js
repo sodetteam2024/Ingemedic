@@ -9,6 +9,7 @@ import {
   ArrowUpRight, ArrowDownLeft, Filter, Calendar
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { formatear, soloDia } from '@/lib/fechas'
 
 const ESTADOS_ENTREGA = {
   NoIniciada: '14b43a74-439d-4647-855e-4693339db133',
@@ -53,8 +54,8 @@ function TimelineHorizontal({ estadoNombre, inicio, fin, horaProg, alerta }) {
   const idx = estadoNombre === 'Completada' ? TL_STEPS.length : estadoNombre === 'En progreso' ? 1 : 0
   const horas = [
     horaProg || '—',
-    inicio ? new Date(inicio).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '—',
-    fin     ? new Date(fin).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })   : '—',
+    formatear(inicio, { day: undefined, month: undefined, year: undefined, hour: '2-digit', minute: '2-digit' }),
+    formatear(fin,    { day: undefined, month: undefined, year: undefined, hour: '2-digit', minute: '2-digit' }),
   ]
   return (
     <div className="flex items-start gap-0">
@@ -274,8 +275,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       const codigo   = item._tipo === 'pendiente' ? item.codigo : item.orden?.codigo
       const cliente  = item._tipo === 'pendiente' ? item.cliente?.nombre : item.cliente?.nombre
       const estadoN  = item._tipo === 'pendiente' ? 'No iniciada' : item.estado?.nombre
-      const fechaRaw = item._tipo === 'pendiente' ? item.fecha_creacion : item.fecha_creacion
-      const fecha    = fechaRaw?.split('T')[0] || ''
+      const fecha    = soloDia(item.fecha_creacion)
 
       // Filtro por pestaña: Activas = todo lo que no está Completada; Historial = solo Completadas
       const esCompletada = estadoN === 'Completada'
@@ -481,7 +481,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     doc.text('ACTA DE ENTREGA DE EQUIPOS', logoEndX + 3, M + 9)
     doc.setFontSize(8.5); doc.setFont('helvetica', 'normal')
     doc.text(`N\u00b0 ${e.codigo} · OS: ${e.orden?.codigo || '—'}`, logoEndX + 3, M + 16)
-    doc.text(`Fecha: ${e.fecha_completada ? new Date(e.fecha_completada).toLocaleDateString('es-CO') : '—'}`, W - M - 2, M + 16, { align: 'right' })
+    doc.text(`Fecha: ${formatear(e.fecha_completada)}`, W - M - 2, M + 16, { align: 'right' })
     doc.text(e.tipo === 'retiro' ? 'Retiro' : 'Entrega', logoEndX + 3, M + 23)
 
     let y = M + HEADER_H + 7
@@ -512,8 +512,8 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       ['Código',       e.codigo],
       ['Repartidor',   e.repartidor?.nombre],
       ['Recibido por', e.recibido_por],
-      ['Inicio',       e.fecha_inicio ? new Date(e.fecha_inicio).toLocaleString('es-CO') : '—'],
-      ['Completada',   e.fecha_completada ? new Date(e.fecha_completada).toLocaleString('es-CO') : '—'],
+      ['Inicio',       formatear(e.fecha_inicio,     { hour: '2-digit', minute: '2-digit', second: '2-digit' })],
+      ['Completada',   formatear(e.fecha_completada, { hour: '2-digit', minute: '2-digit', second: '2-digit' })],
       ['Duración',     e.duracion_minutos ? `${e.duracion_minutos} min` : '—'],
     ], y)
 
@@ -589,7 +589,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         doc.setTextColor(30, 30, 30); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
         doc.text(dp.plantilla?.nombre || 'Documento', M + 2, y)
         doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(100, 100, 100)
-        doc.text(`Firmado por: ${dp.firmado_por || '—'} · ${dp.fecha_firma ? new Date(dp.fecha_firma).toLocaleString('es-CO') : ''}`, M + 2, y + 4.5)
+        doc.text(`Firmado por: ${dp.firmado_por || '—'} · ${dp.fecha_firma ? formatear(dp.fecha_firma, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}`, M + 2, y + 4.5)
         try {
           doc.addImage(dp.firma_iniciales, 'PNG', M + 2, y + 7, 55, 20)
         } catch (imgErr) { console.error('Error insertando firma en PDF:', imgErr, dp.plantilla?.nombre) }
@@ -624,7 +624,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
         empresa_email: empresa?.email || '',
         empresa_web:  empresa?.web || '',
         orden_codigo: e.orden?.codigo || '',
-        orden_fecha:  e.fecha_completada ? new Date(e.fecha_completada).toLocaleDateString('es-CO') : '',
+        orden_fecha:  e.fecha_completada ? formatear(e.fecha_completada) : '',
         cliente_nombre: e.orden?.cliente?.nombre || '',
         equipo_nombre: primerEquipo?.tipo_equipo?.atributos?.nombre || primerEquipo?.tipo_equipo?.nombre || '',
         equipo_codigo: primerEquipo?.codigo || '',
@@ -732,9 +732,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     doc.setFontSize(6.5)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(180, 180, 180)
-    const generadoEl = new Date().toLocaleString('es-CO', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
-    })
+    const generadoEl = formatear(new Date().toISOString(), { month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
     doc.text(`Generado: ${generadoEl}`, W - M, 290, { align: 'right' })
 
     doc.save(`Acta_Entrega_${e.codigo}.pdf`)

@@ -2,14 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
-
-function formatFecha(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('es-CO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
+import { formatear } from '@/lib/fechas'
 
 const ESTADO_CONFIG = {
   completado:   { icon: <CheckCircle2 size={14} className="text-[#0F7B55]" />,    label: 'Completado',  cls: 'text-[#0F7B55]'  },
@@ -34,7 +27,7 @@ function FilaCarga({ carga }) {
             <span className="text-[11px] text-slate-400 truncate">{carga.nombre_archivo}</span>
           </div>
           <div className="text-[11px] text-slate-400 mt-0.5">
-            {formatFecha(carga.fecha_inicio)}
+            {formatear(carga.fecha_inicio, { hour: '2-digit', minute: '2-digit' })}
             {' · '}
             <span className={`font-semibold ${cfg.cls}`}>{carga.exitosos ?? 0}</span>
             <span className="text-slate-400"> / {carga.total_filas ?? 0} exitosos</span>

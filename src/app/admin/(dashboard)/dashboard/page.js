@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { hoyBogota } from '@/lib/fechas'
 import DashboardClient from './DashboardClient'
 
 export const dynamic = 'force-dynamic'
@@ -8,8 +9,8 @@ export default async function DashboardPage() {
   const supabase = await createClient()
 
   const ahora   = new Date()
-  const hoy     = ahora.toISOString().split('T')[0]
-  const en7dias = new Date(ahora.getTime() + 7 * 86400000).toISOString().split('T')[0]
+  const hoy     = hoyBogota()
+  const en7dias = new Date(ahora.getTime() + 7 * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
 
   const [
     { data: equiposEstados },

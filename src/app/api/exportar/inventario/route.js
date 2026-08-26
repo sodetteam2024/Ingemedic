@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
+import { formatear, hoyBogota } from '@/lib/fechas'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,7 +49,7 @@ function agregarTitulo(ws, titulo, nCols) {
 
   ws.mergeCells(2, 1, 2, nCols)
   const sub = ws.getCell(2, 1)
-  sub.value     = `Generado: ${new Date().toLocaleString('es-CO')}`
+  sub.value     = `Generado: ${formatear(new Date().toISOString(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
   sub.font      = { italic: true, color: { argb: '94A3B8' }, name: 'Arial', size: 9 }
   sub.alignment = { horizontal: 'right', vertical: 'middle' }
   ws.getRow(2).height = 16
@@ -156,7 +157,7 @@ export async function POST(request) {
           eq.paciente_actual?.nombre    || '',
           eq.paciente_actual?.direccion || '',
           eq.paciente_actual?.telefono  || '',
-          eq.fecha_creacion ? new Date(eq.fecha_creacion).toLocaleDateString('es-CO') : '',
+          eq.fecha_creacion ? formatear(eq.fecha_creacion) : '',
         ])
         const fila = i + 4
         estiloFila(ws1, fila, nCols1, i % 2 === 1)
@@ -318,9 +319,7 @@ export async function POST(request) {
       filaActual++
 
       equipos.forEach((eq, i) => {
-        const fecha = eq.fecha_creacion
-          ? new Date(eq.fecha_creacion).toLocaleDateString('es-CO')
-          : ''
+        const fecha = eq.fecha_creacion ? formatear(eq.fecha_creacion) : ''
         ws.addRow([
           eq.estado?.nombre || '',
           ...camposUnidad.map(c => {
@@ -343,7 +342,7 @@ export async function POST(request) {
     }
 
     const buffer = await wb.xlsx.writeBuffer()
-    const fecha  = new Date().toISOString().slice(0, 10)
+    const fecha  = hoyBogota()
 
     return new NextResponse(buffer, {
       headers: {

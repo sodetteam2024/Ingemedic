@@ -1,14 +1,15 @@
 'use client'
 import { registrarBitacora } from '@/lib/bitacora'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { paraGuardar, paraInput, formatear, formatearSoloFecha } from '@/lib/fechas'
+import { IconoTipo } from '@/components/inventario/IconoTipo'
 import {
   Plus, X, Search, FileText, CheckCircle2, Package,
-  AlertTriangle, Calendar, Clock, User, Edit3, Truck, ChevronRight,
+  AlertTriangle, Calendar, Clock, User, Edit3, Truck, ChevronRight, ChevronLeft,
   Building, Box, Layers
 } from 'lucide-react'
-import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const E = {
   Borrador:   'c0b30011-e902-437d-ab1b-b33f753a04d7',
@@ -38,31 +39,6 @@ const BUCKETS = {
 const TRANSICIONES_ADMIN = {
   'Borrador':  { id: E.Programada, nombre: 'Programada', requiereRepartidor: true },
   'Entregada': { id: E.Finalizada, nombre: 'Finalizada',  requiereRepartidor: false },
-}
-
-// ── ZONA HORARIA ──────────────────────────────────────────────────
-// Colombia es UTC-5 fijo (no tiene horario de verano). El input
-// datetime-local da/recibe un string "naive" (sin zona horaria) que
-// SIEMPRE representa hora de Bogotá — hay que convertirlo explícitamente
-// a UTC antes de guardar, y de vuelta a "hora de Bogotá naive" al
-// recargarlo en el input. Sin esto, Postgres interpreta el string como
-// UTC directamente y la hora queda corrida por 5 horas (ej: 9pm se
-// guarda como si fueran las 9pm UTC = 4pm Bogotá).
-const TZ_BOGOTA = '-05:00'
-
-// "2026-07-05T21:00" (asumido hora de Bogotá) → ISO UTC correcto para guardar en Supabase
-function localBogotaToISO(str) {
-  if (!str) return null
-  return new Date(`${str}:00${TZ_BOGOTA}`).toISOString()
-}
-
-// ISO guardado en BD (UTC) → "2026-07-05T21:00" para poblar el input datetime-local,
-// ya expresado en hora de Bogotá (independiente de la zona horaria del navegador)
-function isoToLocalBogotaInput(iso) {
-  if (!iso) return ''
-  const d = new Date(new Date(iso).getTime() - 5 * 60 * 60 * 1000)
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
 }
 
 function estaRetrasada(orden) {
@@ -125,8 +101,12 @@ function nombreEquipo(eq) {
   return eq?.tipo_equipo?.atributos?.nombre || eq?.tipo_equipo?.nombre || '—'
 }
 
+function nombreTipo(tipo) {
+  return tipo?.nombre || '—'
+}
+
 export default function OrdenesClient({
-  ordenesIniciales, clientes, pacientes, estados, estadosEquipo, plantillas, equiposDisponibles, usuarios, tipos
+  ordenesIniciales, clientes, pacientes, estados, estadosEquipo, plantillas, equipos, usuarios, tipos, categorias, tiposEquipo
 }) {
   const router   = useRouter()
   const supabase = createClient()
@@ -185,13 +165,18 @@ export default function OrdenesClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ordenes])
 
-  const [wizardOpen, setWizardOpen]         = useState(false)
-  const [wizardPaso, setWizardPaso]         = useState(1)
+  const [vista, setVista]                   = useState('lista') // 'lista' | 'nuevo'
+  const [seccion1Completa, setSeccion1Completa] = useState(false)
+  const [seccion2Completa, setSeccion2Completa] = useState(false)
+  const [miniVista, setMiniVista]           = useState('categorias') // 'categorias' | 'tipos' | 'unidades'
+  const [miniCategoria, setMiniCategoria]   = useState(null)
+  const [miniTipo, setMiniTipo]             = useState(null)
+  const [buscarUnidadEnTipo, setBuscarUnidadEnTipo] = useState('')
+  const seccion2Ref = useRef(null)
+  const seccion3Ref = useRef(null)
   const [saving, setSaving]                 = useState(false)
   const [toast, setToast]                   = useState(null)
   const [modalConfirm, setModalConfirm]     = useState(null)
-  const [formDirty, setFormDirty]           = useState(false)
-  const [confirmarSalirWizard, setConfirmarSalirWizard] = useState(false)
   const [wForm, setWForm] = useState({
     cliente_id: '', equipos_ids: [], tiene_paciente: false, paciente_id: '',
     pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
@@ -225,6 +210,50 @@ export default function OrdenesClient({
     () => pacientesLocal.find(p => p.id === wForm.paciente_id) || null,
     [pacientesLocal, wForm.paciente_id]
   )
+
+  // Equipos ya comprometidos en préstamos a domicilio que aún no se han entregado
+  // físicamente (Borrador/Programada/En reparto) — su estado sigue "Disponible" en BD
+  // hasta que Entregas los marca como "En préstamo", así que hay que excluirlos aquí
+  // a mano para no ofrecerlos dos veces.
+  const idsComprometidos = useMemo(() => {
+    const ids = new Set()
+    ordenes.forEach(o => {
+      if (['Borrador', 'Programada', 'En reparto'].includes(o.estado?.nombre)) {
+        (o.equipos || []).forEach(oe => { if (!oe.fecha_devolucion && oe.equipo_id) ids.add(oe.equipo_id) })
+      }
+    })
+    return ids
+  }, [ordenes])
+
+  const equiposParaMini = useMemo(
+    () => equipos.filter(eq => eq.estado?.nombre === 'Disponible' && !idsComprometidos.has(eq.id)),
+    [equipos, idsComprometidos]
+  )
+
+  const miniTiposDeCategoria = useMemo(
+    () => miniCategoria ? tiposEquipo.filter(t => t.categoria_id === miniCategoria.id) : [],
+    [tiposEquipo, miniCategoria]
+  )
+
+  const miniUnidadesDeTipo = useMemo(
+    () => miniTipo ? equiposParaMini.filter(eq => eq.tipo_equipo_id === miniTipo.id) : [],
+    [equiposParaMini, miniTipo]
+  )
+
+  // Todas las unidades del tipo (sin filtrar por disponibilidad) — solo para el conteo "X de Y"
+  const unidadesTotalDelTipo = useMemo(
+    () => miniTipo ? equipos.filter(eq => eq.tipo_equipo_id === miniTipo.id) : [],
+    [equipos, miniTipo]
+  )
+
+  const unidadesFiltradasEnTipo = useMemo(() => {
+    const q = buscarUnidadEnTipo.trim().toLowerCase()
+    if (!q) return miniUnidadesDeTipo
+    return miniUnidadesDeTipo.filter(eq => {
+      if (eq.codigo?.toLowerCase().includes(q)) return true
+      return Object.values(eq.atributos || {}).some(v => String(v).toLowerCase().includes(q))
+    })
+  }, [miniUnidadesDeTipo, buscarUnidadEnTipo])
 
   const pacientesFiltrados = useMemo(() => {
     const q = pacienteFiltro.trim().toLowerCase()
@@ -289,7 +318,7 @@ export default function OrdenesClient({
     setEditRepartidor(false)
     setNuevoRepartidor(orden.repartidor_id || '')
     setEditFecha(false)
-    setNuevaFecha(orden.fecha_entrega ? isoToLocalBogotaInput(orden.fecha_entrega) : '')
+    setNuevaFecha(orden.fecha_entrega ? paraInput(orden.fecha_entrega) : '')
     setDevolucionActivo(null)
     setDevolucionFecha('')
   }
@@ -329,7 +358,7 @@ export default function OrdenesClient({
   // ── GUARDAR FECHA ENTREGA ────────────────────────────────
   async function guardarFecha() {
     if (!nuevaFecha) { showToast('Selecciona fecha y hora', 'error'); return }
-    const fechaISO = localBogotaToISO(nuevaFecha)
+    const fechaISO = paraGuardar(nuevaFecha)
     const { data, error } = await supabase.from('ordenes_servicio')
       .update({ fecha_entrega: fechaISO })
       .eq('id', drawer.id)
@@ -363,8 +392,8 @@ export default function OrdenesClient({
     showToast(nuevoEstado?.nombre === 'Programada' ? '✓ Repartidor asignado — orden programada' : 'Repartidor asignado')
   }
 
-  // ── WIZARD ──────────────────────────────────────────────
-  function abrirWizard() {
+  // ── NUEVO PRÉSTAMO (acordeón de página completa) ─────────
+  function iniciarNuevoPrestamo() {
     setWForm({
       cliente_id: '', equipos_ids: [], tiene_paciente: false, paciente_id: '',
       pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
@@ -372,13 +401,19 @@ export default function OrdenesClient({
       fecha_entrega_domicilio: '', fechaInicioDistinta: false,
     })
     setPacienteFiltro('')
-    setWizardPaso(1)
-    setFormDirty(false)
-    setWizardOpen(true)
+    setSeccion1Completa(false)
+    setSeccion2Completa(false)
+    setMiniVista('categorias')
+    setMiniCategoria(null)
+    setMiniTipo(null)
+    setVista('nuevo')
   }
 
-  function cerrarWizard() { setWizardOpen(false); setFormDirty(false) }
-  function intentarCerrarWizard() { if (formDirty) setConfirmarSalirWizard(true); else cerrarWizard() }
+  function cancelarNuevo() {
+    setVista('lista')
+    setSeccion1Completa(false)
+    setSeccion2Completa(false)
+  }
 
   function agregarEquipo(id) {
     setWForm(f => f.equipos_ids.includes(id) ? f : { ...f, equipos_ids: [...f.equipos_ids, id] })
@@ -388,11 +423,33 @@ export default function OrdenesClient({
     setWForm(f => ({ ...f, equipos_ids: f.equipos_ids.filter(e => e !== id) }))
   }
 
-  function siguientePaso() {
-    if (wizardPaso === 2 && wForm.equipos_ids.length === 0) {
-      showToast('Agrega al menos un equipo', 'error'); return
+  function miniIrACategoria(cat) { setMiniCategoria(cat); setMiniVista('tipos') }
+  function miniIrATipo(tipo) { setMiniTipo(tipo); setMiniVista('unidades'); setBuscarUnidadEnTipo('') }
+  function miniVolver() {
+    if (miniVista === 'unidades') { setMiniVista('tipos'); setMiniTipo(null) }
+    else if (miniVista === 'tipos') { setMiniVista('categorias'); setMiniCategoria(null) }
+  }
+
+  function volverACategorias() {
+    setMiniVista('categorias'); setMiniCategoria(null); setMiniTipo(null); setBuscarUnidadEnTipo('')
+  }
+
+  function avanzarSeccion1() {
+    if (!wForm.cliente_id) { showToast('Selecciona un cliente', 'error'); return }
+    if (wForm.tiene_paciente && !wForm.paciente_id && !wForm.pacienteNuevo.nombre.trim()) {
+      showToast('Completa los datos del paciente o desmarca la casilla', 'error'); return
     }
-    setWizardPaso(p => p + 1)
+    if (wForm.tiene_paciente && !wForm.paciente_id && !wForm.pacienteNuevo.direccion.trim()) {
+      showToast('La dirección del paciente es obligatoria', 'error'); return
+    }
+    setSeccion1Completa(true)
+    setTimeout(() => seccion2Ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
+  function avanzarSeccion2() {
+    if (wForm.equipos_ids.length === 0) { showToast('Agrega al menos un equipo', 'error'); return }
+    setSeccion2Completa(true)
+    setTimeout(() => seccion3Ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
   function seleccionarPaciente(paciente) {
@@ -483,7 +540,7 @@ export default function OrdenesClient({
         paciente_id:   pacienteId,
         estado_id:     estadoInicial,
         repartidor_id: wForm.domicilio ? wForm.repartidor_id : null,
-        fecha_entrega: localBogotaToISO(wForm.domicilio ? wForm.fecha_entrega_domicilio : wForm.fecha_inicio),
+        fecha_entrega: paraGuardar(wForm.domicilio ? wForm.fecha_entrega_domicilio : wForm.fecha_inicio),
         observaciones: notaInicio,
       }).select('id').single()
 
@@ -493,7 +550,7 @@ export default function OrdenesClient({
       const { error: errEq } = await supabase.from('orden_equipos').insert({
         orden_id: orden.id,
         equipo_id: equipoId,
-        fecha_entrega: wForm.domicilio ? null : localBogotaToISO(wForm.fecha_inicio),
+        fecha_entrega: wForm.domicilio ? null : paraGuardar(wForm.fecha_inicio),
       })
       if (errEq) { showToast('Error vinculando equipo: ' + errEq.message, 'error'); setSaving(false); return }
 
@@ -516,7 +573,9 @@ export default function OrdenesClient({
 
     showToast(wForm.domicilio ? 'Préstamo creado — pendiente de entrega' : 'Préstamo registrado y activo')
     setSaving(false)
-    setWizardOpen(false)
+    setSeccion1Completa(false)
+    setSeccion2Completa(false)
+    setVista('lista')
     router.refresh()
   }
 
@@ -555,8 +614,6 @@ export default function OrdenesClient({
     router.refresh()
   }
 
-  const PASOS = ['Cliente y paciente', 'Equipo', 'Fecha y domicilio']
-
   // ── DRAWER: info de la orden ─────────────────────────────
   const drawerEstado    = drawer?.estado?.nombre || 'Borrador'
   const drawerRetrasada = drawer ? estaRetrasada(drawer) : false
@@ -578,19 +635,25 @@ export default function OrdenesClient({
           <div className="text-[18px] font-bold text-slate-800">Préstamos</div>
           <div className="text-[12px] text-slate-400 mt-0.5">Gestión de préstamos de equipos biomédicos</div>
         </div>
-        <button onClick={abrirWizard}
-          className="ml-auto hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
-          <Plus size={14} strokeWidth={2.5} /> Nuevo préstamo
-        </button>
+        {vista === 'lista' && (
+          <button onClick={iniciarNuevoPrestamo}
+            className="ml-auto hidden md:flex items-center gap-1.5 px-4 py-2 bg-[#D81B43] text-white text-[13px] font-semibold rounded-[9px] hover:bg-[#B0172F] transition-colors">
+            <Plus size={14} strokeWidth={2.5} /> Nuevo préstamo
+          </button>
+        )}
       </div>
 
       {/* FAB móvil */}
-      <button onClick={abrirWizard}
-        className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
-        <Plus size={22} strokeWidth={2.5} />
-      </button>
+      {vista === 'lista' && (
+        <button onClick={iniciarNuevoPrestamo}
+          className="fixed bottom-[calc(var(--mobile-nav-space,0px)+16px)] right-4 z-30 md:hidden shadow-lg rounded-full w-14 h-14 bg-[#D81B43] text-white flex items-center justify-center">
+          <Plus size={22} strokeWidth={2.5} />
+        </button>
+      )}
 
       <div className="flex-1 overflow-hidden flex flex-col">
+      {vista === 'lista' && (
+        <>
         <div className="p-3 md:p-6 pb-3 md:pb-4 flex-shrink-0">
           {/* Stats — solo desktop */}
           <div className="hidden md:grid md:grid-cols-3 gap-4 mb-5">
@@ -718,7 +781,7 @@ export default function OrdenesClient({
                         <span>{o.repartidor?.nombre || <span className="text-[#B45309]">Sin repartidor</span>}</span>
                         {o.fecha_entrega && (
                           <span className={retrasada ? 'text-[#D81B43] font-semibold' : ''}>
-                            {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            {formatear(o.fecha_entrega, { month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
@@ -793,7 +856,7 @@ export default function OrdenesClient({
                           <td className="px-4 py-3">
                             {o.fecha_entrega
                               ? <span className={`text-[12px] font-mono ${retrasada ? 'text-[#D81B43] font-bold' : 'text-slate-400'}`}>
-                                  {new Date(o.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                  {formatear(o.fecha_entrega, { month: '2-digit' })}
                                 </span>
                               : <span className="text-[#B45309] text-[11.5px]">Sin programar</span>}
                           </td>
@@ -812,6 +875,379 @@ export default function OrdenesClient({
             </>
           )}
         </div>
+        </>
+      )}
+
+      {vista === 'nuevo' && (
+        <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-4">
+
+          {/* SECCIÓN 1 — Cliente */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+            <div className="text-[13px] font-bold text-slate-700 mb-4">1. Cliente</div>
+            <div className="space-y-4">
+              <div>
+                <label className={labelCls}>Cliente <span className="text-[#D81B43]">*</span></label>
+                <select value={wForm.cliente_id} onChange={e => setWForm(f => ({ ...f, cliente_id: e.target.value }))} className={inputCls}>
+                  <option value="">Seleccionar cliente...</option>
+                  {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={wForm.tiene_paciente}
+                    onChange={e => setWForm(f => ({ ...f, tiene_paciente: e.target.checked, paciente_id: e.target.checked ? f.paciente_id : '', pacienteNuevo: e.target.checked ? f.pacienteNuevo : { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))} />
+                  <span className="text-[13.5px] font-medium text-slate-700">¿Tiene paciente asociado?</span>
+                </label>
+
+                {wForm.tiene_paciente && (
+                  <div className="space-y-3">
+                    {!wForm.paciente_id ? (
+                      <>
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input value={pacienteFiltro} onChange={e => setPacienteFiltro(e.target.value)}
+                            placeholder="Buscar paciente por nombre o cédula..."
+                            className="w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] bg-white" />
+                        </div>
+                        {pacientesFiltrados.length > 0 && (
+                          <div className="border border-slate-200 rounded-[9px] bg-white shadow-sm max-h-[220px] overflow-y-auto">
+                            {pacientesFiltrados.map(p => (
+                              <button key={p.id} type="button" onClick={() => seleccionarPaciente(p)}
+                                className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-slate-50">
+                                <div className="text-[13px] font-semibold text-slate-800 truncate">{p.nombre}</div>
+                                <div className="text-[11px] text-slate-500">{p.cedula || 'Sin cédula'}</div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <button type="button" onClick={() => setWForm(f => ({ ...f, pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))}
+                          className="text-[13px] text-[#D81B43] font-semibold hover:underline">
+                          + Crear paciente nuevo
+                        </button>
+                      </>
+                    ) : (
+                      <div className="border border-slate-200 rounded-[9px] p-3 bg-slate-50">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[13px] font-semibold text-slate-800">{pacienteSeleccionado?.nombre || 'Paciente seleccionado'}</div>
+                            <div className="text-[11px] text-slate-500">{pacienteSeleccionado?.cedula || 'Sin cédula'}</div>
+                          </div>
+                          <button type="button" onClick={limpiarPacienteSeleccionado}
+                            className="text-[12px] text-slate-500 hover:text-[#D81B43]">Cambiar</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!wForm.paciente_id && (
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <label className={labelCls}>Nombre <span className="text-[#D81B43]">*</span></label>
+                          <input value={wForm.pacienteNuevo.nombre} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, nombre: e.target.value } }))}
+                            type="text" className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Cédula</label>
+                          <input value={wForm.pacienteNuevo.cedula} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, cedula: e.target.value } }))}
+                            type="text" className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Dirección <span className="text-[#D81B43]">*</span></label>
+                          <input value={wForm.pacienteNuevo.direccion} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, direccion: e.target.value } }))}
+                            type="text" className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Ciudad</label>
+                          <input value={wForm.pacienteNuevo.ciudad} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, ciudad: e.target.value } }))}
+                            type="text" className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Teléfono</label>
+                          <input value={wForm.pacienteNuevo.telefono} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, telefono: e.target.value } }))}
+                            type="text" className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Correo</label>
+                          <input value={wForm.pacienteNuevo.correo} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, correo: e.target.value } }))}
+                            type="email" className={inputCls} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className={labelCls}>Observaciones</label>
+                <textarea value={wForm.observaciones} onChange={e => setWForm(f => ({ ...f, observaciones: e.target.value }))}
+                  placeholder="Notas adicionales..." rows={3}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-slate-100">
+              <button onClick={cancelarNuevo}
+                className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
+                Cancelar
+              </button>
+              <button onClick={avanzarSeccion1}
+                className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F]">
+                Siguiente →
+              </button>
+            </div>
+          </div>
+
+          {/* SECCIÓN 2 — Equipos */}
+          {seccion1Completa && (
+            <div ref={seccion2Ref} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+              <div className="text-[13px] font-bold text-slate-700 mb-4">2. Equipos</div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-4">
+                {/* Mini-navegador de inventario */}
+                <div>
+                  {miniVista !== 'categorias' && (
+                    <button type="button" onClick={miniVolver}
+                      className="flex items-center gap-1 text-[12px] text-slate-500 hover:text-[#D81B43] mb-3 font-medium">
+                      <ChevronRight size={12} className="rotate-180" /> Volver
+                    </button>
+                  )}
+
+                  {miniVista === 'categorias' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {categorias.map(cat => {
+                        const nTipos = tiposEquipo.filter(t => t.categoria_id === cat.id).length
+                        return (
+                          <div key={cat.id} onClick={() => miniIrACategoria(cat)}
+                            className="bg-slate-50 rounded-[9px] border border-slate-200 p-3 cursor-pointer hover:border-[#D81B43]/40 transition-all">
+                            <div className="text-[12.5px] font-bold text-slate-700 leading-tight">{cat.nombre}</div>
+                            <div className="text-[10.5px] text-slate-400 mt-0.5">{nTipos} tipo{nTipos !== 1 ? 's' : ''}</div>
+                          </div>
+                        )
+                      })}
+                      {categorias.length === 0 && (
+                        <div className="col-span-full text-[12.5px] text-slate-400 text-center py-6">Sin categorías configuradas</div>
+                      )}
+                    </div>
+                  )}
+
+                  {miniVista === 'tipos' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {miniTiposDeCategoria.map(tipo => {
+                        const nDisp = equiposParaMini.filter(eq => eq.tipo_equipo_id === tipo.id && !wForm.equipos_ids.includes(eq.id)).length
+                        return (
+                          <div key={tipo.id} onClick={() => miniIrATipo(tipo)}
+                            className="bg-slate-50 rounded-[9px] border border-slate-200 p-3 cursor-pointer hover:border-[#D81B43]/40 transition-all">
+                            <div className="text-[12.5px] font-bold text-slate-700 leading-tight truncate">{nombreTipo(tipo)}</div>
+                            <div className="text-[10.5px] text-[#0F7B55] mt-0.5 font-semibold">{nDisp} disp.</div>
+                          </div>
+                        )
+                      })}
+                      {miniTiposDeCategoria.length === 0 && (
+                        <div className="col-span-full text-[12.5px] text-slate-400 text-center py-6">Sin tipos en esta categoría</div>
+                      )}
+                    </div>
+                  )}
+
+                  {miniVista === 'unidades' && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2.5 text-[12px]">
+                        <button onClick={volverACategorias} className="text-slate-500 hover:text-slate-700 flex items-center gap-1">
+                          <ChevronLeft size={13} /> Volver
+                        </button>
+                        <span className="text-slate-300">/</span>
+                        <span className="text-slate-400">{miniCategoria?.nombre}</span>
+                        <span className="text-slate-300">/</span>
+                        <span className="font-bold text-slate-800">{nombreTipo(miniTipo)}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3 mb-3.5 pb-3.5 border-b border-slate-100">
+                        <div className="w-[52px] h-[52px] rounded-[10px] bg-slate-50 border border-slate-200 flex items-center justify-center flex-shrink-0">
+                          <IconoTipo tipo={miniTipo} categorias={categorias} size={30} />
+                        </div>
+                        <div>
+                          <div className="text-[15px] font-bold text-slate-800">{nombreTipo(miniTipo)}</div>
+                          <div className="text-[11.5px] text-slate-400">
+                            {miniUnidadesDeTipo.length} disponibles de {unidadesTotalDelTipo.length} unidades
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="relative mb-3">
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          value={buscarUnidadEnTipo}
+                          onChange={e => setBuscarUnidadEnTipo(e.target.value)}
+                          placeholder="Buscar por código o serie..."
+                          className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43]" />
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2">
+                        {unidadesFiltradasEnTipo.map(eq => {
+                          const seleccionado = wForm.equipos_ids.includes(eq.id)
+                          return (
+                            <div key={eq.id}
+                              onClick={() => seleccionado ? quitarEquipo(eq.id) : agregarEquipo(eq.id)}
+                              className={`rounded-[9px] p-2.5 cursor-pointer text-center transition-colors
+                                ${seleccionado
+                                  ? 'border-[1.5px] border-[#D81B43] bg-[#FFF0F3]'
+                                  : 'border border-slate-200 hover:border-slate-300'}`}>
+                              <div className="text-[12.5px] font-bold text-slate-800 font-mono">{eq.codigo}</div>
+                              <div className={`text-[10px] mt-1 ${seleccionado ? 'text-[#D81B43] font-bold' : 'text-[#0F7B55]'}`}>
+                                {seleccionado ? '✓ Agregado' : 'Disponible'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      <div className="text-[11px] text-slate-400 mt-2.5">
+                        {unidadesFiltradasEnTipo.length} unidad{unidadesFiltradasEnTipo.length !== 1 ? 'es' : ''}
+                        {buscarUnidadEnTipo ? ' encontradas' : ' visibles'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Carrito */}
+                <div>
+                  <div className={labelCls}>Carrito ({wForm.equipos_ids.length})</div>
+                  {wForm.equipos_ids.length === 0 ? (
+                    <div className="text-[12.5px] text-slate-400 text-center py-8 border border-dashed border-slate-200 rounded-[9px]">
+                      Agrega equipos desde el panel de la izquierda
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {wForm.equipos_ids.map(id => {
+                        const eq = equipos.find(e => e.id === id)
+                        if (!eq) return null
+                        return (
+                          <div key={id} className="flex items-center gap-2.5 p-2.5 rounded-[8px] border border-[#D81B43]/30 bg-[#D81B43]/5">
+                            <Package size={14} className="text-[#D81B43] flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
+                              <div className="text-[11px] font-mono text-slate-400">{eq.codigo}</div>
+                            </div>
+                            <button type="button" onClick={() => quitarEquipo(id)}
+                              className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0">
+                              <X size={13} />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-slate-100">
+                <button onClick={cancelarNuevo}
+                  className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
+                  Cancelar
+                </button>
+                <button onClick={avanzarSeccion2}
+                  className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F]">
+                  Siguiente →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* SECCIÓN 3 — Resumen y entrega */}
+          {seccion2Completa && (
+            <div ref={seccion3Ref} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+              <div className="text-[13px] font-bold text-slate-700 mb-4">3. Resumen y entrega</div>
+
+              <div className="mb-5 pb-5 border-b border-slate-100 space-y-3">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">Cliente</div>
+                  <div className="text-[13.5px] font-semibold text-slate-800">{clientes.find(c => c.id === wForm.cliente_id)?.nombre || '—'}</div>
+                </div>
+                {wForm.tiene_paciente && (
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">Paciente</div>
+                    <div className="text-[13.5px] font-semibold text-slate-800">
+                      {wForm.paciente_id ? (pacienteSeleccionado?.nombre || '—') : (wForm.pacienteNuevo.nombre || '—')}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">Equipos ({wForm.equipos_ids.length})</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {wForm.equipos_ids.map(id => {
+                      const eq = equipos.find(e => e.id === id)
+                      if (!eq) return null
+                      return (
+                        <span key={id} className="text-[11.5px] font-mono bg-slate-100 text-slate-600 px-2 py-1 rounded">
+                          {eq.codigo}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={wForm.domicilio}
+                      onChange={e => setWForm(f => ({ ...f, domicilio: e.target.checked, repartidor_id: '', fecha_entrega_domicilio: '', fechaInicioDistinta: false, fecha_inicio: '' }))} />
+                    <span className="text-[13.5px] font-medium text-slate-700">¿Entrega a domicilio?</span>
+                  </label>
+                </div>
+
+                {!wForm.domicilio && (
+                  <div>
+                    <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
+                    <input type="datetime-local" value={wForm.fecha_inicio}
+                      onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
+                  </div>
+                )}
+
+                {wForm.domicilio && (
+                  <>
+                    <div>
+                      <label className={labelCls}>Repartidor <span className="text-[#D81B43]">*</span></label>
+                      <select value={wForm.repartidor_id} onChange={e => setWForm(f => ({ ...f, repartidor_id: e.target.value }))} className={inputCls}>
+                        <option value="">Seleccionar repartidor...</option>
+                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Fecha y hora de entrega del equipo <span className="text-[#D81B43]">*</span></label>
+                      <input type="datetime-local" value={wForm.fecha_entrega_domicilio}
+                        onChange={e => setWForm(f => ({ ...f, fecha_entrega_domicilio: e.target.value }))} className={inputCls} />
+                    </div>
+                    <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={wForm.fechaInicioDistinta}
+                        onChange={e => setWForm(f => ({ ...f, fechaInicioDistinta: e.target.checked, fecha_inicio: '' }))} />
+                      La fecha de inicio del préstamo es diferente a la fecha de entrega
+                    </label>
+                    {wForm.fechaInicioDistinta && (
+                      <div>
+                        <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
+                        <input type="datetime-local" value={wForm.fecha_inicio}
+                          onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-slate-100">
+                <button onClick={cancelarNuevo}
+                  className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
+                  Cancelar
+                </button>
+                <button onClick={crearOrden} disabled={saving}
+                  className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
+                  {saving ? 'Creando...' : '✓ Crear préstamo'}
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
       </div>
 
       {/* ── DRAWER DETALLE OS ── */}
@@ -959,7 +1395,7 @@ export default function OrdenesClient({
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Fecha y hora de entrega</div>
                     {!editFecha && (
-                      <button onClick={() => { setEditFecha(true); setNuevaFecha(drawer.fecha_entrega ? isoToLocalBogotaInput(drawer.fecha_entrega) : '') }}
+                      <button onClick={() => { setEditFecha(true); setNuevaFecha(drawer.fecha_entrega ? paraInput(drawer.fecha_entrega) : '') }}
                         className="flex items-center gap-1 text-[11.5px] text-[#D81B43] font-semibold hover:underline">
                         <Edit3 size={11} /> {drawer.fecha_entrega ? 'Cambiar' : 'Programar'}
                       </button>
@@ -968,7 +1404,7 @@ export default function OrdenesClient({
                   {!editFecha ? (
                     drawer.fecha_entrega
                       ? <div className={`text-[13.5px] font-semibold ${drawerRetrasada ? 'text-[#D81B43]' : 'text-slate-700'}`}>
-                          {new Date(drawer.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {formatear(drawer.fecha_entrega, { month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </div>
                       : <div className="text-[12.5px] text-[#B45309] font-medium flex items-center gap-1.5">
                           <AlertTriangle size={12} /> Sin programar
@@ -999,9 +1435,9 @@ export default function OrdenesClient({
                   {[
                     { label: 'Cliente',        value: drawer.cliente?.nombre },
                     { label: 'Recibido por',   value: drawer.recibido_por || '—' },
-                    { label: 'Fecha entrega',  value: drawer.fecha_entrega ? new Date(drawer.fecha_entrega).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—' },
-                    { label: 'Vigencia',       value: drawer.fecha_vigencia || '—' },
-                    { label: 'Fecha creación', value: drawer.fecha_creacion?.split('T')[0] || '—' },
+                    { label: 'Fecha entrega',  value: formatear(drawer.fecha_entrega, { month: '2-digit', hour: '2-digit', minute: '2-digit' }) },
+                    { label: 'Vigencia',       value: formatearSoloFecha(drawer.fecha_vigencia) },
+                    { label: 'Fecha creación', value: formatear(drawer.fecha_creacion) },
                   ].map(f => (
                     <div key={f.label}>
                       <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">{f.label}</div>
@@ -1052,14 +1488,14 @@ export default function OrdenesClient({
                             </div>
                             {devuelto && (
                               <div className="text-[11px] text-slate-400 mt-1.5 ml-[26px]">
-                                Devuelto el {new Date(oe.fecha_devolucion).toLocaleDateString('es-CO')}
+                                Devuelto el {formatear(oe.fecha_devolucion)}
                               </div>
                             )}
                             {!devuelto && (
                               <div className="mt-2 ml-[26px]">
                                 {!mostrando ? (
                                   <button type="button"
-                                    onClick={() => { setDevolucionActivo(oe.id); setDevolucionFecha(isoToLocalBogotaInput(new Date().toISOString()).slice(0, 10)) }}
+                                    onClick={() => { setDevolucionActivo(oe.id); setDevolucionFecha(paraInput(new Date().toISOString()).slice(0, 10)) }}
                                     className="text-[11.5px] text-[#D81B43] font-semibold hover:underline">
                                     Marcar como devuelto
                                   </button>
@@ -1113,260 +1549,6 @@ export default function OrdenesClient({
         </>
       )}
 
-      {/* ── WIZARD ── */}
-      {wizardOpen && (
-        <>
-          <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={() => intentarCerrarWizard()} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[600px] max-h-[calc(100vh-2rem)] flex flex-col shadow-2xl overflow-hidden"
-              onClick={e => e.stopPropagation()}>
-
-              <div className="px-6 py-4 border-b flex items-center gap-3 flex-shrink-0 bg-[#D81B43]">
-                <div className="flex-1">
-                  <div className="text-[11px] text-white/60">Paso {wizardPaso} de {PASOS.length}</div>
-                  <div className="text-[15px] font-bold text-white">{PASOS[wizardPaso - 1]}</div>
-                </div>
-                <div className="flex gap-1.5">
-                  {PASOS.map((_, i) => (
-                    <div key={i} className={`h-2 rounded-full transition-all ${i + 1 === wizardPaso ? 'w-6 bg-white' : i + 1 < wizardPaso ? 'w-2 bg-white/60' : 'w-2 bg-white/25'}`} />
-                  ))}
-                </div>
-                <button onClick={() => intentarCerrarWizard()} className="text-white/60 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20">
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-6 py-5" onChange={() => setFormDirty(true)}>
-
-                {/* PASO 1 — Cliente + Paciente */}
-                {wizardPaso === 1 && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className={labelCls}>Cliente <span className="text-[#D81B43]">*</span></label>
-                      <select value={wForm.cliente_id} onChange={e => setWForm(f => ({ ...f, cliente_id: e.target.value }))} className={inputCls}>
-                        <option value="">Seleccionar cliente...</option>
-                        {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                      </select>
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={wForm.tiene_paciente}
-                          onChange={e => setWForm(f => ({ ...f, tiene_paciente: e.target.checked, paciente_id: e.target.checked ? f.paciente_id : '', pacienteNuevo: e.target.checked ? f.pacienteNuevo : { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))} />
-                        <span className="text-[13.5px] font-medium text-slate-700">¿Tiene paciente asociado?</span>
-                      </label>
-
-                      {wForm.tiene_paciente && (
-                        <div className="space-y-3">
-                          {!wForm.paciente_id ? (
-                            <>
-                              <div className="relative">
-                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input value={pacienteFiltro} onChange={e => setPacienteFiltro(e.target.value)}
-                                  placeholder="Buscar paciente por nombre o cédula..."
-                                  className="w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] bg-white" />
-                              </div>
-                              {pacientesFiltrados.length > 0 && (
-                                <div className="border border-slate-200 rounded-[9px] bg-white shadow-sm max-h-[220px] overflow-y-auto">
-                                  {pacientesFiltrados.map(p => (
-                                    <button key={p.id} type="button" onClick={() => seleccionarPaciente(p)}
-                                      className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-slate-50">
-                                      <div className="text-[13px] font-semibold text-slate-800 truncate">{p.nombre}</div>
-                                      <div className="text-[11px] text-slate-500">{p.cedula || 'Sin cédula'}</div>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                              <button type="button" onClick={() => setWForm(f => ({ ...f, pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))}
-                                className="text-[13px] text-[#D81B43] font-semibold hover:underline">
-                                + Crear paciente nuevo
-                              </button>
-                            </>
-                          ) : (
-                            <div className="border border-slate-200 rounded-[9px] p-3 bg-slate-50">
-                              <div className="flex items-center justify-between gap-3">
-                                <div>
-                                  <div className="text-[13px] font-semibold text-slate-800">{pacienteSeleccionado?.nombre || 'Paciente seleccionado'}</div>
-                                  <div className="text-[11px] text-slate-500">{pacienteSeleccionado?.cedula || 'Sin cédula'}</div>
-                                </div>
-                                <button type="button" onClick={limpiarPacienteSeleccionado}
-                                  className="text-[12px] text-slate-500 hover:text-[#D81B43]">Cambiar</button>
-                              </div>
-                            </div>
-                          )}
-
-                          {!wForm.paciente_id && (
-                            <div className="grid grid-cols-1 gap-3">
-                              <div>
-                                <label className={labelCls}>Nombre <span className="text-[#D81B43]">*</span></label>
-                                <input value={wForm.pacienteNuevo.nombre} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, nombre: e.target.value } }))}
-                                  type="text" className={inputCls} />
-                              </div>
-                              <div>
-                                <label className={labelCls}>Cédula</label>
-                                <input value={wForm.pacienteNuevo.cedula} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, cedula: e.target.value } }))}
-                                  type="text" className={inputCls} />
-                              </div>
-                              <div>
-                                <label className={labelCls}>Dirección <span className="text-[#D81B43]">*</span></label>
-                                <input value={wForm.pacienteNuevo.direccion} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, direccion: e.target.value } }))}
-                                  type="text" className={inputCls} />
-                              </div>
-                              <div>
-                                <label className={labelCls}>Ciudad</label>
-                                <input value={wForm.pacienteNuevo.ciudad} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, ciudad: e.target.value } }))}
-                                  type="text" className={inputCls} />
-                              </div>
-                              <div>
-                                <label className={labelCls}>Teléfono</label>
-                                <input value={wForm.pacienteNuevo.telefono} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, telefono: e.target.value } }))}
-                                  type="text" className={inputCls} />
-                              </div>
-                              <div>
-                                <label className={labelCls}>Correo</label>
-                                <input value={wForm.pacienteNuevo.correo} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, correo: e.target.value } }))}
-                                  type="email" className={inputCls} />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className={labelCls}>Observaciones</label>
-                      <textarea value={wForm.observaciones} onChange={e => setWForm(f => ({ ...f, observaciones: e.target.value }))}
-                        placeholder="Notas adicionales..." rows={3}
-                        className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
-                    </div>
-                  </div>
-                )}
-
-                {/* PASO 2 — Equipos (carrito) */}
-                {wizardPaso === 2 && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className={labelCls}>Equipos disponibles <span className="text-[#D81B43]">*</span></label>
-                      {equiposDisponibles.length === 0 ? (
-                        <div className="text-[13px] text-slate-400 py-6 text-center border border-slate-200 rounded-[9px]">
-                          No hay equipos disponibles en inventario
-                        </div>
-                      ) : (
-                        <div className="space-y-2 max-h-[240px] overflow-y-auto border border-slate-200 rounded-[9px] p-2">
-                          {equiposDisponibles.filter(eq => !wForm.equipos_ids.includes(eq.id)).map(eq => (
-                            <div key={eq.id} className="flex items-center gap-2.5 p-2.5 rounded-[8px] border border-slate-200 hover:border-slate-300 transition-all">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
-                                <div className="text-[11px] font-mono text-slate-400">{eq.codigo} · {eq.tipo_equipo?.categoria?.nombre}</div>
-                              </div>
-                              <button type="button" onClick={() => agregarEquipo(eq.id)}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-[#D81B43]/10 text-[#D81B43] rounded-[7px] text-[12px] font-semibold hover:bg-[#D81B43]/20 flex-shrink-0 transition-colors">
-                                <Plus size={12} strokeWidth={2.5} /> Agregar
-                              </button>
-                            </div>
-                          ))}
-                          {equiposDisponibles.filter(eq => !wForm.equipos_ids.includes(eq.id)).length === 0 && (
-                            <div className="text-[12.5px] text-slate-400 py-3 text-center">Todos los equipos disponibles han sido agregados</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {wForm.equipos_ids.length > 0 && (
-                      <div>
-                        <div className={labelCls}>Equipos seleccionados ({wForm.equipos_ids.length})</div>
-                        <div className="space-y-2">
-                          {wForm.equipos_ids.map(id => {
-                            const eq = equiposDisponibles.find(e => e.id === id)
-                            if (!eq) return null
-                            return (
-                              <div key={id} className="flex items-center gap-2.5 p-2.5 rounded-[8px] border border-[#D81B43]/30 bg-[#D81B43]/5">
-                                <Package size={14} className="text-[#D81B43] flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
-                                  <div className="text-[11px] font-mono text-slate-400">{eq.codigo}</div>
-                                </div>
-                                <button type="button" onClick={() => quitarEquipo(id)}
-                                  className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0">
-                                  <X size={13} />
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* PASO 3 — Fecha y domicilio */}
-                {wizardPaso === 3 && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={wForm.domicilio}
-                          onChange={e => setWForm(f => ({ ...f, domicilio: e.target.checked, repartidor_id: '', fecha_entrega_domicilio: '', fechaInicioDistinta: false, fecha_inicio: '' }))} />
-                        <span className="text-[13.5px] font-medium text-slate-700">¿Entrega a domicilio?</span>
-                      </label>
-                    </div>
-
-                    {!wForm.domicilio && (
-                      <div>
-                        <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
-                        <input type="datetime-local" value={wForm.fecha_inicio}
-                          onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
-                      </div>
-                    )}
-
-                    {wForm.domicilio && (
-                      <>
-                        <div>
-                          <label className={labelCls}>Repartidor <span className="text-[#D81B43]">*</span></label>
-                          <select value={wForm.repartidor_id} onChange={e => setWForm(f => ({ ...f, repartidor_id: e.target.value }))} className={inputCls}>
-                            <option value="">Seleccionar repartidor...</option>
-                            {usuarios.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className={labelCls}>Fecha y hora de entrega del equipo <span className="text-[#D81B43]">*</span></label>
-                          <input type="datetime-local" value={wForm.fecha_entrega_domicilio}
-                            onChange={e => setWForm(f => ({ ...f, fecha_entrega_domicilio: e.target.value }))} className={inputCls} />
-                        </div>
-                        <label className="flex items-center gap-2 text-[12.5px] text-slate-600 cursor-pointer">
-                          <input type="checkbox" checked={wForm.fechaInicioDistinta}
-                            onChange={e => setWForm(f => ({ ...f, fechaInicioDistinta: e.target.checked, fecha_inicio: '' }))} />
-                          La fecha de inicio del préstamo es diferente a la fecha de entrega
-                        </label>
-                        {wForm.fechaInicioDistinta && (
-                          <div>
-                            <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
-                            <input type="datetime-local" value={wForm.fecha_inicio}
-                              onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-              </div>
-
-              <div className="px-6 py-4 border-t border-slate-200 flex justify-between flex-shrink-0 bg-white">
-                <button onClick={() => wizardPaso > 1 ? setWizardPaso(p => p - 1) : intentarCerrarWizard()}
-                  className="px-4 py-2.5 border border-slate-200 rounded-[9px] text-[13px] font-medium text-slate-600 hover:border-slate-300">
-                  {wizardPaso === 1 ? 'Cancelar' : '← Anterior'}
-                </button>
-                <button onClick={() => wizardPaso < PASOS.length ? siguientePaso() : crearOrden()}
-                  disabled={saving}
-                  className="px-5 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
-                  {saving ? 'Creando...' : wizardPaso < PASOS.length ? 'Siguiente →' : '✓ Crear préstamo'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
       {/* ── MODAL CONFIRMACIÓN CAMBIO ESTADO ── */}
       {modalConfirm && (
         <>
@@ -1409,17 +1591,6 @@ export default function OrdenesClient({
         </div>
       )}
 
-      <ConfirmDialog
-        abierto={confirmarSalirWizard}
-        titulo="¿Descartar cambios?"
-        mensaje="Tienes cambios sin guardar. ¿Deseas salir sin guardar?"
-        textoConfirmar="Sí, salir"
-        textoCancelar="Seguir editando"
-        tipo="default"
-        onConfirmar={() => { setConfirmarSalirWizard(false); cerrarWizard() }}
-        onCancelar={() => setConfirmarSalirWizard(false)}
-      />
-      
     </div>
 
   )
