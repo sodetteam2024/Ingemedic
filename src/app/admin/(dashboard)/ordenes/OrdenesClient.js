@@ -3,12 +3,13 @@ import { registrarBitacora } from '@/lib/bitacora'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { paraGuardar, paraInput, formatear, formatearSoloFecha } from '@/lib/fechas'
+import { paraGuardar, paraInput, formatear, formatearSoloFecha, hoyBogota } from '@/lib/fechas'
 import { IconoTipo } from '@/components/inventario/IconoTipo'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import {
   Plus, X, Search, FileText, CheckCircle2, Package,
   AlertTriangle, Calendar, Clock, User, Edit3, Truck, ChevronRight, ChevronLeft,
-  Building, Box, Layers
+  Building, Box, Layers, Trash2, Check, Ban
 } from 'lucide-react'
 
 const E = {
@@ -20,6 +21,7 @@ const E = {
 }
 
 const FLUJO = ['Borrador', 'Programada', 'En reparto', 'Entregada', 'Finalizada']
+const FILAS_POR_PAGINA = 10
 
 const ESTADO_STYLES = {
   'Borrador':   { bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' },
@@ -27,11 +29,12 @@ const ESTADO_STYLES = {
   'En reparto': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
   'Entregada':  { bg: '#E8F7FB', color: '#0E86A0', dot: '#25A9E0' },
   'Finalizada': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+  'Cancelada':  { bg: '#F1F5F9', color: '#94A3B8', dot: '#94A3B8' },
 }
 
 const BUCKETS = {
   en_curso: ['Borrador', 'Programada', 'En reparto', 'Entregada'],
-  historial:['Finalizada'],
+  historial:['Finalizada', 'Cancelada'],
 }
 
 // Transiciones que puede hacer el ADMIN desde el drawer
@@ -105,8 +108,48 @@ function nombreTipo(tipo) {
   return tipo?.nombre || '—'
 }
 
+// Buscador de equipo por código, reusado en las vistas de categorías y tipos del
+// mini-navegador — deja saltar directo a la unidad sin navegar nivel por nivel.
+function BuscadorCodigoMini({ valor, onChange, resultados, onSeleccionar }) {
+  return (
+    <div className="relative mb-3">
+      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      <input
+        value={valor}
+        onChange={e => onChange(e.target.value)}
+        onBlur={() => setTimeout(() => onChange(''), 200)}
+        placeholder="Buscar equipo por código..."
+        className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43]" />
+      {resultados.length > 0 && (
+        <div className="absolute z-20 left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-[9px] shadow-lg overflow-hidden max-h-[240px] overflow-y-auto">
+          {resultados.slice(0, 8).map(eq => (
+            <div key={eq.id} onMouseDown={e => { e.preventDefault(); onSeleccionar(eq) }}
+              className="px-3 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0 flex items-center gap-2.5">
+              <Package size={12} className="text-[#D81B43] flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[12.5px] font-bold text-slate-800 truncate">{nombreEquipo(eq)}</div>
+                <div className="text-[11px] font-mono text-slate-400">{eq.codigo}</div>
+              </div>
+            </div>
+          ))}
+          {resultados.length > 8 && (
+            <div className="px-3 py-2 text-[11px] text-slate-400 bg-slate-50 text-center">
+              +{resultados.length - 8} más — escribe más para afinar
+            </div>
+          )}
+        </div>
+      )}
+      {valor.trim() && resultados.length === 0 && (
+        <div className="absolute z-20 left-0 top-full mt-1 w-full bg-white border border-slate-200 rounded-[9px] shadow-lg px-3 py-3 text-[12px] text-slate-400">
+          Sin resultados
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function OrdenesClient({
-  ordenesIniciales, clientes, pacientes, estados, estadosEquipo, plantillas, equipos, usuarios, tipos, categorias, tiposEquipo
+  ordenesIniciales, clientes, pacientes, estados, estadosEquipo, plantillas, equipos, usuarios, tipos, categorias, tiposEquipo, estadosEntrega
 }) {
   const router   = useRouter()
   const supabase = createClient()
@@ -171,7 +214,9 @@ export default function OrdenesClient({
   const [miniVista, setMiniVista]           = useState('categorias') // 'categorias' | 'tipos' | 'unidades'
   const [miniCategoria, setMiniCategoria]   = useState(null)
   const [miniTipo, setMiniTipo]             = useState(null)
-  const [buscarUnidadEnTipo, setBuscarUnidadEnTipo] = useState('')
+  const [buscarCodigoMini, setBuscarCodigoMini] = useState('')
+  const [filtrosCamposMini, setFiltrosCamposMini] = useState({})
+  const [paginaUnidades, setPaginaUnidades] = useState(1)
   const seccion2Ref = useRef(null)
   const seccion3Ref = useRef(null)
   const [saving, setSaving]                 = useState(false)
@@ -183,8 +228,9 @@ export default function OrdenesClient({
     fecha_inicio: '', domicilio: false, repartidor_id: '', observaciones: '',
     fecha_entrega_domicilio: '', fechaInicioDistinta: false,
   })
-  const [devolucionActivo, setDevolucionActivo] = useState(null) // id de orden_equipos con picker abierto
-  const [devolucionFecha, setDevolucionFecha]   = useState('')
+  const [modalDevolucion, setModalDevolucion] = useState(null) // { ordenEquipoId, equipoId } o null
+  const [formDevolucion, setFormDevolucion]   = useState({ fecha: '', observaciones: '' })
+  const [modalCancelar, setModalCancelar]     = useState(false)
 
   function showToast(msg, tipo = 'success') {
     setToast({ msg, tipo })
@@ -206,33 +252,32 @@ export default function OrdenesClient({
     historial: stats.finalizada,
   }), [stats])
 
-  const pacienteSeleccionado = useMemo(
-    () => pacientesLocal.find(p => p.id === wForm.paciente_id) || null,
-    [pacientesLocal, wForm.paciente_id]
-  )
-
-  // Equipos ya comprometidos en préstamos a domicilio que aún no se han entregado
-  // físicamente (Borrador/Programada/En reparto) — su estado sigue "Disponible" en BD
-  // hasta que Entregas los marca como "En préstamo", así que hay que excluirlos aquí
-  // a mano para no ofrecerlos dos veces.
-  const idsComprometidos = useMemo(() => {
-    const ids = new Set()
-    ordenes.forEach(o => {
-      if (['Borrador', 'Programada', 'En reparto'].includes(o.estado?.nombre)) {
-        (o.equipos || []).forEach(oe => { if (!oe.fecha_devolucion && oe.equipo_id) ids.add(oe.equipo_id) })
-      }
-    })
-    return ids
-  }, [ordenes])
-
+  // Un equipo asignado a un préstamo a domicilio pasa a "Reservado" de inmediato al
+  // crear la orden (ver crearOrden), así que basta con filtrar por estado — ya no
+  // hace falta cruzar contra órdenes pendientes para no ofrecerlo dos veces.
   const equiposParaMini = useMemo(
-    () => equipos.filter(eq => eq.estado?.nombre === 'Disponible' && !idsComprometidos.has(eq.id)),
-    [equipos, idsComprometidos]
+    () => equipos.filter(eq => eq.estado?.nombre === 'Disponible'),
+    [equipos]
   )
 
   const miniTiposDeCategoria = useMemo(
     () => miniCategoria ? tiposEquipo.filter(t => t.categoria_id === miniCategoria.id) : [],
     [tiposEquipo, miniCategoria]
+  )
+
+  // Solo se muestran categorías con al menos un tipo que tenga unidades disponibles,
+  // y dentro de una categoría, solo los tipos que sí tienen disponibles.
+  const categoriasConDisponibles = useMemo(() =>
+    categorias.filter(cat => {
+      const idsTipos = tiposEquipo.filter(t => t.categoria_id === cat.id).map(t => t.id)
+      return equiposParaMini.some(eq => idsTipos.includes(eq.tipo_equipo_id))
+    }),
+    [categorias, tiposEquipo, equiposParaMini]
+  )
+
+  const miniTiposConDisponibles = useMemo(
+    () => miniTiposDeCategoria.filter(tipo => equiposParaMini.some(eq => eq.tipo_equipo_id === tipo.id)),
+    [miniTiposDeCategoria, equiposParaMini]
   )
 
   const miniUnidadesDeTipo = useMemo(
@@ -247,13 +292,56 @@ export default function OrdenesClient({
   )
 
   const unidadesFiltradasEnTipo = useMemo(() => {
-    const q = buscarUnidadEnTipo.trim().toLowerCase()
-    if (!q) return miniUnidadesDeTipo
-    return miniUnidadesDeTipo.filter(eq => {
+    let result = miniUnidadesDeTipo
+    Object.entries(filtrosCamposMini).forEach(([clave, valor]) => {
+      if (valor) result = result.filter(eq => (eq.atributos?.[clave] ?? eq[clave])?.toString().toLowerCase().includes(valor.toLowerCase()))
+    })
+    return result
+  }, [miniUnidadesDeTipo, filtrosCamposMini])
+
+  // Filtros dinámicos de unidad definidos por categoría (igual que en Inventario), sin el de Estado.
+  // Si la categoría no tiene campos configurados, mostramos al menos la columna de código.
+  const camposUnidadMini = miniCategoria?.atributos_extra?.campos_unidad?.length
+    ? miniCategoria.atributos_extra.campos_unidad
+    : [{ clave: 'codigo', nombre: 'Código', tipo: 'texto' }]
+
+  const valoresUnicosPorCampoMini = useMemo(() => {
+    const result = {}
+    for (const campo of camposUnidadMini) {
+      result[campo.clave] = [...new Set(
+        miniUnidadesDeTipo.map(eq => eq.atributos?.[campo.clave] ?? eq[campo.clave]).filter(v => v != null && v !== '')
+      )].sort()
+    }
+    return result
+  }, [miniUnidadesDeTipo, camposUnidadMini])
+
+  const unidadesPaginadas = useMemo(() => {
+    const inicio = (paginaUnidades - 1) * FILAS_POR_PAGINA
+    return unidadesFiltradasEnTipo.slice(inicio, inicio + FILAS_POR_PAGINA)
+  }, [unidadesFiltradasEnTipo, paginaUnidades])
+
+  const totalPaginasUnidades = Math.max(1, Math.ceil(unidadesFiltradasEnTipo.length / FILAS_POR_PAGINA))
+
+  useEffect(() => {
+    const t = setTimeout(() => setPaginaUnidades(1), 0)
+    return () => clearTimeout(t)
+  }, [miniTipo, filtrosCamposMini])
+
+  // Búsqueda de equipo por código, disponible desde las vistas de categorías y tipos —
+  // deja saltar directo a la unidad sin tener que navegar nivel por nivel
+  const resultadosBusquedaMini = useMemo(() => {
+    const q = buscarCodigoMini.trim().toLowerCase()
+    if (!q) return []
+    let pool = equiposParaMini
+    if (miniVista === 'tipos' && miniCategoria) {
+      const idsTiposCat = tiposEquipo.filter(t => t.categoria_id === miniCategoria.id).map(t => t.id)
+      pool = pool.filter(eq => idsTiposCat.includes(eq.tipo_equipo_id))
+    }
+    return pool.filter(eq => {
       if (eq.codigo?.toLowerCase().includes(q)) return true
       return Object.values(eq.atributos || {}).some(v => String(v).toLowerCase().includes(q))
     })
-  }, [miniUnidadesDeTipo, buscarUnidadEnTipo])
+  }, [buscarCodigoMini, equiposParaMini, miniVista, miniCategoria, tiposEquipo])
 
   const pacientesFiltrados = useMemo(() => {
     const q = pacienteFiltro.trim().toLowerCase()
@@ -319,8 +407,7 @@ export default function OrdenesClient({
     setNuevoRepartidor(orden.repartidor_id || '')
     setEditFecha(false)
     setNuevaFecha(orden.fecha_entrega ? paraInput(orden.fecha_entrega) : '')
-    setDevolucionActivo(null)
-    setDevolucionFecha('')
+    setModalDevolucion(null)
   }
 
   // ── AVANZAR ESTADO ──────────────────────────────────────
@@ -406,6 +493,8 @@ export default function OrdenesClient({
     setMiniVista('categorias')
     setMiniCategoria(null)
     setMiniTipo(null)
+    setFiltrosCamposMini({})
+    setBuscarCodigoMini('')
     setVista('nuevo')
   }
 
@@ -423,23 +512,34 @@ export default function OrdenesClient({
     setWForm(f => ({ ...f, equipos_ids: f.equipos_ids.filter(e => e !== id) }))
   }
 
-  function miniIrACategoria(cat) { setMiniCategoria(cat); setMiniVista('tipos') }
-  function miniIrATipo(tipo) { setMiniTipo(tipo); setMiniVista('unidades'); setBuscarUnidadEnTipo('') }
+  function miniIrACategoria(cat) { setMiniCategoria(cat); setMiniVista('tipos'); setBuscarCodigoMini('') }
+  function miniIrATipo(tipo) { setMiniTipo(tipo); setMiniVista('unidades'); setFiltrosCamposMini({}); setBuscarCodigoMini('') }
   function miniVolver() {
-    if (miniVista === 'unidades') { setMiniVista('tipos'); setMiniTipo(null) }
-    else if (miniVista === 'tipos') { setMiniVista('categorias'); setMiniCategoria(null) }
+    if (miniVista === 'unidades') { setMiniVista('tipos'); setMiniTipo(null); setFiltrosCamposMini({}) }
+    else if (miniVista === 'tipos') { setMiniVista('categorias'); setMiniCategoria(null); setBuscarCodigoMini('') }
+  }
+
+  function irDirectoAUnidad(eq) {
+    const tipo = tiposEquipo.find(t => t.id === eq.tipo_equipo_id)
+    const cat  = categorias.find(c => c.id === tipo?.categoria_id)
+    setMiniCategoria(cat || null)
+    setMiniTipo(tipo || null)
+    setMiniVista('unidades')
+    setFiltrosCamposMini({})
+    setBuscarCodigoMini('')
   }
 
   function volverACategorias() {
-    setMiniVista('categorias'); setMiniCategoria(null); setMiniTipo(null); setBuscarUnidadEnTipo('')
+    setMiniVista('categorias'); setMiniCategoria(null); setMiniTipo(null)
+    setFiltrosCamposMini({}); setBuscarCodigoMini('')
   }
 
   function avanzarSeccion1() {
     if (!wForm.cliente_id) { showToast('Selecciona un cliente', 'error'); return }
-    if (wForm.tiene_paciente && !wForm.paciente_id && !wForm.pacienteNuevo.nombre.trim()) {
-      showToast('Completa los datos del paciente o desmarca la casilla', 'error'); return
+    if (wForm.tiene_paciente && !wForm.pacienteNuevo.nombre.trim()) {
+      showToast('El nombre del paciente es obligatorio', 'error'); return
     }
-    if (wForm.tiene_paciente && !wForm.paciente_id && !wForm.pacienteNuevo.direccion.trim()) {
+    if (wForm.tiene_paciente && !wForm.pacienteNuevo.direccion.trim()) {
       showToast('La dirección del paciente es obligatoria', 'error'); return
     }
     setSeccion1Completa(true)
@@ -456,7 +556,14 @@ export default function OrdenesClient({
     setWForm(f => ({
       ...f,
       paciente_id: paciente.id,
-      pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' },
+      pacienteNuevo: {
+        nombre:    paciente.nombre    || '',
+        cedula:    paciente.cedula    || '',
+        direccion: paciente.direccion || '',
+        ciudad:    paciente.ciudad    || '',
+        telefono:  paciente.telefono  || '',
+        correo:    paciente.correo    || '',
+      },
     }))
     setPacienteFiltro('')
   }
@@ -478,13 +585,11 @@ export default function OrdenesClient({
     } else {
       if (!wForm.fecha_inicio) { showToast('Ingresa la fecha de inicio del préstamo', 'error'); return }
     }
-    if (wForm.tiene_paciente && !wForm.paciente_id && !wForm.pacienteNuevo.nombre.trim()) {
+    if (wForm.tiene_paciente && !wForm.pacienteNuevo.nombre.trim()) {
       showToast('Completa los datos del paciente o desmarca la casilla', 'error'); return
     }
-    if (wForm.tiene_paciente && !wForm.paciente_id) {
-      if (!wForm.pacienteNuevo.direccion.trim()) {
-        showToast('La dirección del paciente es obligatoria', 'error'); return
-      }
+    if (wForm.tiene_paciente && !wForm.pacienteNuevo.direccion.trim()) {
+      showToast('La dirección del paciente es obligatoria', 'error'); return
     }
     if (wForm.domicilio && !wForm.repartidor_id) {
       showToast('Selecciona un repartidor', 'error'); return
@@ -500,7 +605,25 @@ export default function OrdenesClient({
     }
 
     let pacienteId = wForm.tiene_paciente ? wForm.paciente_id : null
-    if (wForm.tiene_paciente && !pacienteId) {
+    if (wForm.tiene_paciente && pacienteId) {
+      // Paciente existente — puede haber sido editado en el formulario, se actualiza
+      const { error: errUpdatePac } = await supabase.from('pacientes').update({
+        nombre:    wForm.pacienteNuevo.nombre.trim(),
+        cedula:    wForm.pacienteNuevo.cedula.trim() || null,
+        direccion: wForm.pacienteNuevo.direccion.trim(),
+        ciudad:    wForm.pacienteNuevo.ciudad.trim() || null,
+        telefono:  wForm.pacienteNuevo.telefono.trim() || null,
+        correo:    wForm.pacienteNuevo.correo.trim() || null,
+      }).eq('id', pacienteId)
+      if (errUpdatePac) {
+        showToast('Error actualizando paciente: ' + errUpdatePac.message, 'error'); setSaving(false); return
+      }
+      setPacientesLocal(prev => prev.map(p => p.id === pacienteId ? {
+        ...p,
+        nombre: wForm.pacienteNuevo.nombre.trim(),
+        cedula: wForm.pacienteNuevo.cedula.trim() || null,
+      } : p))
+    } else if (wForm.tiene_paciente && !pacienteId) {
       const { data: nuevoPaciente, error: errPac } = await supabase.from('pacientes')
         .insert({
           nombre:    wForm.pacienteNuevo.nombre.trim(),
@@ -563,6 +686,15 @@ export default function OrdenesClient({
             cliente_actual_id:  wForm.cliente_id,
           }).eq('id', equipoId)
         }
+      } else {
+        const estadoReservado = (estadosEquipo || estados).find(e => e.nombre === 'Reservado')
+        if (estadoReservado) {
+          await supabase.from('equipos').update({
+            estado_id:          estadoReservado.id,
+            paciente_actual_id: pacienteId,
+            cliente_actual_id:  wForm.cliente_id,
+          }).eq('id', equipoId)
+        }
       }
     }
 
@@ -579,9 +711,17 @@ export default function OrdenesClient({
     router.refresh()
   }
 
-  async function devolverEquipo(ordenEquipoId, equipoId, fechaDevolucion) {
+  function abrirModalDevolucion(oe) {
+    setModalDevolucion({ ordenEquipoId: oe.id, equipoId: oe.equipo_id || oe.equipo?.id })
+    setFormDevolucion({ fecha: hoyBogota(), observaciones: '' })
+  }
+
+  async function devolverEquipo(ordenEquipoId, equipoId, fechaDevolucion, observaciones) {
     const { error } = await supabase.from('orden_equipos')
-      .update({ fecha_devolucion: fechaDevolucion })
+      .update({
+        fecha_devolucion:          paraGuardar(fechaDevolucion),
+        observaciones_devolucion: observaciones || null,
+      })
       .eq('id', ordenEquipoId)
     if (error) { showToast('Error: ' + error.message, 'error'); return }
 
@@ -609,8 +749,54 @@ export default function OrdenesClient({
       showToast('Equipo devuelto')
     }
 
-    setDevolucionActivo(null)
-    setDevolucionFecha('')
+    setModalDevolucion(null)
+    router.refresh()
+  }
+
+  // ── CANCELAR ORDEN ───────────────────────────────────────
+  // No borra ninguna fila (ordenes_servicio, orden_equipos, entregas) — el registro
+  // queda completo con estado "Cancelada", solo se libera el equipo físico.
+  async function cancelarOrden() {
+    const estadoCancelada = estados.find(e => e.nombre === 'Cancelada')
+    if (!estadoCancelada) {
+      showToast('No se encontró el estado "Cancelada" en estados_orden', 'error'); return
+    }
+
+    const { error } = await supabase.from('ordenes_servicio')
+      .update({ estado_id: estadoCancelada.id })
+      .eq('id', drawer.id)
+    if (error) { showToast('Error: ' + error.message, 'error'); return }
+
+    // Si hay una entrega asociada sin completar, se cancela también
+    const estadoEntregaCancelada  = (estadosEntrega || []).find(e => e.nombre === 'Cancelada')
+    const estadoEntregaCompletada = (estadosEntrega || []).find(e => e.nombre === 'Completada')
+    if (estadoEntregaCancelada) {
+      let q = supabase.from('entregas').update({ estado_id: estadoEntregaCancelada.id }).eq('orden_id', drawer.id)
+      if (estadoEntregaCompletada) q = q.neq('estado_id', estadoEntregaCompletada.id)
+      await q
+    }
+
+    // Libera los equipos de esta orden que aún no se hayan devuelto
+    const estadoDisponible = (estadosEquipo || []).find(e => e.nombre === 'Disponible')
+    const idsALiberar = (drawer.equipos || [])
+      .filter(oe => !oe.fecha_devolucion)
+      .map(oe => oe.equipo_id || oe.equipo?.id)
+      .filter(Boolean)
+    if (estadoDisponible && idsALiberar.length > 0) {
+      await supabase.from('equipos').update({
+        estado_id:          estadoDisponible.id,
+        paciente_actual_id: null,
+        cliente_actual_id:  null,
+      }).in('id', idsALiberar)
+    }
+
+    registrarBitacora({ modulo: 'ordenes', accion: 'cancelar', entidad: 'préstamo', entidad_id: drawer.id, detalle: { codigo: drawer.codigo } })
+
+    const nuevoEstado = { id: estadoCancelada.id, nombre: 'Cancelada' }
+    setOrdenes(prev => prev.map(o => o.id === drawer.id ? { ...o, estado: nuevoEstado } : o))
+    setDrawer(prev => ({ ...prev, estado: nuevoEstado }))
+    setModalCancelar(false)
+    showToast('Préstamo cancelado — equipo liberado')
     router.refresh()
   }
 
@@ -625,6 +811,10 @@ export default function OrdenesClient({
     ? { id: E.Finalizada, nombre: 'Finalizada', requiereRepartidor: false }
     : null
   const puedeEdRep      = drawer && ['Borrador', 'Programada'].includes(drawerEstado)
+  const equiposDrawer   = drawer?.equipos || []
+  const esUnicoEquipo   = equiposDrawer.length === 1
+  const puedeFinalizarUnico = esUnicoEquipo && !equiposDrawer[0].fecha_devolucion && !['Finalizada', 'Cancelada'].includes(drawerEstado)
+  const puedeCancelarOrden = drawer && !['Finalizada', 'Cancelada'].includes(drawerEstado)
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -901,7 +1091,7 @@ export default function OrdenesClient({
                 </label>
 
                 {wForm.tiene_paciente && (
-                  <div className="space-y-3">
+                  <div className="bg-slate-50 border border-slate-200 rounded-[10px] p-4 space-y-3">
                     {!wForm.paciente_id ? (
                       <>
                         <div className="relative">
@@ -921,58 +1111,50 @@ export default function OrdenesClient({
                             ))}
                           </div>
                         )}
-                        <button type="button" onClick={() => setWForm(f => ({ ...f, pacienteNuevo: { nombre: '', cedula: '', direccion: '', ciudad: '', telefono: '', correo: '' } }))}
-                          className="text-[13px] text-[#D81B43] font-semibold hover:underline">
-                          + Crear paciente nuevo
-                        </button>
+                        <div className="text-[12px] text-slate-400">O completa los datos abajo para crear un paciente nuevo</div>
                       </>
                     ) : (
-                      <div className="border border-slate-200 rounded-[9px] p-3 bg-slate-50">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-[13px] font-semibold text-slate-800">{pacienteSeleccionado?.nombre || 'Paciente seleccionado'}</div>
-                            <div className="text-[11px] text-slate-500">{pacienteSeleccionado?.cedula || 'Sin cédula'}</div>
-                          </div>
-                          <button type="button" onClick={limpiarPacienteSeleccionado}
-                            className="text-[12px] text-slate-500 hover:text-[#D81B43]">Cambiar</button>
+                      <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                        <div className="flex items-center gap-1.5 text-[12.5px] text-[#0F7B55] font-semibold">
+                          <CheckCircle2 size={14} /> Paciente existente — puedes editar sus datos si hace falta
                         </div>
+                        <button type="button" onClick={limpiarPacienteSeleccionado}
+                          className="text-[12px] text-slate-500 hover:text-[#D81B43] font-medium flex-shrink-0">Cambiar</button>
                       </div>
                     )}
 
-                    {!wForm.paciente_id && (
-                      <div className="grid grid-cols-1 gap-3">
-                        <div>
-                          <label className={labelCls}>Nombre <span className="text-[#D81B43]">*</span></label>
-                          <input value={wForm.pacienteNuevo.nombre} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, nombre: e.target.value } }))}
-                            type="text" className={inputCls} />
-                        </div>
-                        <div>
-                          <label className={labelCls}>Cédula</label>
-                          <input value={wForm.pacienteNuevo.cedula} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, cedula: e.target.value } }))}
-                            type="text" className={inputCls} />
-                        </div>
-                        <div>
-                          <label className={labelCls}>Dirección <span className="text-[#D81B43]">*</span></label>
-                          <input value={wForm.pacienteNuevo.direccion} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, direccion: e.target.value } }))}
-                            type="text" className={inputCls} />
-                        </div>
-                        <div>
-                          <label className={labelCls}>Ciudad</label>
-                          <input value={wForm.pacienteNuevo.ciudad} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, ciudad: e.target.value } }))}
-                            type="text" className={inputCls} />
-                        </div>
-                        <div>
-                          <label className={labelCls}>Teléfono</label>
-                          <input value={wForm.pacienteNuevo.telefono} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, telefono: e.target.value } }))}
-                            type="text" className={inputCls} />
-                        </div>
-                        <div>
-                          <label className={labelCls}>Correo</label>
-                          <input value={wForm.pacienteNuevo.correo} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, correo: e.target.value } }))}
-                            type="email" className={inputCls} />
-                        </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelCls}>Nombre <span className="text-[#D81B43]">*</span></label>
+                        <input value={wForm.pacienteNuevo.nombre} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, nombre: e.target.value } }))}
+                          type="text" className={inputCls} />
                       </div>
-                    )}
+                      <div>
+                        <label className={labelCls}>Cédula</label>
+                        <input value={wForm.pacienteNuevo.cedula} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, cedula: e.target.value } }))}
+                          type="text" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Dirección <span className="text-[#D81B43]">*</span></label>
+                        <input value={wForm.pacienteNuevo.direccion} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, direccion: e.target.value } }))}
+                          type="text" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Ciudad</label>
+                        <input value={wForm.pacienteNuevo.ciudad} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, ciudad: e.target.value } }))}
+                          type="text" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Correo</label>
+                        <input value={wForm.pacienteNuevo.correo} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, correo: e.target.value } }))}
+                          type="email" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Teléfono</label>
+                        <input value={wForm.pacienteNuevo.telefono} onChange={e => setWForm(f => ({ ...f, pacienteNuevo: { ...f.pacienteNuevo, telefono: e.target.value } }))}
+                          type="text" className={inputCls} />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1005,7 +1187,7 @@ export default function OrdenesClient({
               <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-4">
                 {/* Mini-navegador de inventario */}
                 <div>
-                  {miniVista !== 'categorias' && (
+                  {miniVista === 'tipos' && (
                     <button type="button" onClick={miniVolver}
                       className="flex items-center gap-1 text-[12px] text-slate-500 hover:text-[#D81B43] mb-3 font-medium">
                       <ChevronRight size={12} className="rotate-180" /> Volver
@@ -1013,8 +1195,11 @@ export default function OrdenesClient({
                   )}
 
                   {miniVista === 'categorias' && (
+                    <div>
+                      <BuscadorCodigoMini valor={buscarCodigoMini} onChange={setBuscarCodigoMini}
+                        resultados={resultadosBusquedaMini} onSeleccionar={irDirectoAUnidad} />
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {categorias.map(cat => {
+                      {categoriasConDisponibles.map(cat => {
                         const nTipos = tiposEquipo.filter(t => t.categoria_id === cat.id).length
                         return (
                           <div key={cat.id} onClick={() => miniIrACategoria(cat)}
@@ -1024,27 +1209,46 @@ export default function OrdenesClient({
                           </div>
                         )
                       })}
-                      {categorias.length === 0 && (
-                        <div className="col-span-full text-[12.5px] text-slate-400 text-center py-6">Sin categorías configuradas</div>
+                      {categoriasConDisponibles.length === 0 && (
+                        <div className="col-span-full text-[12.5px] text-slate-400 text-center py-6">Sin equipos disponibles en ninguna categoría</div>
                       )}
+                    </div>
                     </div>
                   )}
 
                   {miniVista === 'tipos' && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {miniTiposDeCategoria.map(tipo => {
-                        const nDisp = equiposParaMini.filter(eq => eq.tipo_equipo_id === tipo.id && !wForm.equipos_ids.includes(eq.id)).length
+                    <div>
+                      <BuscadorCodigoMini valor={buscarCodigoMini} onChange={setBuscarCodigoMini}
+                        resultados={resultadosBusquedaMini} onSeleccionar={irDirectoAUnidad} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {miniTiposConDisponibles.map(tipo => {
+                        const stockTotal = equipos.filter(eq => eq.tipo_equipo_id === tipo.id).length
+                        const stockDisp  = equiposParaMini.filter(eq => eq.tipo_equipo_id === tipo.id).length
+                        const enUso = stockTotal - stockDisp
                         return (
                           <div key={tipo.id} onClick={() => miniIrATipo(tipo)}
-                            className="bg-slate-50 rounded-[9px] border border-slate-200 p-3 cursor-pointer hover:border-[#D81B43]/40 transition-all">
-                            <div className="text-[12.5px] font-bold text-slate-700 leading-tight truncate">{nombreTipo(tipo)}</div>
-                            <div className="text-[10.5px] text-[#0F7B55] mt-0.5 font-semibold">{nDisp} disp.</div>
+                            className="bg-white rounded-[9px] border border-slate-200 overflow-hidden cursor-pointer hover:border-[#D81B43]/40 hover:shadow-sm transition-all flex">
+                            <div className="w-[44px] h-[44px] flex-shrink-0 bg-slate-50 flex items-center justify-center border-r border-slate-100">
+                              <IconoTipo tipo={tipo} categorias={categorias} size={26} />
+                            </div>
+                            <div className="p-2 flex-1 min-w-0 relative">
+                              <div className="text-[11.5px] font-bold text-slate-800 leading-snug pr-8 truncate">{nombreTipo(tipo)}</div>
+                              <div className="text-[10px] mt-0.5">
+                                <span className="font-bold text-[#0F7B55]">{stockDisp} disp.</span>
+                                {enUso > 0 && <span className="text-slate-400"> · {enUso} en uso</span>}
+                              </div>
+                              <div className="absolute top-1 right-1 bg-white border border-slate-100 rounded-full px-1.5 py-0.5">
+                                <span className="text-[10px] font-extrabold text-slate-800 tabular-nums">{stockTotal}</span>
+                                <span className="text-[8px] text-slate-400 ml-0.5">uds.</span>
+                              </div>
+                            </div>
                           </div>
                         )
                       })}
-                      {miniTiposDeCategoria.length === 0 && (
-                        <div className="col-span-full text-[12.5px] text-slate-400 text-center py-6">Sin tipos en esta categoría</div>
+                      {miniTiposConDisponibles.length === 0 && (
+                        <div className="col-span-full text-[12.5px] text-slate-400 text-center py-6">Sin tipos con unidades disponibles en esta categoría</div>
                       )}
+                    </div>
                     </div>
                   )}
 
@@ -1072,44 +1276,95 @@ export default function OrdenesClient({
                         </div>
                       </div>
 
-                      <div className="relative mb-3">
-                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                          value={buscarUnidadEnTipo}
-                          onChange={e => setBuscarUnidadEnTipo(e.target.value)}
-                          placeholder="Buscar por código o serie..."
-                          className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43]" />
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2">
-                        {unidadesFiltradasEnTipo.map(eq => {
-                          const seleccionado = wForm.equipos_ids.includes(eq.id)
+                      <div className="bg-slate-50 border border-slate-200 rounded-[9px] p-2.5 mb-3 grid grid-cols-2 gap-2">
+                        {camposUnidadMini.map(campo => {
+                          const valoresUnicos = valoresUnicosPorCampoMini[campo.clave] || []
+                          const usarDropdown = valoresUnicos.length > 0 && valoresUnicos.length <= 6
                           return (
-                            <div key={eq.id}
-                              onClick={() => seleccionado ? quitarEquipo(eq.id) : agregarEquipo(eq.id)}
-                              className={`rounded-[9px] p-2.5 cursor-pointer text-center transition-colors
-                                ${seleccionado
-                                  ? 'border-[1.5px] border-[#D81B43] bg-[#FFF0F3]'
-                                  : 'border border-slate-200 hover:border-slate-300'}`}>
-                              <div className="text-[12.5px] font-bold text-slate-800 font-mono">{eq.codigo}</div>
-                              <div className={`text-[10px] mt-1 ${seleccionado ? 'text-[#D81B43] font-bold' : 'text-[#0F7B55]'}`}>
-                                {seleccionado ? '✓ Agregado' : 'Disponible'}
-                              </div>
+                            <div key={campo.clave}>
+                              <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block truncate">{campo.nombre}</label>
+                              {usarDropdown ? (
+                                <select value={filtrosCamposMini[campo.clave] || ''}
+                                  onChange={e => setFiltrosCamposMini(f => ({ ...f, [campo.clave]: e.target.value }))}
+                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-[7px] text-[12px] outline-none focus:border-[#D81B43] bg-white">
+                                  <option value="">Todos</option>
+                                  {valoresUnicos.map(v => <option key={v} value={v}>{v}</option>)}
+                                </select>
+                              ) : (
+                                <input type="text" value={filtrosCamposMini[campo.clave] || ''}
+                                  onChange={e => setFiltrosCamposMini(f => ({ ...f, [campo.clave]: e.target.value }))}
+                                  placeholder="Filtrar…"
+                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-[7px] text-[12px] outline-none focus:border-[#D81B43] bg-white placeholder:text-slate-400" />
+                              )}
                             </div>
                           )
                         })}
                       </div>
 
-                      <div className="text-[11px] text-slate-400 mt-2.5">
-                        {unidadesFiltradasEnTipo.length} unidad{unidadesFiltradasEnTipo.length !== 1 ? 'es' : ''}
-                        {buscarUnidadEnTipo ? ' encontradas' : ' visibles'}
+                      <div className="border border-slate-200 rounded-[9px] overflow-hidden overflow-x-auto">
+                        <table className="w-full border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-200">
+                              {camposUnidadMini.map(c => (
+                                <th key={c.clave} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.05em] text-slate-400 bg-slate-50 whitespace-nowrap">{c.nombre}</th>
+                              ))}
+                              <th className="w-10 bg-slate-50"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {unidadesPaginadas.map(eq => {
+                              const seleccionado = wForm.equipos_ids.includes(eq.id)
+                              return (
+                                <tr key={eq.id}
+                                  onClick={() => seleccionado ? quitarEquipo(eq.id) : agregarEquipo(eq.id)}
+                                  className={`border-b border-slate-100 last:border-0 cursor-pointer transition-colors ${seleccionado ? 'bg-[#FFF0F3]' : 'hover:bg-slate-50'}`}>
+                                  {camposUnidadMini.map(c => {
+                                    const valor = eq.atributos?.[c.clave] ?? eq[c.clave]
+                                    return (
+                                      <td key={c.clave} className="px-3 py-2 text-[12.5px] text-slate-600 whitespace-nowrap">
+                                        {c.clave === 'codigo'
+                                          ? <span className="font-mono text-[12px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">{valor || '—'}</span>
+                                          : (valor ?? '—')}
+                                      </td>
+                                    )
+                                  })}
+                                  <td className="px-2 py-2 text-right">
+                                    <button type="button"
+                                      onClick={e => { e.stopPropagation(); seleccionado ? quitarEquipo(eq.id) : agregarEquipo(eq.id) }}
+                                      className={`w-6 h-6 rounded-full inline-flex items-center justify-center transition-colors ${
+                                        seleccionado ? 'bg-[#D81B43] text-white' : 'bg-[#D81B43]/10 text-[#D81B43]'}`}>
+                                      {seleccionado ? <Check size={12} strokeWidth={3} /> : <Plus size={12} strokeWidth={3} />}
+                                    </button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                            {unidadesPaginadas.length === 0 && (
+                              <tr><td colSpan={camposUnidadMini.length + 1} className="text-center py-8 text-[12.5px] text-slate-400">Sin unidades que coincidan</td></tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
+
+                      {totalPaginasUnidades > 1 && (
+                        <div className="flex items-center justify-between mt-2.5 text-[12px] text-slate-500">
+                          <button type="button" disabled={paginaUnidades === 1} onClick={() => setPaginaUnidades(p => p - 1)}
+                            className="px-2.5 py-1.5 border border-slate-200 rounded-[7px] disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-300">
+                            ‹ Anterior
+                          </button>
+                          <span>Página {paginaUnidades} de {totalPaginasUnidades} · {unidadesFiltradasEnTipo.length} unidades</span>
+                          <button type="button" disabled={paginaUnidades === totalPaginasUnidades} onClick={() => setPaginaUnidades(p => p + 1)}
+                            className="px-2.5 py-1.5 border border-slate-200 rounded-[7px] disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-300">
+                            Siguiente ›
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
                 {/* Carrito */}
-                <div>
+                <div className="md:border-l md:border-slate-100 md:pl-4">
                   <div className={labelCls}>Carrito ({wForm.equipos_ids.length})</div>
                   {wForm.equipos_ids.length === 0 ? (
                     <div className="text-[12.5px] text-slate-400 text-center py-8 border border-dashed border-slate-200 rounded-[9px]">
@@ -1126,10 +1381,11 @@ export default function OrdenesClient({
                             <div className="flex-1 min-w-0">
                               <div className="text-[13px] font-semibold text-slate-700 truncate">{nombreEquipo(eq)}</div>
                               <div className="text-[11px] font-mono text-slate-400">{eq.codigo}</div>
+                              <div className="text-[10.5px] text-slate-400 truncate">{eq.tipo_equipo?.categoria?.nombre}</div>
                             </div>
                             <button type="button" onClick={() => quitarEquipo(id)}
                               className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0">
-                              <X size={13} />
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         )
@@ -1166,7 +1422,7 @@ export default function OrdenesClient({
                   <div>
                     <div className="text-[10px] font-semibold uppercase text-slate-400 mb-1">Paciente</div>
                     <div className="text-[13.5px] font-semibold text-slate-800">
-                      {wForm.paciente_id ? (pacienteSeleccionado?.nombre || '—') : (wForm.pacienteNuevo.nombre || '—')}
+                      {wForm.pacienteNuevo.nombre || '—'}
                     </div>
                   </div>
                 )}
@@ -1198,7 +1454,7 @@ export default function OrdenesClient({
                 {!wForm.domicilio && (
                   <div>
                     <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
-                    <input type="datetime-local" value={wForm.fecha_inicio}
+                    <input type="date" value={wForm.fecha_inicio}
                       onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
                   </div>
                 )}
@@ -1225,7 +1481,7 @@ export default function OrdenesClient({
                     {wForm.fechaInicioDistinta && (
                       <div>
                         <label className={labelCls}>Fecha de inicio del préstamo <span className="text-[#D81B43]">*</span></label>
-                        <input type="datetime-local" value={wForm.fecha_inicio}
+                        <input type="date" value={wForm.fecha_inicio}
                           onChange={e => setWForm(f => ({ ...f, fecha_inicio: e.target.value }))} className={inputCls} />
                       </div>
                     )}
@@ -1276,19 +1532,33 @@ export default function OrdenesClient({
 
               {/* Estado + timeline + acción */}
               <div className="p-5">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <EstadoBadge orden={drawer} retrasada={drawerRetrasada} />
-                  {transicion && (
-                    <button onClick={() => setModalConfirm({ orden: drawer, transicion })}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#D81B43] text-white text-[12px] font-semibold rounded-[7px] hover:bg-[#B0172F]">
-                      → {transicion.nombre}
-                    </button>
-                  )}
-                  {drawerEstado === 'En reparto' && (
-                    <span className="text-[12px] text-[#B45309] bg-[#FFFBEB] px-3 py-1.5 rounded-[7px] border border-[#F59E0B]/30 font-medium flex items-center gap-1.5">
-                      <Truck size={12} /> En ruta con el repartidor
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {puedeFinalizarUnico && (
+                      <button onClick={() => abrirModalDevolucion(equiposDrawer[0])}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#D81B43] text-white text-[12px] font-semibold rounded-[7px] hover:bg-[#B0172F]">
+                        <CheckCircle2 size={13} /> Finalizar préstamo
+                      </button>
+                    )}
+                    {transicion && !esUnicoEquipo && (
+                      <button onClick={() => setModalConfirm({ orden: drawer, transicion })}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#D81B43] text-white text-[12px] font-semibold rounded-[7px] hover:bg-[#B0172F]">
+                        → {transicion.nombre}
+                      </button>
+                    )}
+                    {drawerEstado === 'En reparto' && (
+                      <span className="text-[12px] text-[#B45309] bg-[#FFFBEB] px-3 py-1.5 rounded-[7px] border border-[#F59E0B]/30 font-medium flex items-center gap-1.5">
+                        <Truck size={12} /> En ruta con el repartidor
+                      </span>
+                    )}
+                    {puedeCancelarOrden && (
+                      <button onClick={() => setModalCancelar(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 text-red-600 text-[12px] font-semibold rounded-[7px] hover:bg-red-50">
+                        <Ban size={13} /> Cancelar préstamo
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Aviso orden incompleta */}
@@ -1466,8 +1736,7 @@ export default function OrdenesClient({
                   ? <div className="text-[13px] text-slate-400">Sin equipos asociados</div>
                   : <div className="space-y-2">
                       {drawer.equipos.map(oe => {
-                        const devuelto  = !!oe.fecha_devolucion
-                        const mostrando = devolucionActivo === oe.id
+                        const devuelto = !!oe.fecha_devolucion
                         return (
                           <div key={oe.id} className="p-3 bg-slate-50 rounded-[9px] border border-slate-200">
                             <div className="flex items-center gap-3">
@@ -1489,32 +1758,17 @@ export default function OrdenesClient({
                             {devuelto && (
                               <div className="text-[11px] text-slate-400 mt-1.5 ml-[26px]">
                                 Devuelto el {formatear(oe.fecha_devolucion)}
+                                {oe.observaciones_devolucion && (
+                                  <div className="italic mt-0.5">&ldquo;{oe.observaciones_devolucion}&rdquo;</div>
+                                )}
                               </div>
                             )}
-                            {!devuelto && (
+                            {!devuelto && !esUnicoEquipo && (
                               <div className="mt-2 ml-[26px]">
-                                {!mostrando ? (
-                                  <button type="button"
-                                    onClick={() => { setDevolucionActivo(oe.id); setDevolucionFecha(paraInput(new Date().toISOString()).slice(0, 10)) }}
-                                    className="text-[11.5px] text-[#D81B43] font-semibold hover:underline">
-                                    Marcar como devuelto
-                                  </button>
-                                ) : (
-                                  <div className="flex items-center gap-2">
-                                    <input type="date" value={devolucionFecha}
-                                      onChange={e => setDevolucionFecha(e.target.value)}
-                                      className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-[7px] text-[12.5px] outline-none focus:border-[#D81B43] bg-white" />
-                                    <button type="button" disabled={!devolucionFecha}
-                                      onClick={() => devolverEquipo(oe.id, oe.equipo_id || oe.equipo?.id, devolucionFecha)}
-                                      className="px-3 py-1.5 bg-[#D81B43] text-white rounded-[7px] text-[12px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
-                                      Confirmar
-                                    </button>
-                                    <button type="button" onClick={() => setDevolucionActivo(null)}
-                                      className="px-2 py-1.5 text-slate-400 hover:text-slate-600 text-[12px]">
-                                      Cancelar
-                                    </button>
-                                  </div>
-                                )}
+                                <button type="button" onClick={() => abrirModalDevolucion(oe)}
+                                  className="text-[11.5px] text-[#D81B43] font-semibold hover:underline">
+                                  Marcar como devuelto
+                                </button>
                               </div>
                             )}
                           </div>
@@ -1584,6 +1838,54 @@ export default function OrdenesClient({
           </div>
         </>
       )}
+
+      {modalDevolucion && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm" onClick={() => setModalDevolucion(null)} />
+          <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center p-0 md:p-4">
+            <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-[380px] p-6 shadow-2xl">
+              <h3 className="text-[16px] font-bold text-slate-800 mb-4">Marcar como devuelto</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className={labelCls}>Fecha de devolución <span className="text-[#D81B43]">*</span></label>
+                  <input type="date" value={formDevolucion.fecha}
+                    onChange={e => setFormDevolucion(f => ({ ...f, fecha: e.target.value }))}
+                    className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Observaciones (opcional)</label>
+                  <textarea value={formDevolucion.observaciones}
+                    onChange={e => setFormDevolucion(f => ({ ...f, observaciones: e.target.value }))}
+                    placeholder="Estado del equipo, novedades, etc." rows={3}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-[9px] text-[13.5px] outline-none focus:border-[#D81B43] resize-none placeholder:text-slate-400" />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-5">
+                <button type="button" disabled={!formDevolucion.fecha}
+                  onClick={() => devolverEquipo(modalDevolucion.ordenEquipoId, modalDevolucion.equipoId, formDevolucion.fecha, formDevolucion.observaciones)}
+                  className="flex-1 py-2.5 bg-[#D81B43] text-white rounded-[9px] text-[13px] font-semibold hover:bg-[#B0172F] disabled:opacity-50">
+                  Confirmar
+                </button>
+                <button type="button" onClick={() => setModalDevolucion(null)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-[9px] text-[13px] font-semibold hover:bg-slate-200">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <ConfirmDialog
+        abierto={modalCancelar}
+        titulo="¿Cancelar este préstamo?"
+        mensaje="La orden quedará marcada como Cancelada y el equipo volverá a estar disponible. El registro no se borra."
+        textoConfirmar="Sí, cancelar préstamo"
+        textoCancelar="Volver"
+        tipo="peligro"
+        onConfirmar={cancelarOrden}
+        onCancelar={() => setModalCancelar(false)}
+      />
 
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-[10px] text-[13px] font-medium text-white shadow-lg ${toast.tipo === 'error' ? 'bg-red-500' : 'bg-[#0F7B55]'}`}>

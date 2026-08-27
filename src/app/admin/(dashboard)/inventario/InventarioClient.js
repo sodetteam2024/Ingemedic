@@ -29,6 +29,7 @@ const FILTRO_DROPDOWN_MAX = 6
 
 const ESTADO_STYLES = {
   'Disponible': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+  'Reservado': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
   'En préstamo': { bg: '#E8F7FB', color: '#0E86A0', dot: '#2EB5D4' },
   'En mantenimiento': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
   'Con novedad': { bg: '#FEF2F2', color: '#C0392B', dot: '#C0392B' },
@@ -122,7 +123,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
       supabase
         .from('orden_equipos')
         .select(`
-          id, fecha_entrega, fecha_devolucion,
+          id, fecha_entrega, fecha_devolucion, observaciones_devolucion,
           orden:ordenes_servicio(
             id, codigo, fecha_creacion,
             estado:estados_orden(nombre),
@@ -369,7 +370,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
         fecha:    fD,
         titulo:   'Devolución',
         badge:    { text: 'Devuelto', bg: '#ECFDF5', color: '#0F7B55' },
-        detalle:  cod ? `Orden: ${cod}` : '',
+        detalle:  [cod ? `Orden: ${cod}` : null, p.observaciones_devolucion || null].filter(Boolean).join('  ·  '),
         dotColor: '#0F7B55',
       })
     })
@@ -1088,7 +1089,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                         fecha:   fechaDevolucion,
                         entidad: 'Equipo devuelto',
                         badge:   { text: 'Devuelto', bg: '#ECFDF5', color: '#0F7B55' },
-                        details: [codigo ? `Orden ${codigo}` : null].filter(Boolean),
+                        details: [codigo ? `Orden ${codigo}` : null, p.observaciones_devolucion || null].filter(Boolean),
                         dot:     { bg: '#0F7B55', ring: false },
                       })
                     }

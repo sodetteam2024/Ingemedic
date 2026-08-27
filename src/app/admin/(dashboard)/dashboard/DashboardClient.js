@@ -15,6 +15,7 @@ const COLORES_DONA = ['#1B3A6B', '#D81B43', '#2EB5D4', '#0F7B55', '#B45309', '#6
 
 const ESTADO_EQUIPO_STYLES = {
   'Disponible': { bg: '#ECFDF5', color: '#0F7B55', dot: '#0F7B55' },
+  'Reservado': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
   'En préstamo': { bg: '#E8F7FB', color: '#0E86A0', dot: '#25A9E0' },
   'En mantenimiento': { bg: '#FFFBEB', color: '#B45309', dot: '#F59E0B' },
   'Con novedad': { bg: '#FEF2F2', color: '#D81B43', dot: '#D81B43' },

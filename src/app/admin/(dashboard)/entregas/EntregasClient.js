@@ -277,9 +277,9 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       const estadoN  = item._tipo === 'pendiente' ? 'No iniciada' : item.estado?.nombre
       const fecha    = soloDia(item.fecha_creacion)
 
-      // Filtro por pestaña: Activas = todo lo que no está Completada; Historial = solo Completadas
-      const esCompletada = estadoN === 'Completada'
-      const mTab = tab === 'historial' ? esCompletada : !esCompletada
+      // Filtro por pestaña: Activas = todo lo que no está Completada/Cancelada; Historial = esas dos
+      const esFinal = estadoN === 'Completada' || estadoN === 'Cancelada'
+      const mTab = tab === 'historial' ? esFinal : !esFinal
 
       const mq  = !search || [codigo, cliente, item._repartidor].some(v => v?.toLowerCase().includes(search.toLowerCase()))
       const me  = !filtroEstado  || estadoN === filtroEstado
@@ -400,15 +400,12 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       .update({ estado_id: ESTADO_OS_ENTREGADA, recibido_por: regForm.recibido_por.trim() })
       .eq('id', modalRegistro.orden?.id)
 
-    // Actualizar equipos a "En préstamo" y registrar quién los tiene
+    // Equipo pasa de "Reservado" a "En préstamo" — paciente_actual_id/cliente_actual_id
+    // ya quedaron asignados al crear la orden (quedó reservado desde ese momento).
     const idsEquipos = (modalRegistro.orden?.equipos || []).map(oe => oe.equipo_id || oe.equipo?.id).filter(Boolean)
     const estadoPrestamo = (estadosEquipo || []).find(e => e.nombre === 'En préstamo')
     if (idsEquipos.length > 0 && estadoPrestamo) {
-      await supabase.from('equipos').update({
-        estado_id:          estadoPrestamo.id,
-        paciente_actual_id: modalRegistro.orden?.paciente_id || null,
-        cliente_actual_id:  modalRegistro.orden?.cliente_id  || null,
-      }).in('id', idsEquipos)
+      await supabase.from('equipos').update({ estado_id: estadoPrestamo.id }).in('id', idsEquipos)
     }
 
     const nuevoEstado = { id: ESTADOS_ENTREGA.Completada, nombre: 'Completada' }
