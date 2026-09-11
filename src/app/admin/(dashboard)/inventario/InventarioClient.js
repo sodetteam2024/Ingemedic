@@ -94,6 +94,7 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
   const [catActual, setCatActual] = useState(null)
   const [tipoActual, setTipoActual] = useState(null)
   const [search, setSearch] = useState('')
+  const [buscarCategoria, setBuscarCategoria] = useState('')
   const [buscarUnidad, setBuscarUnidad] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
   const [filtroDisponibilidad, setFiltroDisponibilidad] = useState('todos')
@@ -177,6 +178,12 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
     })
     return map
   }, [equipos])
+
+  const categoriasFiltradas = useMemo(() => {
+    if (!buscarCategoria.trim()) return categorias
+    const q = buscarCategoria.trim().toLowerCase()
+    return categorias.filter(c => c.nombre.toLowerCase().includes(q))
+  }, [categorias, buscarCategoria])
 
   const tiposFiltrados = useMemo(() => {
     return tiposDeCat.filter(t => {
@@ -682,7 +689,17 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
         {/* VISTA CATEGORÍAS */}
         {vista === 'categorias' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div>
+            {categorias.length > 0 && (
+              <div className="relative flex-1 min-w-[160px] md:max-w-[260px] mb-4">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={buscarCategoria} onChange={e => setBuscarCategoria(e.target.value)}
+                  placeholder="Buscar categoría..."
+                  className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-[9px] text-[13px] outline-none focus:border-[#D81B43] bg-white h-[38px]" />
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {categorias.length === 0 && (
               <div className="col-span-full text-center py-16 text-slate-400">
                 <Package className="w-16 h-16 mx-auto mb-3 opacity-20" />
@@ -690,29 +707,38 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                 <div className="text-[13px]">Ve a <a href="/admin/configuracion" className="text-[#D81B43] hover:underline">Configuración → Categorías</a></div>
               </div>
             )}
-            {categorias.map(cat => {
+            {categorias.length > 0 && categoriasFiltradas.length === 0 && (
+              <div className="col-span-full text-center py-16 text-slate-400">
+                <Search className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <div className="font-semibold">Ninguna categoría coincide con &quot;{buscarCategoria}&quot;</div>
+              </div>
+            )}
+            {categoriasFiltradas.map(cat => {
               const tiposCat = tipos.filter(t => t.categoria_id === cat.id)
               const equiposCat = equipos.filter(e => tiposCat.some(t => t.id === e.tipo_equipo_id))
               const nCampos = (cat.atributos_extra?.campos_tipo?.length || 0) + (cat.atributos_extra?.campos_unidad?.length || 0)
               const iconoClave = cat.imagen_url?.startsWith('icono:') ? cat.imagen_url.replace('icono:', '') : null
               return (
                 <div key={cat.id} onClick={() => irACat(cat)}
-                  className="bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-[#D81B43]/40 hover:shadow-md transition-all group">
-                  <div className="w-10 h-10 rounded-lg bg-[#D81B43]/5 flex items-center justify-center mb-3">
+                  className="bg-white rounded-xl border border-slate-200 p-3 cursor-pointer hover:border-[#D81B43]/40 hover:shadow-md transition-all group flex items-center gap-3">
+                  <div className="w-8 h-8 shrink-0 rounded-lg bg-[#D81B43]/5 flex items-center justify-center">
                     {iconoClave
-                      ? <IconoEquipo clave={iconoClave} size={24} color="#D81B43" />
-                      : <Package className="w-5 h-5 text-[#D81B43] opacity-60" />
+                      ? <IconoEquipo clave={iconoClave} size={18} color="#D81B43" />
+                      : <Package className="w-4 h-4 text-[#D81B43] opacity-60" />
                     }
                   </div>
-                  <div className="text-[13px] font-bold text-slate-800 leading-tight mb-1">{cat.nombre}</div>
-                  <div className="text-[11.5px] text-slate-400">
-                    {tiposCat.length} tipo{tiposCat.length !== 1 ? 's' : ''} · {equiposCat.length} uds.
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-bold text-slate-800 leading-tight truncate">{cat.nombre}</div>
+                    <div className="text-[11.5px] text-slate-400">
+                      {tiposCat.length} tipo{tiposCat.length !== 1 ? 's' : ''} · {equiposCat.length} uds.
+                      {nCampos > 0 && <span className="text-[#D81B43]/50"> · {nCampos} campos</span>}
+                    </div>
                   </div>
-                  {nCampos > 0 && <div className="text-[11px] text-[#D81B43]/50 mt-1">{nCampos} campos</div>}
-                  <div className="mt-2 text-[#D81B43] text-[11.5px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">Ver tipos →</div>
+                  <div className="shrink-0 text-[#D81B43] text-[11.5px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">→</div>
                 </div>
               )
             })}
+            </div>
           </div>
         )}
 
