@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/layout/Sidebar'
+import RepartidorHeader from '@/components/layout/RepartidorHeader'
 
 export default async function DashboardLayout({ children }) {
   const supabase = await createClient()
@@ -25,6 +26,16 @@ export default async function DashboardLayout({ children }) {
     .from('configuracion_empresa')
     .select('logo_url, razon_social')
     .single()
+
+  // El rol Repartidor tiene un layout dedicado, sin el sidebar/navegación de admin
+  // (la restricción de qué rutas puede visitar vive en middleware.js).
+  if (usuario?.roles?.nombre === 'Repartidor') {
+    return (
+      <RepartidorHeader logoUrl={empresa?.logo_url || '/logo.png'}>
+        {children}
+      </RepartidorHeader>
+    )
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC]">

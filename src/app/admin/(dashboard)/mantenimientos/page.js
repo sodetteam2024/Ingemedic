@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { traerTodosLosEquipos } from '@/lib/equipos'
 import MantenimientosClient from './MantenimientosClient'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +11,7 @@ export default async function MantenimientosPage() {
   const [
     { data: mantenimientos },
     { data: tipos },
-    { data: equipos },
+    equipos,
     { data: listas },
   ] = await Promise.all([
     supabase.from('mantenimientos').select(`
@@ -30,13 +31,13 @@ export default async function MantenimientosPage() {
       )
     `).order('fecha_creacion', { ascending: false }),
     supabase.from('tipos_mantenimiento').select('*').eq('activo', true).order('nombre'),
-    supabase.from('equipos').select(`
+    traerTodosLosEquipos(supabase, q => q.select(`
       id, codigo,
       tipo_equipo:tipos_equipo(id, nombre, atributos,
         categoria:categorias_equipo(id, nombre)
       ),
       estado:estados_equipo(id, nombre)
-    `).order('codigo'),
+    `).order('codigo')),
     supabase.from('listas_mantenimiento').select(`
       id, nombre, descripcion,
       actividades:actividades_lista_mantenimiento(id, nombre, orden)

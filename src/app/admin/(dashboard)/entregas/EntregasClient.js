@@ -10,13 +10,8 @@ import {
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { formatear, soloDia } from '@/lib/fechas'
-
-const ESTADOS_ENTREGA = {
-  NoIniciada: '14b43a74-439d-4647-855e-4693339db133',
-  EnProgreso: '00baf9e1-8e9d-4da5-b16d-acbfdf3b4354',
-  Completada: 'b1f845f1-d69e-4ec8-985b-c7f27c50818c',
-}
-const ESTADO_OS_ENTREGADA = 'acafaf48-918e-4681-bf31-3111c218bcc9'
+import FirmaPad from '@/components/entregas/FirmaPad'
+import { crearEntrega, finalizarEntrega } from '@/lib/entregas'
 
 const TL_STEPS = ['Programada', 'En ruta', 'Entregada']
 
@@ -97,65 +92,6 @@ function nombreEquipo(eq) {
 function estaRetrasada(item) {
   if (!item.fecha_inicio || item.estado?.nombre === 'Completada') return false
   return (new Date() - new Date(item.fecha_inicio)) / 3600000 > 4
-}
-
-// ── PAD DE FIRMA ────────────────────────────────────────────
-function FirmaPad({ onFirma, onLimpiar, fullscreen = false }) {
-  const canvasRef = useRef(null)
-  const drawing   = useRef(false)
-  const [vacio, setVacio] = useState(true)
-
-  function getPos(e, canvas) {
-    const r  = canvas.getBoundingClientRect()
-    const sx = canvas.width / r.width
-    const sy = canvas.height / r.height
-    const src = e.touches ? e.touches[0] : e
-    return { x: (src.clientX - r.left) * sx, y: (src.clientY - r.top) * sy }
-  }
-  function start(e) {
-    e.preventDefault()
-    const ctx = canvasRef.current.getContext('2d')
-    const pos = getPos(e, canvasRef.current)
-    ctx.beginPath(); ctx.moveTo(pos.x, pos.y)
-    drawing.current = true; setVacio(false)
-  }
-  function move(e) {
-    e.preventDefault()
-    if (!drawing.current) return
-    const ctx = canvasRef.current.getContext('2d')
-    const pos = getPos(e, canvasRef.current)
-    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#1B3A6B'
-    ctx.lineTo(pos.x, pos.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(pos.x, pos.y)
-  }
-  function end() {
-    drawing.current = false
-    onFirma(canvasRef.current.toDataURL())
-  }
-  function limpiar() {
-    const ctx = canvasRef.current.getContext('2d')
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-    setVacio(true); onLimpiar()
-  }
-  return (
-    <div className={fullscreen ? 'flex-1 flex flex-col min-h-0' : ''}>
-      <div className={`border-2 border-dashed border-slate-300 rounded-[10px] overflow-hidden bg-[#F8FAFC] relative ${
-        fullscreen ? 'flex-1 min-h-[240px]' : ''
-      }`}>
-        <canvas ref={canvasRef} width={fullscreen ? 900 : 480} height={fullscreen ? 500 : 160}
-          className={`touch-none cursor-crosshair ${fullscreen ? 'w-full h-full' : 'w-full'}`}
-          onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
-          onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
-        {vacio && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className={`text-slate-300 font-medium ${fullscreen ? 'text-[15px]' : 'text-[12px]'}`}>Firme aquí</span>
-          </div>
-        )}
-      </div>
-      <button onClick={limpiar} className="mt-2 text-[12.5px] text-slate-400 hover:text-red-500 transition-colors flex-shrink-0">
-        Limpiar firma
-      </button>
-    </div>
-  )
 }
 
 export default function EntregasClient({ entregasIniciales, ordenesEnReparto, estados, estadosEquipo, empresa }) {
@@ -309,37 +245,7 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
   // ── INICIAR ENTREGA ──────────────────────────────────────
   async function iniciarEntrega(orden) {
     setSaving(true)
-    const codigo = `ENT-${new Date().getFullYear()}-${String(entregas.length + 1).padStart(3, '0')}`
-
-    // Cambiar OS a "En reparto"
-    await supabase.from('ordenes_servicio')
-      .update({ estado_id: 'e87fa300-a4c7-4225-b618-faf162ccf7ef' })
-      .eq('id', orden.id)
-
-    const { data, error } = await supabase.from('entregas').insert({
-      codigo,
-      orden_id:         orden.id,
-      cliente_id:       orden.cliente?.id,
-      repartidor_id:    orden.repartidor?.id || null,
-      tipo:             'entrega',
-      estado_id:        ESTADOS_ENTREGA.EnProgreso,
-      fecha_asignacion: new Date().toISOString(),
-      fecha_inicio:     new Date().toISOString(),
-    })
-    .select(`
-      *,
-      orden:ordenes_servicio(
-        id, codigo, fecha_vigencia, fecha_entrega, observaciones,
-        cliente:clientes(id, nombre, tipo_persona, nit_cc, direccion, telefono),
-        equipos:orden_equipos(id, equipo_id, equipo:equipos(id, codigo, tipo_equipo:tipos_equipo(id, nombre, atributos))),
-        plantillas:orden_plantillas(id, plantilla_id, firmado, firmado_por, firma_iniciales, fecha_firma, plantilla:plantillas_orden(id, nombre))
-      ),
-      cliente:clientes(id, nombre),
-      repartidor:usuarios!entregas_repartidor_id_fkey(id, nombre),
-      estado:estados_entrega(id, nombre)
-    `)
-    .single()
-
+    const { data, error } = await crearEntrega(supabase, orden)
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
     registrarBitacora({ modulo: 'entregas', accion: 'avanzar', entidad: 'entrega', entidad_id: data.id, detalle: { estado: 'iniciada', codigo: orden.codigo } })
     setOrdenes(prev => prev.filter(o => o.id !== orden.id))
@@ -364,61 +270,20 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
     const firmaUnica = regForm.firmas.general || null
     if (!firmaUnica) { showToast('Falta capturar la firma', 'error'); return }
     setSaving(true)
-    const ahora   = new Date().toISOString()
-    const inicio  = modalRegistro.fecha_inicio ? new Date(modalRegistro.fecha_inicio) : new Date()
-    const duracion = Math.round((new Date() - inicio) / 60000)
 
-    const { error } = await supabase.from('entregas').update({
-      estado_id:        ESTADOS_ENTREGA.Completada,
-      recibido_por:     regForm.recibido_por.trim(),
-      firma_iniciales:  firmaUnica,
-      observaciones:    regForm.observaciones || null,
-      fecha_completada: ahora,
-      duracion_minutos: duracion,
-    }).eq('id', modalRegistro.id)
-
+    const recibidoPor = regForm.recibido_por.trim()
+    const { error, erroresFirma, cambios } = await finalizarEntrega(supabase, {
+      entrega: modalRegistro, recibidoPor, firma: firmaUnica, observaciones: regForm.observaciones, estadosEquipo,
+    })
     if (error) { showToast('Error: ' + error.message, 'error'); setSaving(false); return }
-    registrarBitacora({ modulo: 'entregas', accion: 'cerrar', entidad: 'entrega', entidad_id: modalRegistro.id, detalle: { codigo: modalRegistro.codigo, tipo: modalRegistro.tipo, recibido_por: regForm.recibido_por.trim() } })
-
-    // La misma firma se aplica a todos los documentos de la orden
-    const docs = modalRegistro.orden?.plantillas || []
-    let erroresFirma = 0
-    for (const doc of docs) {
-      const { error: errFirma } = await supabase.from('orden_plantillas').update({
-        firmado:         true,
-        firmado_por:     regForm.recibido_por.trim(),
-        firma_iniciales: firmaUnica,
-        fecha_firma:     ahora,
-      }).eq('id', doc.id)
-      if (errFirma) { erroresFirma++; console.error('Error guardando firma:', errFirma) }
-    }
+    registrarBitacora({ modulo: 'entregas', accion: 'cerrar', entidad: 'entrega', entidad_id: modalRegistro.id, detalle: { codigo: modalRegistro.codigo, tipo: modalRegistro.tipo, recibido_por: recibidoPor } })
     if (erroresFirma > 0) {
       showToast(`Entrega completada, pero ${erroresFirma} firma(s) no se guardaron — revisa permisos de la tabla orden_plantillas`, 'error')
     }
 
-    await supabase.from('ordenes_servicio')
-      .update({ estado_id: ESTADO_OS_ENTREGADA, recibido_por: regForm.recibido_por.trim() })
-      .eq('id', modalRegistro.orden?.id)
-
-    // Equipo pasa de "Reservado" a "En préstamo" — paciente_actual_id/cliente_actual_id
-    // ya quedaron asignados al crear la orden (quedó reservado desde ese momento).
-    const idsEquipos = (modalRegistro.orden?.equipos || []).map(oe => oe.equipo_id || oe.equipo?.id).filter(Boolean)
-    const estadoPrestamo = (estadosEquipo || []).find(e => e.nombre === 'En préstamo')
-    if (idsEquipos.length > 0 && estadoPrestamo) {
-      await supabase.from('equipos').update({ estado_id: estadoPrestamo.id }).in('id', idsEquipos)
-    }
-
-    const nuevoEstado = { id: ESTADOS_ENTREGA.Completada, nombre: 'Completada' }
-    const cambiosCompletos = {
-      estado: nuevoEstado,
-      recibido_por: regForm.recibido_por.trim(),
-      fecha_completada: ahora,
-      duracion_minutos: duracion,
-      observaciones: regForm.observaciones || null,
-    }
     skipSyncUntil.current = Date.now() + 2500 // protege el estado local por 2.5s tras completar
-    setEntregas(prev => prev.map(e => e.id === modalRegistro.id ? { ...e, ...cambiosCompletos } : e))
-    if (drawer?.id === modalRegistro.id) setDrawer(prev => ({ ...prev, ...cambiosCompletos }))
+    setEntregas(prev => prev.map(e => e.id === modalRegistro.id ? { ...e, ...cambios } : e))
+    if (drawer?.id === modalRegistro.id) setDrawer(prev => ({ ...prev, ...cambios }))
     setSaving(false)
 
     // Guardar detalles para el modal de éxito antes de cerrar el wizard
@@ -427,9 +292,9 @@ export default function EntregasClient({ entregasIniciales, ordenesEnReparto, es
       ordenCodigo: modalRegistro.orden?.codigo,
       cliente: modalRegistro.orden?.cliente?.nombre || modalRegistro.cliente?.nombre,
       equipos: modalRegistro.orden?.equipos || [],
-      recibidoPor: regForm.recibido_por.trim(),
-      duracion,
-      fecha: ahora,
+      recibidoPor,
+      duracion: cambios.duracion_minutos,
+      fecha: cambios.fecha_completada,
     })
     cerrarRegistro()
     router.refresh()

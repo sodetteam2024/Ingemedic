@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { traerTodosLosEquipos } from '@/lib/equipos'
 import OrdenesClient from './OrdenesClient'
 
 export const dynamic = 'force-dynamic'
@@ -33,13 +34,15 @@ export default async function OrdenesPage() {
     supabase.from('estados_orden').select('*').order('nombre'),
     supabase.from('estados_equipo').select('*').order('nombre'),
     supabase.from('plantillas_orden').select('id, nombre, descripcion').eq('activo', true).order('nombre'),
-    supabase.from('equipos').select(`
+    traerTodosLosEquipos(supabase, q => q.select(`
       id, codigo, tipo_equipo_id, atributos,
       tipo_equipo:tipos_equipo(id, nombre, atributos,
         categoria:categorias_equipo(id, nombre)
       ),
       estado:estados_equipo(id, nombre)
-    `).order('codigo'),
+    `).order('codigo'))
+      .then(data => ({ data, error: null }))
+      .catch(error => ({ data: null, error })),
     supabase.from('usuarios').select('id, nombre').eq('activo', true).eq('rol_id', '17cd4f56-cae6-4efd-971b-2f8875f1f633').order('nombre'),
     supabase.from('tipos_orden').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('categorias_equipo').select('id, nombre, imagen_url, atributos_extra').eq('activo', true).order('nombre'),

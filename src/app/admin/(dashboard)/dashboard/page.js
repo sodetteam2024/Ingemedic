@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase-server'
 import { hoyBogota } from '@/lib/fechas'
+import { traerTodosLosEquipos } from '@/lib/equipos'
 import DashboardClient from './DashboardClient'
 
 export const dynamic = 'force-dynamic'
@@ -13,16 +14,16 @@ export default async function DashboardPage() {
   const en7dias = new Date(ahora.getTime() + 7 * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
 
   const [
-    { data: equiposEstados },
+    equiposEstados,
     { data: ordenesActivas },
     { data: mantenimientosActivos },
     { data: entregasHoy },
     { data: vigenciasProximas },
     { data: ordenesRetrasadas },
     { data: actividadReciente },
-    { data: equiposConCliente },
+    equiposConCliente,
   ] = await Promise.all([
-    supabase.from('equipos').select('estado:estados_equipo(id, nombre)'),
+    traerTodosLosEquipos(supabase, q => q.select('estado:estados_equipo(id, nombre)')),
 
     supabase.from('ordenes_servicio').select(`
       id, codigo, fecha_entrega, fecha_vigencia,
@@ -82,9 +83,9 @@ export default async function DashboardPage() {
     .order('fecha_creacion', { ascending: false })
     .limit(5),
 
-    supabase.from('equipos')
+    traerTodosLosEquipos(supabase, q => q
       .select('cliente_actual:clientes(id, nombre)')
-      .not('cliente_actual_id', 'is', null),
+      .not('cliente_actual_id', 'is', null)),
   ])
 
   const estadosEquipo = {}

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 import { formatear, hoyBogota } from '@/lib/fechas'
+import { traerTodosLosEquipos } from '@/lib/equipos'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -80,9 +81,9 @@ export async function POST(request) {
     if (nivel === 'completo') {
       const { data: cats }   = await supabase.from('categorias_equipo').select('id, nombre, descripcion, atributos_extra').eq('activo', true).order('nombre')
       const { data: tipos }  = await supabase.from('tipos_equipo').select('*').eq('activo', true)
-      const { data: equipos } = await supabase.from('equipos')
+      const equipos = await traerTodosLosEquipos(supabase, q => q
         .select('*, tipo_equipo:tipos_equipo(*, categoria:categorias_equipo(id, nombre)), estado:estados_equipo(nombre), paciente_actual:pacientes(nombre, direccion, telefono), cliente_actual:clientes(nombre)')
-        .order('fecha_creacion', { ascending: false })
+        .order('fecha_creacion', { ascending: false }))
 
       // ── Hoja 1: Resumen por categoría ───────────────────────
       const ws2 = wb.addWorksheet('Resumen categorías')
@@ -176,7 +177,8 @@ export async function POST(request) {
       // ── Hoja: resumen por categoría ──────────────────
       const { data: cats }   = await supabase.from('categorias_equipo').select('*').eq('activo', true).order('nombre')
       const { data: tipos }  = await supabase.from('tipos_equipo').select('id, categoria_id, nombre, atributos').eq('activo', true)
-      const { data: equipos } = await supabase.from('equipos').select('*, tipo_equipo:tipos_equipo(categoria_id), estado:estados_equipo(nombre)')
+      const equipos = await traerTodosLosEquipos(supabase, q => q
+        .select('*, tipo_equipo:tipos_equipo(categoria_id), estado:estados_equipo(nombre)'))
 
       const ws = wb.addWorksheet('Inventario por categoría')
       const headers = ['Categoría', 'Descripción', 'Tipos', 'Total unidades', 'Disponibles', 'En préstamo', 'En mantenimiento']
@@ -229,7 +231,8 @@ export async function POST(request) {
     else if (nivel === 'tipos' && categoria_id) {
       const { data: cat }    = await supabase.from('categorias_equipo').select('*').eq('id', categoria_id).single()
       const { data: tipos }  = await supabase.from('tipos_equipo').select('*').eq('categoria_id', categoria_id).eq('activo', true).order('nombre')
-      const { data: equipos } = await supabase.from('equipos').select('*, estado:estados_equipo(nombre)')
+      const equipos = await traerTodosLosEquipos(supabase, q => q
+        .select('*, estado:estados_equipo(nombre)'))
 
       const camposTipo = cat?.atributos_extra?.campos_tipo || []
       const ws = wb.addWorksheet(cat?.nombre?.slice(0, 31) || 'Tipos')
