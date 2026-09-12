@@ -13,7 +13,7 @@ export default async function Page() {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'LocalBusiness',
-    name: 'Ingemedic de Colombia S.A.S.',
+    name: 'Ingemedic de Colombia',
     description:
       'Alquiler de equipos biomédicos y suministro de oxígeno medicinal en Valledupar y el departamento del Cesar, Colombia.',
     url: 'https://ingemedic.com.co',
