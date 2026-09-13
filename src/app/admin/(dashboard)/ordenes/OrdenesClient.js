@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { paraGuardar, paraInput, formatear, formatearSoloFecha, hoyBogota } from '@/lib/fechas'
 import { IconoTipo } from '@/components/inventario/IconoTipo'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import { useOrdenable } from '@/hooks/useOrdenable'
 import {
   Plus, X, Search, FileText, CheckCircle2, Package,
   AlertTriangle, Calendar, Clock, User, Edit3, Truck, ChevronRight, ChevronLeft,
@@ -399,6 +400,8 @@ export default function OrdenesClient({
       return true
     })
   }, [ordenes, search, tabPrincipal, filtroEstadoDetalle, filtroCliente, filtroMarca, filtroCategoria])
+
+  const { itemsOrdenados: ordenesOrdenadas, config: configOrdenes, solicitarOrden: solicitarOrdenOrdenes } = useOrdenable(ordenesFiltradas)
 
   // ── ABRIR DRAWER ────────────────────────────────────────
   function abrirDrawer(orden) {
@@ -985,13 +988,31 @@ export default function OrdenesClient({
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b-2 border-slate-100">
-                      {['Cliente', 'Paciente', 'Equipo', 'Estado', 'Dirección', 'Fecha entrega', 'Docs', ''].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 whitespace-nowrap">{h}</th>
+                      {[
+                        { label: 'Cliente', clave: 'cliente', accessor: o => o.cliente?.nombre || '' },
+                        { label: 'Paciente', clave: 'paciente', accessor: o => o.paciente?.nombre || '' },
+                        { label: 'Equipo', clave: null },
+                        { label: 'Estado', clave: 'estado', accessor: o => o.estado?.nombre || '' },
+                        { label: 'Dirección', clave: null },
+                        { label: 'Fecha entrega', clave: 'fecha_entrega', accessor: o => o.fecha_entrega ? new Date(o.fecha_entrega).getTime() : null },
+                        { label: 'Docs', clave: null },
+                        { label: '', clave: null },
+                      ].map(col => (
+                        <th key={col.label || 'acciones'}
+                          onClick={col.clave ? () => solicitarOrdenOrdenes(col.clave, col.accessor) : undefined}
+                          className={`px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 whitespace-nowrap ${col.clave ? 'cursor-pointer select-none hover:bg-slate-100 transition-colors' : ''}`}>
+                          <div className="flex items-center gap-1">
+                            {col.label}
+                            {configOrdenes?.clave === col.clave && (
+                              <span className="text-[10px]">{configOrdenes.direccion === 'asc' ? '▲' : '▼'}</span>
+                            )}
+                          </div>
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {ordenesFiltradas.map(o => {
+                    {ordenesOrdenadas.map(o => {
                       const nEquipos   = o.equipos?.length || 0
                       const retrasada  = estaRetrasada(o)
                       const incompleta = estaIncompleta(o)

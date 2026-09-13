@@ -1,8 +1,10 @@
 import { createClient } from '@/lib/supabase-server'
+import { esSuperAdmin } from '@/lib/permisos'
 import ConfiguracionClient from './ConfiguracionClient'
 
 export default async function ConfiguracionPage() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   const [
     { data: usuarios },
@@ -13,6 +15,8 @@ export default async function ConfiguracionPage() {
     { data: listas },
     { data: actividades },
     { data: empresa },
+    { data: usuarioActual },
+    { data: todosPermisos },
   ] = await Promise.all([
     supabase.from('usuarios').select('*, rol:roles(id, nombre)').order('nombre'),
     supabase.from('roles').select('*'),
@@ -25,7 +29,14 @@ export default async function ConfiguracionPage() {
     supabase.from('listas_mantenimiento').select('*').eq('activo', true).order('nombre'),
     supabase.from('actividades_lista_mantenimiento').select('*').eq('activo', true).order('orden'),
     supabase.from('configuracion_empresa').select('*').single(),
+    supabase.from('usuarios').select('rol_id, roles(nombre)').eq('email', user?.email).single(),
+    supabase.from('permisos').select('*'),
   ])
+
+  const superAdmin = esSuperAdmin(usuarioActual?.roles?.nombre)
+  const permisosDelRolActual = superAdmin
+    ? []
+    : (todosPermisos || []).filter(p => p.rol_id === usuarioActual?.rol_id)
 
   return (
     <ConfiguracionClient
@@ -37,6 +48,9 @@ export default async function ConfiguracionPage() {
       listas={listas || []}
       actividades={actividades || []}
       empresaInicial={empresa || {}}
+      esSuperAdmin={superAdmin}
+      permisosDelRolActual={permisosDelRolActual}
+      todosPermisosIniciales={todosPermisos || []}
     />
   )
 }

@@ -8,6 +8,7 @@ import { Package, Inbox, Plus, X, Search, Download, Edit3, FileText, AlertTriang
 import { IconoEquipo, GaleriaIconos } from '@/components/inventario/IconosEquipo'
 import { IconoTipo } from '@/components/inventario/IconoTipo'
 import { formatear, hoyBogota } from '@/lib/fechas'
+import { useOrdenable } from '@/hooks/useOrdenable'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const LOGO_URL = `${SUPABASE_URL}/storage/v1/object/public/logos/logo-ingemedic.png`
@@ -232,6 +233,8 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
 
   const camposTipo = catActual?.atributos_extra?.campos_tipo || []
   const camposUnidad = catActual?.atributos_extra?.campos_unidad || []
+
+  const { itemsOrdenados: unidadesOrdenadas, config: configUnidades, solicitarOrden: solicitarOrdenUnidades } = useOrdenable(unidadesDeTipo)
 
   const valoresUnicosPorCampo = useMemo(() => {
     const result = {}
@@ -930,17 +933,38 @@ export default function InventarioClient({ categorias: catsIniciales, tipos: tip
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="border-b-2 border-slate-100">
-                        {camposUnidad.map(c => (
-                          <th key={c.clave} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{c.nombre}</th>
-                        ))}
-                        <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Estado</th>
+                        {camposUnidad.map(c => {
+                          const accessor = eq => c.tipo === 'numero'
+                            ? Number(eq.atributos?.[c.clave] ?? eq[c.clave]) || null
+                            : (eq.atributos?.[c.clave] ?? eq[c.clave] ?? null)
+                          return (
+                            <th key={c.clave} onClick={() => solicitarOrdenUnidades(c.clave, accessor)}
+                              className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 cursor-pointer select-none hover:bg-slate-100 transition-colors">
+                              <div className="flex items-center gap-1">
+                                {c.nombre}
+                                {configUnidades?.clave === c.clave && (
+                                  <span className="text-[10px]">{configUnidades.direccion === 'asc' ? '▲' : '▼'}</span>
+                                )}
+                              </div>
+                            </th>
+                          )
+                        })}
+                        <th onClick={() => solicitarOrdenUnidades('estado', eq => eq.estado?.nombre || '')}
+                          className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 cursor-pointer select-none hover:bg-slate-100 transition-colors">
+                          <div className="flex items-center gap-1">
+                            Estado
+                            {configUnidades?.clave === 'estado' && (
+                              <span className="text-[10px]">{configUnidades.direccion === 'asc' ? '▲' : '▼'}</span>
+                            )}
+                          </div>
+                        </th>
                         <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Paciente</th>
                         <th className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">Dirección</th>
                         <th className="w-10 bg-slate-50"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {unidadesDeTipo.map(eq => {
+                      {unidadesOrdenadas.map(eq => {
                         const est = eq.estado?.nombre || '—'
                         const estSty = ESTADO_STYLES[est] || {}
                         return (

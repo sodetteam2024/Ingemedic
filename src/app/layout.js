@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata = {
   metadataBase: new URL("https://ingemedic.com.co"),
   title: {
-    default: "Ingemedic de Colombia S.A.S. — Alquiler de equipos biomédicos en Valledupar y Cesar",
+    default: "Ingemedic de Colombia",
     template: "%s | Ingemedic",
   },
   description:

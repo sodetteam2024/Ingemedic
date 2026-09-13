@@ -1,7 +1,7 @@
 'use client'
 import { registrarBitacora } from '@/lib/bitacora'
 import Image from 'next/image'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Users, Lock, Tag, Cpu, Building2,
   FileText, Upload, Plus, X, Edit3, Trash2,
@@ -9,6 +9,13 @@ import {
   ChevronDown, ChevronRight
 } from 'lucide-react'
 import { GaleriaIconos, IconoEquipo } from '@/components/inventario/IconosEquipo'
+import { MODULOS_PRINCIPALES, MODULOS_CONFIGURACION, MODULOS_OCULTOS_POR_DEFECTO, puedeVerModulo } from '@/lib/permisos'
+
+const NAV_MODULO = {
+  usuarios: 'configuracion.usuarios', roles: 'configuracion.roles', categorias: 'configuracion.categorias',
+  tipos: 'configuracion.tipos', listas: 'configuracion.listas', empresa: 'configuracion.empresa',
+  plantillas: 'configuracion.plantillas', cargue: 'configuracion.cargue', preferencias: 'configuracion.preferencias',
+}
 
 const NAV = [
   { id: 'usuarios',   label: 'Usuarios',               icon: Users,         grupo: 'Acceso' },
@@ -225,9 +232,73 @@ function CargueCard({ titulo, tipo, sub, cols }) {
 export default function ConfiguracionClient({
   usuariosIniciales = [], roles = [], categorias: catsIniciales = [],
   tipos: tiposIniciales = [], plantillas = [], listas: listasIniciales = [],
-  actividades: actividadesIniciales = [], empresaInicial = {}
+  actividades: actividadesIniciales = [], empresaInicial = {},
+  esSuperAdmin = false, permisosDelRolActual = [], todosPermisosIniciales = [],
 }) {
   const [seccion, setSeccion]         = useState('usuarios')
+  const [todosPermisos, setTodosPermisos] = useState(todosPermisosIniciales ?? [])
+  const [rolSeleccionadoPermisos, setRolSeleccionadoPermisos] = useState(null)
+  const [guardandoPermiso, setGuardandoPermiso] = useState(null)
+
+  // Oculta del menú interno de Configuración las secciones que el rol actual
+  // no tiene permitidas. SuperAdmin ve todas, sin importar la tabla permisos.
+  const navVisible = useMemo(() => (
+    esSuperAdmin ? NAV : NAV.filter(n => puedeVerModulo(NAV_MODULO[n.id], permisosDelRolActual))
+  ), [esSuperAdmin, permisosDelRolActual])
+
+  // Si la sección activa dejó de estar visible (o nunca lo estuvo para este rol),
+  // se usa la primera sección permitida en su lugar — derivado en el render,
+  // no vía efecto, para no disparar un setState en cascada.
+  const seccionActiva = navVisible.some(n => n.id === seccion) ? seccion : (navVisible[0]?.id ?? seccion)
+
+  const rolesSinSuperAdmin = roles.filter(r => r.nombre !== 'SuperAdmin')
+  const rolIdActivoPermisos = rolSeleccionadoPermisos || rolesSinSuperAdmin[0]?.id || null
+  const permisosDelRolSeleccionado = todosPermisos.filter(p => p.rol_id === rolIdActivoPermisos)
+
+  async function toggleModuloPermiso(modulo, visibleActual) {
+    if (!rolIdActivoPermisos) return
+    const key = `${rolIdActivoPermisos}:${modulo}`
+    setGuardandoPermiso(key)
+    try {
+      const supabase = await getSupabase()
+      const invertido = MODULOS_OCULTOS_POR_DEFECTO.includes(modulo)
+      const nuevoVisible = !visibleActual
+      // Si la nueva visibilidad coincide con el comportamiento por defecto de ese
+      // módulo, no hace falta guardar nada — se borra la fila para volver al default.
+      const coincideConDefault = invertido ? nuevoVisible === false : nuevoVisible === true
+
+      if (coincideConDefault) {
+        const { error } = await supabase.from('permisos').delete()
+          .eq('rol_id', rolIdActivoPermisos).eq('modulo', modulo)
+        if (error) throw error
+        setTodosPermisos(prev => prev.filter(p => !(p.rol_id === rolIdActivoPermisos && p.modulo === modulo)))
+      } else {
+        const filaExistente = todosPermisos.find(p => p.rol_id === rolIdActivoPermisos && p.modulo === modulo)
+        if (filaExistente) {
+          const { error } = await supabase.from('permisos').update({ puede_ver: nuevoVisible }).eq('id', filaExistente.id)
+          if (error) throw error
+          setTodosPermisos(prev => prev.map(p => p.id === filaExistente.id ? { ...p, puede_ver: nuevoVisible } : p))
+        } else {
+          const { data, error } = await supabase.from('permisos').insert({
+            rol_id: rolIdActivoPermisos, modulo, puede_ver: nuevoVisible,
+            puede_crear: nuevoVisible, puede_editar: nuevoVisible, puede_eliminar: nuevoVisible,
+          }).select().single()
+          if (error) throw error
+          setTodosPermisos(prev => [...prev, data])
+        }
+      }
+      showToast(nuevoVisible ? 'Módulo habilitado' : 'Módulo ocultado')
+      registrarBitacora({
+        modulo: 'configuracion', accion: 'editar', entidad: 'permiso', entidad_id: rolIdActivoPermisos,
+        detalle: { modulo, puede_ver: nuevoVisible, rol: rolesSinSuperAdmin.find(r => r.id === rolIdActivoPermisos)?.nombre },
+      })
+    } catch (e) {
+      showToast('Error actualizando permiso: ' + e.message, 'error')
+    } finally {
+      setGuardandoPermiso(null)
+    }
+  }
+
   const [mobileNavMode, setMobileNavMode] = useState(() => {
     if (typeof window === 'undefined') return 'barra'
     const saved = localStorage.getItem('ingemedic_mobile_nav_mode')
@@ -608,8 +679,8 @@ export default function ConfiguracionClient({
       {/* Mobile tabs */}
       <div className="flex md:hidden overflow-x-auto border-b border-slate-200 bg-white flex-shrink-0">
         <div className="flex">
-          {NAV.map(n => {
-            const Icon = n.icon; const active = seccion === n.id
+          {navVisible.map(n => {
+            const Icon = n.icon; const active = seccionActiva === n.id
             return (
               <button key={n.id} onClick={() => setSeccion(n.id)}
                 className={`flex items-center gap-1.5 px-4 py-3 text-[12px] font-medium whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${active ? 'border-[#D81B43] text-[#D81B43]' : 'border-transparent text-slate-500'}`}>
@@ -623,11 +694,11 @@ export default function ConfiguracionClient({
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
         {/* Sidebar nav */}
         <aside className="hidden md:flex w-56 min-w-[224px] bg-white border-r border-slate-200 flex-col py-4 overflow-y-auto flex-shrink-0">
-          {GRUPOS.map(grupo => (
+          {GRUPOS.filter(grupo => navVisible.some(n => n.grupo === grupo)).map(grupo => (
             <div key={grupo} className="mb-2">
               <div className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-slate-400 px-4 py-1.5">{grupo}</div>
-              {NAV.filter(n => n.grupo === grupo).map(n => {
-                const Icon = n.icon; const active = seccion === n.id
+              {navVisible.filter(n => n.grupo === grupo).map(n => {
+                const Icon = n.icon; const active = seccionActiva === n.id
                 const tourId = n.id === 'empresa' ? 'nav-empresa'
                   : n.id === 'categorias' ? 'nav-categorias'
                   : n.id === 'tipos' ? 'nav-tipos'
@@ -652,7 +723,7 @@ export default function ConfiguracionClient({
           <div className="max-w-[860px]">
 
             {/* USUARIOS */}
-            {seccion === 'usuarios' && (
+            {seccionActiva === 'usuarios' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
@@ -711,21 +782,79 @@ export default function ConfiguracionClient({
             )}
 
             {/* ROLES */}
-            {seccion === 'roles' && (
+            {seccionActiva === 'roles' && (
               <div>
                 <h2 className="text-[20px] font-bold text-slate-800 mb-1">Roles y permisos</h2>
-                <p className="text-[13px] text-slate-400 mb-6">Define qué puede hacer cada rol en cada módulo</p>
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-16 text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4"><Lock size={24} className="text-slate-400" /></div>
-                  <div className="text-[15px] font-bold text-slate-600 mb-2">Módulo en construcción</div>
-                  <div className="text-[13px] text-slate-400 max-w-[320px] mx-auto">La gestión de permisos por rol estará disponible en la <span className="font-semibold text-slate-500">Fase 2</span>.</div>
-                  <div className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-[12px] font-semibold text-slate-500">🏗️ Próximamente</div>
-                </div>
+                <p className="text-[13px] text-slate-400 mb-6">
+                  Define qué módulos puede ver cada rol. Por defecto todo está visible — solo se restringe lo que
+                  desmarques aquí. <span className="font-semibold text-slate-500">SuperAdmin</span> no aparece en esta
+                  lista: siempre tiene acceso total, sin excepción.
+                </p>
+
+                {rolesSinSuperAdmin.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-16 text-center text-slate-400 text-[13px]">
+                    No hay roles editables además de SuperAdmin.
+                  </div>
+                ) : (
+                  <div className="flex flex-col md:flex-row gap-4">
+                    {/* Lista de roles */}
+                    <div className="w-full md:w-[220px] flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm p-2 h-fit">
+                      {rolesSinSuperAdmin.map(r => (
+                        <button key={r.id} onClick={() => setRolSeleccionadoPermisos(r.id)}
+                          className={`w-full text-left px-3 py-2.5 rounded-[8px] transition-all ${rolIdActivoPermisos === r.id ? 'bg-[#D81B43]/8' : 'hover:bg-slate-50'}`}>
+                          <div className={`text-[13px] font-semibold ${rolIdActivoPermisos === r.id ? 'text-[#D81B43]' : 'text-slate-700'}`}>{r.nombre}</div>
+                          {r.descripcion && <div className="text-[11px] text-slate-400 mt-0.5">{r.descripcion}</div>}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Checkboxes de módulos para el rol seleccionado */}
+                    <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400 mb-3">Módulos</div>
+                      <div className="space-y-0.5 mb-6">
+                        {MODULOS_PRINCIPALES.map(m => {
+                          const visible   = puedeVerModulo(m.modulo, permisosDelRolSeleccionado)
+                          const guardando = guardandoPermiso === `${rolIdActivoPermisos}:${m.modulo}`
+                          return (
+                            <label key={m.modulo} className="flex items-center gap-2.5 px-2 py-2 rounded-[8px] hover:bg-slate-50 cursor-pointer">
+                              <input type="checkbox" checked={visible} disabled={guardando}
+                                onChange={() => toggleModuloPermiso(m.modulo, visible)}
+                                className="w-4 h-4 accent-[#D81B43]" />
+                              <span className="text-[13px] text-slate-700">{m.label}</span>
+                              {guardando && <span className="text-[11px] text-slate-400">Guardando…</span>}
+                            </label>
+                          )
+                        })}
+                      </div>
+
+                      <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400 mb-3">Dentro de Configuración</div>
+                      <div className="space-y-0.5">
+                        {MODULOS_CONFIGURACION.map(m => {
+                          const visible    = puedeVerModulo(m.modulo, permisosDelRolSeleccionado)
+                          const guardando  = guardandoPermiso === `${rolIdActivoPermisos}:${m.modulo}`
+                          const esSensible = MODULOS_OCULTOS_POR_DEFECTO.includes(m.modulo)
+                          return (
+                            <label key={m.modulo} className="flex items-center gap-2.5 px-2 py-2 rounded-[8px] hover:bg-slate-50 cursor-pointer">
+                              <input type="checkbox" checked={visible} disabled={guardando}
+                                onChange={() => toggleModuloPermiso(m.modulo, visible)}
+                                className="w-4 h-4 accent-[#D81B43]" />
+                              <span className="text-[13px] text-slate-700">{m.label}</span>
+                              {esSensible && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">Oculto por defecto</span>
+                              )}
+                              {guardando && <span className="text-[11px] text-slate-400">Guardando…</span>}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* CATEGORÍAS */}
-            {seccion === 'categorias' && (
+            {seccionActiva === 'categorias' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
@@ -773,7 +902,7 @@ export default function ConfiguracionClient({
             )}
 
             {/* TIPOS */}
-            {seccion === 'tipos' && (
+            {seccionActiva === 'tipos' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
@@ -895,7 +1024,7 @@ export default function ConfiguracionClient({
             )}
 
             {/* LISTAS */}
-            {seccion === 'listas' && (
+            {seccionActiva === 'listas' && (
               <div>
                 <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                   <div>
@@ -969,7 +1098,7 @@ export default function ConfiguracionClient({
             )}
 
             {/* EMPRESA */}
-            {seccion === 'empresa' && (
+            {seccionActiva === 'empresa' && (
               <div>
                 <h2 className="text-[20px] font-bold text-slate-800 mb-1">Datos de la empresa</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Información que aparece en los documentos generados</p>
@@ -1024,7 +1153,7 @@ export default function ConfiguracionClient({
             )}
 
             {/* PLANTILLAS */}
-            {seccion === 'plantillas' && (
+            {seccionActiva === 'plantillas' && (
               <div>
                 <h2 className="text-[20px] font-bold text-slate-800 mb-1">Plantillas de documentos</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Documentos legales usados en las órdenes de servicio</p>
@@ -1048,7 +1177,7 @@ export default function ConfiguracionClient({
             )}
 
             {/* CARGUE */}
-            {seccion === 'cargue' && (
+            {seccionActiva === 'cargue' && (
               <div>
                 <h2 className="text-[20px] font-bold text-slate-800 mb-1">Cargue masivo</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Importa equipos y clientes desde archivos CSV</p>
@@ -1059,7 +1188,7 @@ export default function ConfiguracionClient({
             )}
 
             {/* PREFERENCIAS */}
-            {seccion === 'preferencias' && (
+            {seccionActiva === 'preferencias' && (
               <div>
                 <h2 className="text-[20px] font-bold text-slate-800 mb-1">Preferencias</h2>
                 <p className="text-[13px] text-slate-400 mb-6">Ajustes de la experiencia en dispositivos móviles</p>

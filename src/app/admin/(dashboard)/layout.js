@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/layout/Sidebar'
 import RepartidorHeader from '@/components/layout/RepartidorHeader'
+import { esSuperAdmin } from '@/lib/permisos'
 
 export default async function DashboardLayout({ children }) {
   const supabase = await createClient()
@@ -15,6 +16,7 @@ export default async function DashboardLayout({ children }) {
     nombre,
     email,
     username,
+    rol_id,
     roles (
       nombre
     )
@@ -37,9 +39,16 @@ export default async function DashboardLayout({ children }) {
     )
   }
 
+  // SuperAdmin no consulta permisos (es inmune) — para el resto de roles,
+  // el Sidebar necesita saber qué módulos ocultar.
+  const superAdmin = esSuperAdmin(usuario?.roles?.nombre)
+  const { data: permisos } = superAdmin
+    ? { data: [] }
+    : await supabase.from('permisos').select('modulo, puede_ver').eq('rol_id', usuario?.rol_id)
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC]">
-      <Sidebar usuario={usuario} empresa={empresa} />
+      <Sidebar usuario={usuario} empresa={empresa} permisos={permisos || []} esSuperAdmin={superAdmin} />
       <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden pt-12 md:pt-0 pb-[var(--mobile-nav-space,0px)] md:pb-0">
         {children}
       </main>

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { registrarBitacora } from '@/lib/bitacora'
+import { moduloDeRuta, puedeVerModulo } from '@/lib/permisos'
 
 const NAV = [
   {
@@ -56,10 +57,22 @@ const ICONS = {
   alert:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
 }
 
-export default function Sidebar({ usuario, empresa }) {
+export default function Sidebar({ usuario, empresa, permisos = [], esSuperAdmin = false }) {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
+
+  // Oculta del menú los módulos que el rol actual no tiene permitidos.
+  // SuperAdmin ve el NAV completo sin filtrar, sin importar la tabla permisos.
+  const navFiltrada = esSuperAdmin ? NAV : NAV
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => {
+        const modulo = moduloDeRuta(item.href)
+        return !modulo || puedeVerModulo(modulo, permisos)
+      }),
+    }))
+    .filter(group => group.items.length > 0)
 
   // Estado inicial SIEMPRE igual en servidor y cliente (evita hydration mismatch).
   // Las preferencias guardadas se cargan después del montaje, no durante el render inicial.
@@ -163,7 +176,7 @@ export default function Sidebar({ usuario, empresa }) {
     if (!dragRef.current.moved) setPanelAbierto(v => !v)
   }
 
-  const mobileItems = NAV.flatMap(group => group.items)
+  const mobileItems = navFiltrada.flatMap(group => group.items)
   const criticos = mobileItems.filter(i => MOBILE_CRITICOS.includes(i.href))
   const resto    = mobileItems.filter(i => !MOBILE_CRITICOS.includes(i.href))
 
@@ -224,7 +237,7 @@ export default function Sidebar({ usuario, empresa }) {
         </div>
 
         <nav className="flex-1 py-3 overflow-y-auto">
-          {NAV.map(group => (
+          {navFiltrada.map(group => (
             <div key={group.label} className="mb-3">
               <div className="text-[9.5px] font-bold tracking-[0.14em] uppercase text-slate-400 px-4 py-1.5">
                 {group.label}

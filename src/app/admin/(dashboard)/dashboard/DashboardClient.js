@@ -1,15 +1,19 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase'
 import {
   Package, Truck, Wrench, FileText, AlertTriangle,
   Clock, CheckCircle2, TrendingUp, Calendar, ChevronRight,
-  ArrowUpRight, Users, X
+  ArrowUpRight, Users, X, MapPin
 } from 'lucide-react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import EntregaEnCursoBanner from '@/components/dashboard/EntregaEnCursoBanner'
 import { formatear } from '@/lib/fechas'
+import { COLOR_ESCALA_MUNICIPIOS, normalizarNombreMunicipio } from '@/lib/municipios'
+
+const MapaMunicipios = dynamic(() => import('@/components/dashboard/MapaMunicipios'), { ssr: false })
 
 const COLORES_DONA = ['#1B3A6B', '#D81B43', '#2EB5D4', '#0F7B55', '#B45309', '#6D28D9', '#0E86A0', '#94A3B8']
 
@@ -47,11 +51,12 @@ export default function DashboardClient({
   ordenesActivas, mantenimientosActivos,
   entregasHoy, vigenciasProximas,
   ordenesRetrasadas, actividadReciente,
-  topClientes = []
+  topClientes = [], geojsonCesar, conteoPorCiudad = {}
 }) {
   const router = useRouter()
   const supabase = createClient()
   const [alertaAbierta, setAlertaAbierta] = useState(false)
+  const [mapaModalAbierto, setMapaModalAbierto] = useState(false)
 
   // ── SINCRONIZACIÓN EN TIEMPO REAL ─────────────────────────
   // El Dashboard no guarda nada en estado local (todo viene de props),
@@ -86,6 +91,17 @@ export default function DashboardClient({
   const distribucionEstados = Object.entries(estadosEquipo)
     .map(([nombre, cantidad]) => ({ nombre, cantidad }))
     .sort((a, b) => b.cantidad - a.cantidad)
+
+  // Derivados del mismo conteoPorCiudad que colorea el mapa, pero anclados a
+  // los 25 municipios reales del geojson — así el ranking y la cobertura solo
+  // muestran municipios de verdad (no texto libre de pacientes.ciudad que no
+  // matcheó con ningún municipio real, ej. errores de captura).
+  const municipiosConConteo = (geojsonCesar?.features || []).map(f => ({
+    nombre: f.properties.MPIO_CNMBR,
+    conteo: conteoPorCiudad[normalizarNombreMunicipio(f.properties.MPIO_CNMBR)] || 0,
+  }))
+  const municipiosConEquipo = municipiosConConteo.filter(m => m.conteo > 0).length
+  const topMunicipios = [...municipiosConConteo].sort((a, b) => b.conteo - a.conteo)
 
   const entregasPendientes = entregasHoy.filter(e => e.estado?.nombre !== 'Completada').length
   const entregasCompletadas = entregasHoy.filter(e => e.estado?.nombre === 'Completada').length
@@ -274,6 +290,76 @@ export default function DashboardClient({
             )}
           </div>
         </div>
+
+        {/* ── MAPA DE EQUIPOS ACTIVOS POR MUNICIPIO (Cesar) ── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[14px] font-bold text-[#0F172A]">Equipos activos por municipio</div>
+              <div className="text-[11.5px] text-slate-400 mt-0.5 mb-3">Distribución geográfica en el Cesar</div>
+            </div>
+            <button onClick={() => setMapaModalAbierto(true)}
+              className="md:hidden flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-[#3730A3] text-white rounded-full text-[12px] font-semibold hover:bg-[#312E81] transition-colors">
+              <MapPin size={13} /> Ver Mapa
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[38%_1fr] gap-4">
+            {/* Columna izquierda: cobertura + ranking + leyenda */}
+            <div className="flex flex-col gap-4">
+              <div>
+                <div className="text-[11px] text-slate-400">Cobertura</div>
+                <div className="text-[15px] font-bold text-slate-800">{municipiosConEquipo} / 25 municipios</div>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2">Top municipios</div>
+                <div className="flex flex-col gap-1.5">
+                  {topMunicipios.slice(0, 5).map((m) => (
+                    <div key={m.nombre} className="flex items-center justify-between text-[12.5px]">
+                      <span className="text-slate-700 truncate">{m.nombre}</span>
+                      <span className="font-bold text-[#3730A3] bg-[#EEF2FF] px-2 py-0.5 rounded-full text-[11px]">{m.conteo}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-auto">
+                <div className="text-[10.5px] text-slate-400 mb-1.5">Densidad</div>
+                <div className="flex items-center gap-1">
+                  {COLOR_ESCALA_MUNICIPIOS.map((color, i) => (
+                    <div key={i} className="flex-1 h-2 rounded-sm" style={{ background: color }} />
+                  ))}
+                </div>
+                <div className="flex justify-between text-[9.5px] text-slate-400 mt-1">
+                  <span>Sin equipos</span>
+                  <span>Más equipos</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Columna derecha: el mapa — oculto en móvil, se abre en modal desde el botón "Ver Mapa" */}
+            <div className="hidden md:block">
+              {geojsonCesar && <MapaMunicipios geojsonCesar={geojsonCesar} conteoPorCiudad={conteoPorCiudad} />}
+            </div>
+          </div>
+        </div>
+
+        {/* ── MODAL: mapa a pantalla completa (móvil) ── */}
+        {mapaModalAbierto && (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 flex-shrink-0">
+              <div className="text-[14px] font-bold text-[#0F172A]">Equipos activos por municipio</div>
+              <button onClick={() => setMapaModalAbierto(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors">
+                <X size={18} className="text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 bg-white p-3 overflow-hidden">
+              {geojsonCesar && <MapaMunicipios geojsonCesar={geojsonCesar} conteoPorCiudad={conteoPorCiudad} interactivo />}
+            </div>
+          </div>
+        )}
 
         {/* ── ENTREGAS HOY — ahora primero, es lo más urgente del día a día ── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

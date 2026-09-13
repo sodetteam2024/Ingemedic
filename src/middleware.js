@@ -1,9 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
-
-// Rutas a las que un usuario con rol "Repartidor" tiene acceso — cualquier otra
-// ruta bajo /admin/* lo redirige de vuelta a Entregas.
-const RUTAS_REPARTIDOR = ['/admin/entregas', '/admin/repartidor-preferencias']
+import { esSuperAdmin, moduloDeRuta, puedeVerModulo, primerModuloPermitido, MODULOS_RUTA } from '@/lib/permisos'
 
 export async function middleware(request) {
   let response = NextResponse.next({ request: { headers: request.headers } })
@@ -28,6 +25,7 @@ export async function middleware(request) {
 
   const esRutaAdmin = pathname.startsWith('/admin')
   const esLogin     = pathname === '/admin/login'
+  const esSinAcceso = pathname === '/admin/sin-acceso'
 
   // Sin sesión, intentando entrar a /admin/* que no sea el login → redirigir al login
   if (esRutaAdmin && !esLogin && !user) {
@@ -39,19 +37,37 @@ export async function middleware(request) {
     return NextResponse.redirect(new URL('/admin/dashboard', request.url))
   }
 
-  // Rol "Repartidor" — solo puede ver Entregas y sus propias preferencias;
-  // cualquier otra ruta de /admin/* lo devuelve a Entregas.
-  if (esRutaAdmin && !esLogin && user) {
+  // ── CONTROL DE ACCESO POR ROL/MÓDULO ──────────────────────────────────
+  // Reemplaza el caso hardcodeado de "Repartidor" — ahora es genérico para
+  // cualquier rol, vía la tabla `permisos` (ver src/lib/permisos.js).
+  // Se salta en login y en la propia página de "sin acceso" para no generar
+  // un loop de redirecciones.
+  if (esRutaAdmin && !esLogin && !esSinAcceso && user) {
     const { data: usuario } = await supabase
       .from('usuarios')
-      .select('roles (nombre)')
+      .select('rol_id, roles (nombre)')
       .eq('email', user.email)
       .single()
 
-    const esRepartidor  = usuario?.roles?.nombre === 'Repartidor'
-    const rutaPermitida = RUTAS_REPARTIDOR.some(r => pathname.startsWith(r))
-    if (esRepartidor && !rutaPermitida) {
-      return NextResponse.redirect(new URL('/admin/entregas', request.url))
+    const rolNombre = usuario?.roles?.nombre
+
+    // SuperAdmin es inmune a la tabla permisos — ni siquiera se consulta.
+    if (usuario?.rol_id && !esSuperAdmin(rolNombre)) {
+      const modulo = moduloDeRuta(pathname)
+      // Rutas sin módulo mapeado (ej. la página personal de preferencias del
+      // repartidor) no están sujetas a esta restricción.
+      if (modulo) {
+        const { data: permisosDelRol } = await supabase
+          .from('permisos')
+          .select('modulo, puede_ver')
+          .eq('rol_id', usuario.rol_id)
+
+        if (!puedeVerModulo(modulo, permisosDelRol)) {
+          const moduloDestino = primerModuloPermitido(permisosDelRol)
+          const rutaDestino   = moduloDestino ? MODULOS_RUTA.find(m => m.modulo === moduloDestino)?.ruta : null
+          return NextResponse.redirect(new URL(rutaDestino || '/admin/sin-acceso', request.url))
+        }
+      }
     }
   }
 

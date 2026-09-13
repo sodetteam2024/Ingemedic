@@ -1,7 +1,13 @@
 import { createClient } from '@/lib/supabase-server'
 import { hoyBogota } from '@/lib/fechas'
 import { traerTodosLosEquipos } from '@/lib/equipos'
+import { normalizarCiudadPaciente } from '@/lib/municipios'
+import fs from 'fs'
+import path from 'path'
 import DashboardClient from './DashboardClient'
+
+const ESTADO_EN_PRESTAMO = '56abea9f-8cad-413e-bc3c-31ba19fa00fe'
+const ESTADO_RESERVADO   = '81f762da-6922-4a98-8593-cbaf029dbf6b'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -22,6 +28,7 @@ export default async function DashboardPage() {
     { data: ordenesRetrasadas },
     { data: actividadReciente },
     equiposConCliente,
+    { data: equiposConCiudad },
   ] = await Promise.all([
     traerTodosLosEquipos(supabase, q => q.select('estado:estados_equipo(id, nombre)')),
 
@@ -86,6 +93,11 @@ export default async function DashboardPage() {
     traerTodosLosEquipos(supabase, q => q
       .select('cliente_actual:clientes(id, nombre)')
       .not('cliente_actual_id', 'is', null)),
+
+    supabase.from('equipos')
+      .select('paciente_actual:pacientes(ciudad)')
+      .in('estado_id', [ESTADO_EN_PRESTAMO, ESTADO_RESERVADO])
+      .not('paciente_actual_id', 'is', null),
   ])
 
   const estadosEquipo = {}
@@ -105,6 +117,19 @@ export default async function DashboardPage() {
     }, {})
   ).sort((a, b) => b.cantidad - a.cantidad).slice(0, 8)
 
+  // ── MAPA DE EQUIPOS ACTIVOS POR MUNICIPIO (Cesar) ──
+  const conteoPorCiudad = {}
+  ;(equiposConCiudad || []).forEach(eq => {
+    const ciudad = eq.paciente_actual?.ciudad
+    if (!ciudad) return
+    const normalizada = normalizarCiudadPaciente(ciudad)
+    conteoPorCiudad[normalizada] = (conteoPorCiudad[normalizada] || 0) + 1
+  })
+
+  const geojsonCesar = JSON.parse(
+    fs.readFileSync(path.join(process.cwd(), 'public/geo/cesar-municipios.geojson'), 'utf8')
+  )
+
   return (
     <DashboardClient
       totalEquipos={(equiposEstados || []).length}
@@ -116,6 +141,8 @@ export default async function DashboardPage() {
       ordenesRetrasadas={ordenesRetrasadas || []}
       actividadReciente={actividadReciente || []}
       topClientes={topClientes}
+      geojsonCesar={geojsonCesar}
+      conteoPorCiudad={conteoPorCiudad}
     />
   )
 }

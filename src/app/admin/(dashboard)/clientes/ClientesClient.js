@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { IconoTipo } from '@/components/inventario/IconoTipo'
+import { useOrdenable } from '@/hooks/useOrdenable'
 import { formatear, formatearSoloFecha, hoyBogota } from '@/lib/fechas'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -451,6 +452,8 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
     return result
   }, [pacientes, searchPaciente, filtroPaciente, conteoEquiposPorPaciente])
 
+  const { itemsOrdenados: pacientesOrdenados, config: configPacientes, solicitarOrden: solicitarOrdenPacientes } = useOrdenable(pacientesFiltrados)
+
   const equiposDelPacienteDrawer = useMemo(() => {
     if (!drawerPaciente) return []
     return equiposConPaciente.filter(e => e.paciente_actual_id === drawerPaciente.id)
@@ -531,6 +534,8 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
     if (filtroCliente === 'sin_prestamos') result = result.filter(c => !conteoEquiposPorCliente[c.id])
     return result
   }, [clientes, search, filtroCliente, conteoEquiposPorCliente])
+
+  const { itemsOrdenados: clientesOrdenados, config: configClientes, solicitarOrden: solicitarOrdenClientes } = useOrdenable(clientesFiltrados)
 
   async function guardarCliente() {
     if (!form.nombre?.trim()) { showToast('El nombre es requerido', 'error'); return }
@@ -1000,13 +1005,29 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
                     <table className="w-full border-collapse">
                       <thead>
                         <tr className="border-b-2 border-slate-100">
-                          {['Cliente', 'Tipo', 'NIT / CC', 'Contacto', 'Ubicación', ''].map(h => (
-                            <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{h}</th>
+                          {[
+                            { label: 'Cliente', clave: 'nombre' },
+                            { label: 'Tipo', clave: 'tipo_persona' },
+                            { label: 'NIT / CC', clave: null },
+                            { label: 'Contacto', clave: null },
+                            { label: 'Ubicación', clave: 'ubicacion', accessor: c => c.municipio?.nombre || '' },
+                            { label: '', clave: null },
+                          ].map(col => (
+                            <th key={col.label || 'acciones'}
+                              onClick={col.clave ? () => solicitarOrdenClientes(col.clave, col.accessor) : undefined}
+                              className={`px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 ${col.clave ? 'cursor-pointer select-none hover:bg-slate-100 transition-colors' : ''}`}>
+                              <div className="flex items-center gap-1">
+                                {col.label}
+                                {configClientes?.clave === col.clave && (
+                                  <span className="text-[10px]">{configClientes.direccion === 'asc' ? '▲' : '▼'}</span>
+                                )}
+                              </div>
+                            </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {clientesFiltrados.map(c => {
+                        {clientesOrdenados.map(c => {
                           const st = estiloTipo(c)
                           return (
                             <tr key={c.id} onClick={() => abrirDrawer(c)}
@@ -1398,13 +1419,28 @@ export default function ClientesClient({ clientesIniciales, clientesInactivosIni
                     <table className="w-full border-collapse">
                       <thead>
                         <tr className="border-b-2 border-slate-100">
-                          {['Paciente', 'Cédula', 'Ciudad', 'Equipos activos', ''].map(h => (
-                            <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50">{h}</th>
+                          {[
+                            { label: 'Paciente', clave: 'nombre' },
+                            { label: 'Cédula', clave: null },
+                            { label: 'Ciudad', clave: 'ciudad' },
+                            { label: 'Equipos activos', clave: 'equipos_activos', accessor: p => conteoEquiposPorPaciente[p.id] || 0 },
+                            { label: '', clave: null },
+                          ].map(col => (
+                            <th key={col.label || 'acciones'}
+                              onClick={col.clave ? () => solicitarOrdenPacientes(col.clave, col.accessor) : undefined}
+                              className={`px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400 bg-slate-50 ${col.clave ? 'cursor-pointer select-none hover:bg-slate-100 transition-colors' : ''}`}>
+                              <div className="flex items-center gap-1">
+                                {col.label}
+                                {configPacientes?.clave === col.clave && (
+                                  <span className="text-[10px]">{configPacientes.direccion === 'asc' ? '▲' : '▼'}</span>
+                                )}
+                              </div>
+                            </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {pacientesFiltrados.map(p => {
+                        {pacientesOrdenados.map(p => {
                           const nEquipos = conteoEquiposPorPaciente[p.id] || 0
                           return (
                             <tr key={p.id} onClick={() => abrirDrawerPaciente(p)}
