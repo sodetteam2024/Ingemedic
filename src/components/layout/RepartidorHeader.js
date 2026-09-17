@@ -3,6 +3,12 @@ import { useRouter } from 'next/navigation'
 import { Settings, LogOut } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { registrarBitacora } from '@/lib/bitacora'
+import { ULTIMA_ACTUALIZACION } from '@/lib/ultima-actualizacion'
+
+function formatearFechaActualizacion(iso) {
+  const fecha = new Date(iso)
+  return fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 // Layout mínimo para el rol Repartidor — sin sidebar, sin barra inferior, sin FAB
 // radial (ese sistema de navegación móvil dual es para el admin con muchos
@@ -20,7 +26,7 @@ export default function RepartidorHeader({ children, logoUrl }) {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="h-14 bg-[#1B3A6B] flex items-center justify-between px-4 flex-shrink-0">
+      <div className="relative h-14 bg-[#1B3A6B] flex items-center justify-between px-4 flex-shrink-0">
         <div className="flex items-center gap-2">
           <img src={logoUrl} className="h-7" alt="Ingemedic" />
         </div>
@@ -31,6 +37,9 @@ export default function RepartidorHeader({ children, logoUrl }) {
           <button onClick={cerrarSesion}>
             <LogOut size={20} className="text-white/80" />
           </button>
+        </div>
+        <div className="absolute bottom-0.5 right-4 text-[8px] text-white/35 whitespace-nowrap">
+          Act: {formatearFechaActualizacion(ULTIMA_ACTUALIZACION)}
         </div>
       </div>
       <main className="flex-1 overflow-y-auto">

@@ -6,6 +6,12 @@ import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { registrarBitacora } from '@/lib/bitacora'
 import { moduloDeRuta, puedeVerModulo } from '@/lib/permisos'
+import { ULTIMA_ACTUALIZACION } from '@/lib/ultima-actualizacion'
+
+function formatearFechaActualizacion(iso) {
+  const fecha = new Date(iso)
+  return fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 const NAV = [
   {
@@ -278,17 +284,22 @@ export default function Sidebar({ usuario, empresa, permisos = [], esSuperAdmin 
           </button>
         </div>*/}
 
-        <div className="px-4 py-3 border-t border-slate-100 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-[#E53935] flex items-center justify-center text-[12px] font-bold text-white flex-shrink-0">
-            {usuario?.nombre?.charAt(0) || 'U'}
+        <div className="px-4 py-3 border-t border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-[#E53935] flex items-center justify-center text-[12px] font-bold text-white flex-shrink-0">
+              {usuario?.nombre?.charAt(0) || 'U'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12.5px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
+              <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.roles.nombre || 'admin'}</div>
+            </div>
+            <button onClick={() => setConfirmSalir(true)} className="text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0 p-1">
+              {ICONS.logout}
+            </button>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[12.5px] font-semibold text-slate-700 truncate">{usuario?.nombre || 'Usuario'}</div>
-            <div className="text-[10.5px] text-slate-400 capitalize">{usuario?.roles.nombre || 'admin'}</div>
+          <div className="text-[9.5px] text-slate-400 mt-1 px-2">
+            Actualizado: {formatearFechaActualizacion(ULTIMA_ACTUALIZACION)}
           </div>
-          <button onClick={() => setConfirmSalir(true)} className="text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0 p-1">
-            {ICONS.logout}
-          </button>
         </div>
       </aside>
 
@@ -303,11 +314,16 @@ export default function Sidebar({ usuario, empresa, permisos = [], esSuperAdmin 
             <div className="text-[9px] text-slate-400 capitalize truncate mt-0.5">{usuario?.roles.nombre || 'admin'}</div>
           </div>
         </div>
-        <button
-          onClick={() => setConfirmSalir(true)}
-          className="w-7 h-7 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0">
-          {ICONS.logout}
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="text-[8px] text-slate-300 whitespace-nowrap">
+            Act: {formatearFechaActualizacion(ULTIMA_ACTUALIZACION)}
+          </div>
+          <button
+            onClick={() => setConfirmSalir(true)}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0">
+            {ICONS.logout}
+          </button>
+        </div>
       </header>
 
       {/* ── MOBILE: MODO BARRA FIJA ── */}

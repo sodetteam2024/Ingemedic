@@ -326,13 +326,21 @@ export default function QuienesSomosPage() {
           </div>
 
           <div className="lg:col-span-5 flex justify-center">
-            <div className="bg-white p-3 rounded-2xl max-w-[340px] shadow-xl">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/images/ingemedic-certificado-invima.jpg"
-                alt="Certificado INVIMA"
-                className="w-full h-auto rounded-xl object-contain"
-              />
+            <div className="bg-white/5 border border-white/15 rounded-2xl p-6 lg:p-8 max-w-[340px] backdrop-blur-sm">
+              <h3 className="text-lg font-bold text-white mb-2 leading-snug">
+                Certificados en Buenas Prácticas de Manufactura — INVIMA
+              </h3>
+              <p className="text-sm text-slate-300 mb-5">
+                Vigente hasta abril de 2029 · Resolución 2026013255
+              </p>
+              <a
+                href="https://www.invima.gov.co/establecimiento/2345g-ingemedic-de-colombia-sas"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all shadow-md"
+              >
+                Verificar certificación en INVIMA →
+              </a>
             </div>
           </div>
         </div>

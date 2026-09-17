@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
@@ -38,9 +38,26 @@ export function Logo({ size = 36, light = false }) {
   return <Link href="/" className="flex items-center gap-2 cursor-pointer">{imageElement}</Link>
 }
 
-export default function Header() {
+export default function Header({ transparent = false }) {
   const pathname = usePathname()
   const [menuAbierto, setMenuAbierto] = useState(false)
+  // Si el header no es "transparent", se comporta como siempre (sólido, sticky).
+  // Si lo es, arranca transparente sobre el hero y se vuelve sólido pasado el scroll.
+  const [scrolled, setScrolled] = useState(!transparent)
+
+  useEffect(() => {
+    if (!transparent) return
+    function onScroll() {
+      setScrolled(window.scrollY > 50)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [transparent])
+
+  // "claro" = header flotando sobre fondo oscuro (hero) sin haber hecho scroll todavía —
+  // logo y texto de navegación necesitan la variante clara en este estado.
+  const claro = transparent && !scrolled
 
   const navLinks = [
     { name: 'Inicio', href: '/' },
@@ -50,10 +67,20 @@ export default function Header() {
   ]
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-sm">
+    <header className={`${transparent ? 'fixed' : 'sticky'} top-0 w-full z-50 transition-all duration-300 ${
+      claro ? 'bg-transparent' : 'bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-sm'
+    }`}>
       <div className="max-w-7xl mx-auto px-4 md:px-8 h-20 flex items-center justify-between">
-        {/* Logo */}
-        <Logo size={48} />
+        {/* Logo — el logo trae varios colores propios (no es un solo tono), así que
+            sobre el hero oscuro se apoya en un chip blanco en vez de una versión
+            "clara" del archivo (no existe ese asset todavía) para garantizar contraste */}
+        {claro ? (
+          <div className="bg-white/95 rounded-xl px-3 py-1.5 shadow-sm">
+            <Logo size={40} />
+          </div>
+        ) : (
+          <Logo size={48} />
+        )}
 
         {/* Desktop Nav */}
         <nav className="hidden lg:flex items-center gap-7">
@@ -63,14 +90,15 @@ export default function Header() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`text-xs font-bold uppercase tracking-wider transition-colors relative py-1 ${activo
-                  ? 'text-blue-700 font-extrabold'
-                  : 'text-slate-600 hover:text-blue-700'
+                className={`text-xs font-bold uppercase tracking-wider transition-colors relative py-1 ${
+                  claro
+                    ? (activo ? 'text-white' : 'text-white/80 hover:text-white')
+                    : (activo ? 'text-blue-700 font-extrabold' : 'text-slate-600 hover:text-blue-700')
                   }`}
               >
                 {link.name}
                 {activo && (
-                  <span className="absolute bottom-0 left-0 w-full h-[2.5px] bg-blue-700 rounded-full" />
+                  <span className={`absolute bottom-0 left-0 w-full h-[2.5px] rounded-full ${claro ? 'bg-[#2EB5D4]' : 'bg-blue-700'}`} />
                 )}
               </Link>
             )
@@ -100,7 +128,7 @@ export default function Header() {
         <div className="flex lg:hidden items-center gap-2">
           <button
             onClick={() => setMenuAbierto((v) => !v)}
-            className="p-2 text-slate-700 hover:text-blue-700 transition-colors"
+            className={`p-2 transition-colors ${claro ? 'text-white hover:text-white/70' : 'text-slate-700 hover:text-blue-700'}`}
             aria-label="Abrir menú"
           >
             {menuAbierto ? <X size={24} /> : <Menu size={24} />}

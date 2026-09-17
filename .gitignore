@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generado en cada build (scripts/generar-timestamp.js) — no versionar
+/src/lib/ultima-actualizacion.js
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

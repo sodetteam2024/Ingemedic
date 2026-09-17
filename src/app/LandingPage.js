@@ -1,11 +1,17 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import {
   Users, Award, Truck, MapPin, ChevronRight, ChevronDown
 } from 'lucide-react'
+
+const IMAGENES_HERO = [
+  '/images/planta-tanques-1.jpg',
+  '/images/planta-tanques-2.jpg',
+  '/images/ingemedic-concentrador-oxigeno.png',
+]
 
 function WhatsappIcon({ size = 18, className = '' }) {
   return (
@@ -50,27 +56,30 @@ const FAQS = [
 
 export default function LandingPage() {
   const [faqAbierta, setFaqAbierta] = useState(0)
+  const [indiceImagenHero, setIndiceImagenHero] = useState(0)
+
+  // Carrusel del panel derecho del hero — rota cada 4s con fundido cruzado (opacity).
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      setIndiceImagenHero(i => (i + 1) % IMAGENES_HERO.length)
+    }, 4000)
+    return () => clearInterval(intervalo)
+  }, [])
 
   return (
     <div className="min-h-screen bg-white text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
-      {/* ── 1. HEADER REUTILIZABLE ── */}
-      <Header />
+      {/* ── 1. HEADER REUTILIZABLE — transparente sobre el hero, sólido al hacer scroll ── */}
+      <Header transparent />
 
-      {/* ── 2. HERO SECTION ── */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#EAF2FF] via-[#F3F7FF] to-[#DCE9FE] py-16 md:py-20">
-        <div className="absolute inset-0 pointer-events-none opacity-30 select-none">
-          <div className="absolute top-10 right-1/3 text-blue-300 text-6xl font-light">+</div>
-          <div className="absolute top-1/4 right-12 text-blue-200 text-8xl font-light">+</div>
-          <div className="absolute bottom-12 right-1/4 text-blue-300 text-5xl font-light">+</div>
-          <div className="absolute top-12 left-12 text-blue-200 text-4xl font-light">+</div>
-        </div>
-
-        <div className="max-w-7xl mx-auto px-4 md:px-8 relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
-          <div className="lg:col-span-7 flex flex-col items-start">
-            <h1 className="text-3xl sm:text-4xl lg:text-[48px] font-black text-[#0D2247] leading-[1.12] mb-5 tracking-tight">
+      {/* ── 2. HERO SECTION — 2 paneles: texto fijo a la izquierda, carrusel a la derecha ── */}
+      <section className="relative min-h-screen md:h-screen w-full overflow-hidden flex flex-col md:flex-row">
+        {/* Panel izquierdo — texto fijo, no cambia con el carrusel ni con el scroll */}
+        <div className="w-full md:w-[48%] flex-shrink-0 flex items-center px-6 sm:px-8 md:px-16 py-16 md:py-0 relative z-20 bg-[#0B2247]">
+          <div>
+            <h1 className="text-3xl sm:text-4xl lg:text-[48px] font-black text-white leading-[1.12] mb-5 tracking-tight">
               Respira con tranquilidad gracias a nuestros equipos de oxígeno certificados.
             </h1>
-            <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl mb-8">
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-xl mb-8">
               Acompañamos tu recuperación y bienestar con equipos médicos de calidad, oxígeno medicinal y un servicio pensado para darte tranquilidad en cada momento.
             </p>
 
@@ -92,91 +101,129 @@ export default function LandingPage() {
               </Link>
             </div>
           </div>
+        </div>
 
-          <div className="lg:col-span-5 flex justify-center lg:justify-end">
-            <div className="relative max-w-[380px] sm:max-w-[460px] lg:max-w-[500px] w-full">
+        {/* Panel derecho — carrusel de imágenes con fundido cruzado */}
+        <div className="relative w-full md:flex-1 h-[280px] sm:h-[360px] md:h-auto overflow-hidden">
+          {IMAGENES_HERO.map((img, i) => (
+            <div
+              key={img}
+              className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+                i === indiceImagenHero ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/images/ingemedic-concentrador-oxigeno.png"
-                alt="Concentrador de oxígeno certificado"
-                className="w-full h-auto object-contain filter drop-shadow-[0_20px_35px_rgba(11,38,86,0.25)] hover:scale-[1.02] transition-transform duration-500"
-              />
+              <img src={img} alt="Ingemedic — planta y equipos" className="w-full h-full object-cover" />
             </div>
-          </div>
+          ))}
+
+          {/* Transición suave entre paneles — difumina desde el color del panel izquierdo hacia transparente */}
+          <div
+            className="hidden md:block absolute inset-y-0 left-0 w-24 md:w-40 z-10 pointer-events-none"
+            style={{ background: 'linear-gradient(to right, #0B2247, transparent)' }}
+          />
+
+          {/* Badge flotante de certificación — clickeable, hace scroll suave a la sección de certificación */}
+          <a
+            href="#certificacion-invima"
+            style={{ cursor: 'pointer' }}
+            className="absolute bottom-4 right-4 sm:bottom-8 sm:right-8 z-10 bg-slate-900/85 backdrop-blur-sm rounded-xl px-6 sm:px-9 py-4 sm:py-6 flex flex-col text-white hover:bg-slate-900 transition-colors"
+          >
+            <span className="text-[22px] sm:text-[30px] font-extrabold leading-tight whitespace-nowrap">Certificados por INVIMA</span>
+            <span className="text-[13px] sm:text-[16px] text-white/70 mt-1 whitespace-nowrap">Resolución 2026013255</span>
+          </a>
         </div>
       </section>
 
       {/* ── 3. STATS BAR ── */}
-      <section className="bg-[#0B2656] text-white py-6 border-t border-blue-900/50 shadow-inner">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-0 divide-y sm:divide-y-0 sm:divide-x divide-white/20">
+      <section className="bg-white py-6">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-0 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
           <div className="flex items-center justify-center gap-4 px-4 py-1">
-            <Users size={30} className="text-white opacity-95 flex-shrink-0" />
+            <Users size={30} className="text-[#1B3A6B] flex-shrink-0" />
             <div className="flex flex-col">
-              <span className="text-2xl lg:text-3xl font-black tracking-tight leading-none text-white">+ 20.000</span>
-              <span className="text-xs font-medium text-blue-100/90 mt-1">Pacientes atendidos</span>
+              <span className="text-2xl lg:text-3xl font-black tracking-tight leading-none text-[#1B3A6B]">+ 20.000</span>
+              <span className="text-xs font-medium text-slate-500 mt-1">Pacientes atendidos</span>
             </div>
           </div>
 
           <div className="flex items-center justify-center gap-4 px-4 py-1">
-            <Award size={30} className="text-white opacity-95 flex-shrink-0" />
+            <Award size={30} className="text-[#1B3A6B] flex-shrink-0" />
             <div className="flex flex-col">
-              <span className="text-2xl lg:text-3xl font-black tracking-tight leading-none text-white">+ 13</span>
-              <span className="text-xs font-medium text-blue-100/90 mt-1">Años de experiencia</span>
+              <span className="text-2xl lg:text-3xl font-black tracking-tight leading-none text-[#1B3A6B]">+ 13</span>
+              <span className="text-xs font-medium text-slate-500 mt-1">Años de experiencia</span>
             </div>
           </div>
 
           <div className="flex items-center justify-center gap-4 px-4 py-1">
-            <Truck size={30} className="text-white opacity-95 flex-shrink-0" />
+            <Truck size={30} className="text-[#1B3A6B] flex-shrink-0" />
             <div className="flex flex-col">
-              <span className="text-2xl lg:text-3xl font-black tracking-tight leading-none text-white">+ 10.000</span>
-              <span className="text-xs font-medium text-blue-100/90 mt-1">Entregas realizadas</span>
+              <span className="text-2xl lg:text-3xl font-black tracking-tight leading-none text-[#1B3A6B]">+ 10.000</span>
+              <span className="text-xs font-medium text-slate-500 mt-1">Entregas realizadas</span>
             </div>
           </div>
 
           <div className="flex items-center justify-center gap-4 px-4 py-1">
-            <MapPin size={30} className="text-white opacity-95 flex-shrink-0" />
+            <MapPin size={30} className="text-[#1B3A6B] flex-shrink-0" />
             <div className="flex flex-col">
-              <span className="text-sm lg:text-base font-bold text-white leading-snug">Cobertura en todo el Cesar</span>
+              <span className="text-sm lg:text-base font-bold text-[#1B3A6B] leading-snug">Cobertura en todo el Cesar</span>
             </div>
           </div>
         </div>
       </section>
 
       {/* ── 4. CERTIFICACIÓN INVIMA (COMPACTA) ── */}
-      <section className="relative py-16 overflow-hidden bg-slate-950 text-white">
+      <section id="certificacion-invima" className="relative py-16 overflow-hidden bg-slate-950 text-white">
         <div
           className="absolute inset-0 z-0 bg-cover bg-center opacity-30 mix-blend-luminosity"
           style={{ backgroundImage: 'url(/images/ingemedic-planta-oxigeno.jpg)' }}
         />
         <div className="absolute inset-0 z-0 bg-gradient-to-r from-slate-950/95 via-slate-900/90 to-slate-950/95" />
 
-        <div className="max-w-7xl mx-auto px-4 md:px-8 relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          <div className="lg:col-span-8 text-left">
-            <div className="inline-block px-4 py-1 rounded-full border border-white/40 bg-white/10 text-xs font-semibold uppercase tracking-wider text-white mb-3">
-              CALIDAD Y CONFIANZA CERTIFICADA
+        <div className="max-w-7xl mx-auto px-4 md:px-8 relative z-10">
+          <div className="bg-[#0B1226] rounded-2xl p-8 md:p-12 flex flex-col md:flex-row items-center gap-8">
+            <div className="flex-1 text-left">
+              <div className="inline-block px-4 py-1 rounded-full border border-white/40 bg-white/10 text-xs font-semibold uppercase tracking-wider text-white mb-3">
+                CALIDAD Y CONFIANZA CERTIFICADA
+              </div>
+              <h2 className="text-2xl sm:text-4xl font-black text-white leading-tight mb-2">
+                Estamos certificados por <span className="text-[#2EB5D4]">INVIMA</span>
+              </h2>
+              <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed mb-6">
+                Vigente hasta abril de 2029 · Resolución 2026013255
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link
+                  href="/quienes-somos"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all shadow-md"
+                >
+                  Conoce nuestra planta e historia <ChevronRight size={15} />
+                </Link>
+                <a
+                  href="https://www.invima.gov.co/establecimiento/2345g-ingemedic-de-colombia-sas"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold text-white border border-white/30 hover:bg-white/10 transition-all"
+                >
+                  Verificar certificación en INVIMA <ChevronRight size={15} />
+                </a>
+              </div>
             </div>
-            <h2 className="text-2xl sm:text-4xl font-black text-white leading-tight mb-2">
-              Estamos certificados por <span className="text-[#00B0FF]">INVIMA</span>
-            </h2>
-            <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed mb-6">
-              Para la creación y distribución de oxígeno medicinal bajo las Buenas Prácticas de Manufactura sanitarias en Colombia.
-            </p>
-            <Link
-              href="/quienes-somos"
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all shadow-md"
-            >
-              Conoce nuestra planta e historia <ChevronRight size={15} />
-            </Link>
-          </div>
 
-          <div className="lg:col-span-4 flex justify-center">
-            <div className="bg-white p-3 rounded-2xl shadow-xl max-w-[280px]">
+            <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-4 w-full md:w-[320px] flex-shrink-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/images/ingemedic-certificado-invima.jpg"
-                alt="Certificado INVIMA"
-                className="w-full h-auto rounded-xl object-contain"
+                src="/images/logo-invima-oficial.png"
+                alt="INVIMA — Instituto Nacional de Vigilancia de Medicamentos y Alimentos"
+                className="h-16 w-auto object-contain"
               />
+              <a
+                href="https://www.invima.gov.co/establecimiento/2345g-ingemedic-de-colombia-sas"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all shadow-md"
+              >
+                Verificar certificación en INVIMA <ChevronRight size={15} />
+              </a>
             </div>
           </div>
         </div>
