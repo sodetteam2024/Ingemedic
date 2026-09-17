@@ -198,14 +198,6 @@ export default function LandingPage() {
                 >
                   Conoce nuestra planta e historia <ChevronRight size={15} />
                 </Link>
-                <a
-                  href="https://www.invima.gov.co/establecimiento/2345g-ingemedic-de-colombia-sas"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold text-white border border-white/30 hover:bg-white/10 transition-all"
-                >
-                  Verificar certificación en INVIMA <ChevronRight size={15} />
-                </a>
               </div>
             </div>
 
